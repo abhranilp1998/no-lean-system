@@ -1,36 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:padding="14dp"
-    android:background="#E60B0F1A">
+    android:gravity="center_vertical"
+    android:background="@drawable/no_lean_widget_background"
+    android:clickable="true"
+    android:focusable="true">
     <TextView
         android:id="@+id/widget_title"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="NO LEAN / CLEAN TIME"
+        android:text="NO LEAN // CLEAN-TIME"
         android:textColor="#4DE8FF"
-        android:textSize="10sp"
+        android:textSize="11sp"
         android:fontFamily="monospace"
+        android:letterSpacing="0.12"
         android:textStyle="bold" />
-    <TextView
+    <Chronometer
         android:id="@+id/widget_clean_time"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="7dp"
-        android:text="3d 04h 18m"
+        android:text="3d 04:18:09"
         android:textColor="#FFFFFF"
-        android:textSize="22sp"
+        android:textSize="21sp"
         android:fontFamily="monospace"
+        android:singleLine="true"
         android:textStyle="bold" />
     <TextView
         android:id="@+id/widget_streak"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"
-        android:text="3 DAYS"
+        android:text="3 DAYS // STREAK ACTIVE"
         android:textColor="#B5FF5E"
         android:textSize="10sp"
-        android:fontFamily="monospace" />
+        android:fontFamily="monospace"
+        android:letterSpacing="0.06" />
 </LinearLayout>

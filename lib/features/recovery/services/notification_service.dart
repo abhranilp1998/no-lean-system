@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/theme/app_theme.dart';
+import '../domain/risk_window.dart';
 
 class NotificationService {
   NotificationService._();
@@ -38,13 +39,16 @@ class NotificationService {
     _initialized = true;
   }
 
-  Future<void> scheduleRiskWindow(List<String> messages) async {
-    await _initialize();
+  Future<void> scheduleRiskWindow(
+    List<String> messages, {
+    required RiskWindow riskWindow,
+  }) async {
     try {
-      await cancelRiskWindow();
+      await _initialize();
+      await _cancelScheduled();
       if (messages.isEmpty) return;
 
-      const moments = [17 * 60 + 30, 18 * 60 + 15, 19 * 60, 19 * 60 + 45];
+      final moments = riskWindow.reminderMinutes();
       for (var index = 0; index < moments.length; index++) {
         final message = messages[index % messages.length];
         final hour = moments[index] ~/ 60;
@@ -66,15 +70,29 @@ class NotificationService {
           'NO LEAN / RISK WINDOW',
           message,
           scheduled,
-          const NotificationDetails(
+          NotificationDetails(
             android: AndroidNotificationDetails(
-              'risk_window',
-              'Risk window',
+              'risk_window_v2',
+              'NO LEAN risk window',
               channelDescription:
-                  'Direct NO LEAN interrupts from 17:30 to 20:00',
+                  'High-visibility recovery interrupts during your configured risk window',
               importance: Importance.max,
               priority: Priority.high,
               color: red,
+              colorized: true,
+              enableLights: true,
+              ledColor: cyan,
+              enableVibration: true,
+              playSound: true,
+              visibility: NotificationVisibility.public,
+              category: AndroidNotificationCategory.reminder,
+              ticker: 'NO LEAN // HOLD THE LINE',
+              subText: '${riskWindow.label} // PERSONAL OVERRIDE',
+              styleInformation: BigTextStyleInformation(
+                message,
+                contentTitle: 'NO LEAN // RISK WINDOW',
+                summaryText: 'STAY MOVING. DO NOT BUY.',
+              ),
             ),
           ),
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
@@ -87,6 +105,15 @@ class NotificationService {
   }
 
   Future<void> cancelRiskWindow() async {
+    try {
+      await _initialize();
+      await _cancelScheduled();
+    } catch (_) {
+      // Notifications are optional on tests and unsupported platforms.
+    }
+  }
+
+  Future<void> _cancelScheduled() async {
     for (var id = 500; id < 504; id++) {
       await _plugin.cancel(id);
     }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../services/app_feedback.dart';
 import '../theme/app_theme.dart';
+import '../theme/no_lean_visuals.dart';
 import 'glass_card.dart';
 
 class ActionTile extends StatelessWidget {
@@ -20,46 +22,60 @@ class ActionTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(15),
-    child: GlassCard(
-      accent: color,
-      child: Row(
-        children: [
-          Container(
-            width: 39,
-            height: 39,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(12),
+  Widget build(BuildContext context) {
+    final visuals = NoLeanVisuals.of(context);
+    return InkWell(
+      onTap: () {
+        AppFeedback.tap();
+        onTap();
+      },
+      enableFeedback: false,
+      borderRadius: BorderRadius.circular(15),
+      child: GlassCard(
+        accent: color,
+        child: Row(
+          children: [
+            Container(
+              width: 39,
+              height: 39,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: visuals.accentOpacity(.12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 20),
             ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: displayFont(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: color,
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: displayFont(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 10.5, color: muted),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      color: visuals.secondaryTextColor,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Icon(Icons.chevron_right, size: 18, color: muted),
-        ],
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: visuals.secondaryTextColor,
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

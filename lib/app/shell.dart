@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/services/app_feedback.dart';
 import '../core/theme/app_theme.dart';
+import '../core/theme/no_lean_visuals.dart';
 import '../core/widgets/animated_background.dart';
 import '../features/cravings/presentation/cravings_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
@@ -29,6 +31,7 @@ class _ShellState extends ConsumerState<Shell> {
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
+    final visuals = NoLeanVisuals.of(context);
     return Scaffold(
       body: Stack(
         children: [
@@ -41,33 +44,52 @@ class _ShellState extends ConsumerState<Shell> {
           ),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedTab,
-        onDestinationSelected: (value) => setState(() => _selectedTab = value),
-        backgroundColor: panel.withValues(alpha: .96),
-        indicatorColor: cyan.withValues(alpha: .15),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.timer_outlined),
-            selectedIcon: Icon(Icons.timer, color: cyan),
-            label: 'Counter',
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: cyan.withValues(
+                alpha: visuals.accentOpacity(visuals.highContrast ? .5 : .16),
+              ),
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.bolt_outlined),
-            selectedIcon: Icon(Icons.bolt, color: cyan),
-            label: 'Cravings',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.insights_outlined),
-            selectedIcon: Icon(Icons.insights, color: cyan),
-            label: 'Progress',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.tune_outlined),
-            selectedIcon: Icon(Icons.tune, color: cyan),
-            label: 'Settings',
-          ),
-        ],
+          boxShadow: [
+            BoxShadow(
+              color: cyan.withValues(alpha: visuals.glowOpacity(.08)),
+              blurRadius: 18 * visuals.glowRadiusScale,
+            ),
+          ],
+        ),
+        child: NavigationBar(
+          selectedIndex: _selectedTab,
+          onDestinationSelected: (value) {
+            if (value == _selectedTab) return;
+            AppFeedback.selection();
+            setState(() => _selectedTab = value);
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.timer_outlined),
+              selectedIcon: Icon(Icons.timer, color: cyan),
+              label: 'Counter',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.bolt_outlined),
+              selectedIcon: Icon(Icons.bolt, color: cyan),
+              label: 'Cravings',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.insights_outlined),
+              selectedIcon: Icon(Icons.insights, color: cyan),
+              label: 'Progress',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.tune_outlined),
+              selectedIcon: Icon(Icons.tune, color: cyan),
+              label: 'Settings',
+            ),
+          ],
+        ),
       ),
     );
   }

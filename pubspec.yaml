@@ -39,7 +39,8 @@ dependencies:
   timezone: ^0.10.1
   path_provider: ^2.1.5
   share_plus: ^11.0.0
-  local_auth: ^2.3.0
+  local_auth: ^3.0.2
+  flutter_secure_storage: ^10.3.1
   wakelock_plus: ^1.5.2
 
 dev_dependencies:

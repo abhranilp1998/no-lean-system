@@ -3,11 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/app_feedback.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/theme/no_lean_visuals.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/glow_button.dart';
 import '../../../core/widgets/status_pill.dart';
+import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
+import '../../recovery/domain/sos_session.dart';
 
 class EmergencyScreen extends ConsumerStatefulWidget {
   const EmergencyScreen({super.key});
@@ -18,12 +22,17 @@ class EmergencyScreen extends ConsumerStatefulWidget {
 
 class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
   Timer? _timer;
+  late final DateTime _startedAt;
+  late final RecoveryController _recovery;
   int _remaining = 60;
   bool _finished = false;
+  bool _sessionRecorded = false;
 
   @override
   void initState() {
     super.initState();
+    _startedAt = DateTime.now();
+    _recovery = ref.read(recoveryProvider);
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       if (_remaining <= 1) {
@@ -32,6 +41,7 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
           _remaining = 0;
           _finished = true;
         });
+        unawaited(_recordSession(completedAt: DateTime.now()));
       } else {
         setState(() => _remaining--);
       }
@@ -41,12 +51,25 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    if (!_sessionRecorded) {
+      unawaited(_recordSession());
+    }
     super.dispose();
+  }
+
+  Future<void> _recordSession({DateTime? completedAt}) async {
+    if (_sessionRecorded) return;
+    _sessionRecorded = true;
+    if (completedAt != null) AppFeedback.success();
+    await _recovery.recordSosSession(
+      SosSession(startedAt: _startedAt, completedAt: completedAt),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
+    final visuals = NoLeanVisuals.of(context);
     final phase = _remaining > 45
         ? 'BREATHE IN'
         : _remaining > 30
@@ -60,7 +83,13 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
         child: Stack(
           children: [
             Positioned.fill(
-              child: CustomPaint(painter: _SosPainter(_remaining)),
+              child: CustomPaint(
+                painter: _SosPainter(
+                  _remaining,
+                  effectScale: visuals.effectScale,
+                  reduceMotion: visuals.reduceMotion,
+                ),
+              ),
             ),
             ListView(
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
@@ -235,19 +264,27 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
 }
 
 class _SosPainter extends CustomPainter {
-  _SosPainter(this.remaining);
+  _SosPainter(
+    this.remaining, {
+    required this.effectScale,
+    required this.reduceMotion,
+  });
 
   final int remaining;
+  final double effectScale;
+  final bool reduceMotion;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pulse = .06 + (remaining % 2) * .03;
+    final pulse = reduceMotion
+        ? .065 * effectScale
+        : (.06 + (remaining % 2) * .03) * effectScale;
     final paint = Paint()
       ..color = red.withValues(alpha: pulse)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 80);
     canvas.drawCircle(Offset(size.width / 2, 260), 160, paint);
     final line = Paint()
-      ..color = red.withValues(alpha: .08)
+      ..color = red.withValues(alpha: (.08 * effectScale).clamp(0, .18))
       ..strokeWidth = 1;
     for (var y = 0.0; y < size.height; y += 7) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
@@ -256,5 +293,7 @@ class _SosPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SosPainter oldDelegate) =>
-      oldDelegate.remaining != remaining;
+      oldDelegate.remaining != remaining ||
+      oldDelegate.effectScale != effectScale ||
+      oldDelegate.reduceMotion != reduceMotion;
 }

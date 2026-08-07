@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/app_notice.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/glow_button.dart';
 import '../../../core/widgets/status_pill.dart';
+import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
+import '../../recovery/presentation/relapse_auth_dialog.dart';
 
 Future<void> showPledgeDialog(BuildContext context, WidgetRef ref) async {
   final confirm =
@@ -45,11 +48,10 @@ Future<void> showPledgeDialog(BuildContext context, WidgetRef ref) async {
   if (confirm && context.mounted) {
     await ref.read(recoveryProvider).pledge();
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('PLEDGE LOCKED. KEEP MOVING.'),
-        backgroundColor: Color(0xFF42152F),
-      ),
+    AppNotice.show(
+      context,
+      'PLEDGE LOCKED // KEEP MOVING.',
+      type: AppNoticeType.success,
     );
   }
 }
@@ -95,11 +97,10 @@ Future<void> showCheckInDialog(BuildContext context, WidgetRef ref) async {
   if (stayedClean == true) {
     await ref.read(recoveryProvider).pledge();
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('CHECK-IN SAVED. SAME DECISION TOMORROW.'),
-          backgroundColor: Color(0xFF223C1B),
-        ),
+      AppNotice.show(
+        context,
+        'CHECK-IN SAVED // SAME DECISION TOMORROW.',
+        type: AppNoticeType.success,
       );
     }
   } else if (stayedClean == false) {
@@ -142,13 +143,38 @@ Future<void> showRelapseDialog(BuildContext context, WidgetRef ref) async {
       ) ??
       false;
   if (confirm) {
-    await ref.read(recoveryProvider).recordRelapse();
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('TIMER RESET. NO HIDING. START THE NEXT CLEAN MINUTE.'),
-          backgroundColor: Color(0xFF431522),
-        ),
+    final recovery = ref.read(recoveryProvider);
+    var result = await recovery.recordRelapse();
+    if (result == ProtectedActionResult.authenticationRequired &&
+        context.mounted) {
+      final pin = await showRelapsePinDialog(
+        context,
+        actionLabel: 'AUTHORIZE RESET',
+      );
+      if (pin == null) {
+        if (context.mounted) {
+          AppNotice.show(
+            context,
+            'RESET CANCELLED // CLEAN TIME UNCHANGED.',
+            type: AppNoticeType.info,
+          );
+        }
+        return;
+      }
+      result = await recovery.recordRelapse(pin: pin, tryBiometrics: false);
+    }
+    if (!context.mounted) return;
+    if (result == ProtectedActionResult.completed) {
+      AppNotice.show(
+        context,
+        'TIMER RESET // START THE NEXT CLEAN MINUTE.',
+        type: AppNoticeType.warning,
+      );
+    } else {
+      AppNotice.show(
+        context,
+        'AUTHENTICATION FAILED // CLEAN TIME UNCHANGED.',
+        type: AppNoticeType.error,
       );
     }
   }

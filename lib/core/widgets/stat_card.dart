@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/no_lean_visuals.dart';
 import 'glass_card.dart';
 
 class StatCard extends StatelessWidget {
@@ -18,23 +19,29 @@ class StatCard extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) => GlassCard(
-    accent: color,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: microStyle.copyWith(color: color)),
-        const SizedBox(height: 9),
-        Text(
-          value,
-          style: displayFont(fontSize: 22, fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          detail,
-          style: TextStyle(fontSize: 10.5, color: muted.withValues(alpha: .9)),
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    final visuals = NoLeanVisuals.of(context);
+    return GlassCard(
+      accent: color,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: microStyle.copyWith(color: color)),
+          const SizedBox(height: 9),
+          Text(
+            value,
+            style: displayFont(fontSize: 22, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            detail,
+            style: TextStyle(
+              fontSize: 10.5,
+              color: visuals.secondaryTextColor.withValues(alpha: .95),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

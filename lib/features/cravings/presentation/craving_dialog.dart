@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/app_notice.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../recovery/application/recovery_provider.dart';
@@ -101,5 +102,12 @@ Future<void> showCravingDialog(BuildContext context, WidgetRef ref) async {
   note.dispose();
   if (entry != null && context.mounted) {
     await ref.read(recoveryProvider).recordCraving(entry);
+    if (context.mounted) {
+      AppNotice.show(
+        context,
+        'CRAVING LOGGED // SIGNAL CAPTURED.',
+        type: AppNoticeType.success,
+      );
+    }
   }
 }

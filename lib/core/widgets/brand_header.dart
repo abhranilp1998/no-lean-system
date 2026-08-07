@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../theme/no_lean_visuals.dart';
 
 class BrandHeader extends StatelessWidget {
   const BrandHeader({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final visuals = NoLeanVisuals.of(context);
     return Row(
       children: [
         Container(
@@ -15,7 +17,10 @@ class BrandHeader extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
-              BoxShadow(color: cyan.withValues(alpha: .25), blurRadius: 20),
+              BoxShadow(
+                color: cyan.withValues(alpha: visuals.glowOpacity(.25)),
+                blurRadius: 20 * visuals.glowRadiusScale,
+              ),
             ],
           ),
           clipBehavior: Clip.antiAlias,
@@ -34,17 +39,27 @@ class BrandHeader extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 2),
-            Text('PERSONAL OVERRIDE SYSTEM', style: microStyle),
+            Text(
+              'PERSONAL OVERRIDE SYSTEM',
+              style: microStyle.copyWith(color: visuals.secondaryTextColor),
+            ),
           ],
         ),
         const Spacer(),
         Container(
           width: 8,
           height: 8,
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: toxic,
             shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: toxic, blurRadius: 12)],
+            boxShadow: [
+              BoxShadow(
+                color: toxic.withValues(
+                  alpha: visuals.glowOpacity(1, minimum: .24),
+                ),
+                blurRadius: 12 * visuals.glowRadiusScale,
+              ),
+            ],
           ),
         ),
       ],

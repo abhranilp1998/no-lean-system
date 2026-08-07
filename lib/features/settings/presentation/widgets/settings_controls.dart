@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/services/app_feedback.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/glass_card.dart';
 import '../../../recovery/domain/effect_intensity.dart';
@@ -49,7 +50,10 @@ class SettingAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
+    onTap: () {
+      AppFeedback.tap();
+      onTap();
+    },
     borderRadius: BorderRadius.circular(14),
     child: GlassCard(
       accent: color,
@@ -116,7 +120,10 @@ class SettingToggle extends StatelessWidget {
       ),
       value: value,
       activeThumbColor: color,
-      onChanged: onChanged,
+      onChanged: (value) {
+        AppFeedback.selection();
+        onChanged(value);
+      },
     ),
   );
 }
@@ -152,7 +159,10 @@ class SettingIntensity extends StatelessWidget {
             ),
           ],
           selected: {value},
-          onSelectionChanged: (selection) => onChanged(selection.first),
+          onSelectionChanged: (selection) {
+            AppFeedback.selection();
+            onChanged(selection.first);
+          },
           style: ButtonStyle(
             textStyle: const WidgetStatePropertyAll(
               TextStyle(fontSize: 9, fontFamily: 'NoLeanMono'),

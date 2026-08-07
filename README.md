@@ -8,12 +8,14 @@ NO LEAN is an offline-first Android recovery tracker built around a direct inter
 - Daily pledge confirmation and evening clean/relapse check-in.
 - Craving log with intensity, trigger tags, notes, and a progress chart.
 - Full-screen SOS mode with a 60-second breathing/urge-surfing timer.
-- Risk-window notifications scheduled for 17:30, 18:15, 19:00, and 19:45.
+- Four high-visibility reminders distributed through a configurable risk window.
 - Calendar-style clean-day heat map and milestone tracker.
-- Offline local persistence using `shared_preferences`.
+- Offline recovery persistence plus encrypted secure storage for the relapse PIN.
 - JSON export through the Android share sheet.
-- Optional PIN lock setting and biometric availability check.
-- Native Android home-screen widget showing clean time and streak.
+- Encrypted relapse lock with biometric-first authentication and PIN fallback.
+- Configurable risk windows with high-visibility scheduled interrupts.
+- Trigger, time-of-day, weekly, and SOS-completion recovery insights.
+- Native Android home-screen widget with live clean-time seconds and streak.
 - Generated cyberpunk icon at `assets/no_lean_icon.png` and Android launcher resource.
 
 ## Run

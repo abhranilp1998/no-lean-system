@@ -29,7 +29,9 @@ android {
         applicationId = "com.nolean.no_lean"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // flutter_secure_storage requires API 23+, while local_auth_android 2.x
+        // currently declares API 24 as its minimum.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

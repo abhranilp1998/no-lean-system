@@ -56,7 +56,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         children: [
           const BrandHeader(),
           const SizedBox(height: 22),
-          if (recovery.isRiskWindow) const RiskWindowBanner(),
+          if (recovery.isRiskWindow)
+            RiskWindowBanner(windowLabel: recovery.riskWindow.label),
           if (recovery.isRiskWindow) const SizedBox(height: 14),
           Text('THE COUNTER', style: eyebrowStyle.copyWith(color: cyan)),
           const SizedBox(height: 6),

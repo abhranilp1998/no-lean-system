@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 
 class RiskWindowBanner extends StatelessWidget {
-  const RiskWindowBanner({super.key});
+  const RiskWindowBanner({required this.windowLabel, super.key});
+
+  final String windowLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +22,7 @@ class RiskWindowBanner extends StatelessWidget {
           const SizedBox(width: 9),
           Expanded(
             child: Text(
-              'RISK WINDOW  /  17:30—20:00  /  STAY MOVING',
+              'RISK WINDOW  /  $windowLabel  /  STAY MOVING',
               style: microStyle.copyWith(color: red, letterSpacing: .7),
             ),
           ),

@@ -6,7 +6,6 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/brand_header.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../recovery/application/recovery_provider.dart';
-import '../../recovery/services/notification_service.dart';
 import '../services/biometric_service.dart';
 import '../services/recovery_export_service.dart';
 import 'settings_dialogs.dart';
@@ -90,6 +89,14 @@ class SettingsScreen extends ConsumerWidget {
               onChanged: (value) =>
                   ref.read(recoveryProvider).setSetting('highContrast', value),
             ),
+            SettingToggle(
+              title: 'Tactile sound cues',
+              subtitle: 'Pair cyberpunk UI haptics with system audio cues',
+              value: recovery.soundscape,
+              color: magenta,
+              onChanged: (value) =>
+                  ref.read(recoveryProvider).setSetting('soundscape', value),
+            ),
             SettingIntensity(
               value: recovery.intensity,
               onChanged: (value) =>
@@ -100,39 +107,36 @@ class SettingsScreen extends ConsumerWidget {
         SettingsSection(
           title: 'PROTECTION',
           children: [
+            SettingAction(
+              icon: Icons.schedule,
+              title: 'Risk window',
+              subtitle: '${recovery.riskWindow.label} // 4 interrupts',
+              color: purple,
+              onTap: () => showRiskWindowDialog(context, ref),
+            ),
             SettingToggle(
               title: 'Risk-window reminders',
-              subtitle: 'Enable the 17:30—20:00 interrupt window',
+              subtitle: 'Enable ${recovery.riskWindow.label} interrupts',
               value: recovery.riskReminders,
               color: red,
-              onChanged: (value) async {
-                await ref
-                    .read(recoveryProvider)
-                    .setSetting('riskReminders', value);
-                if (value) {
-                  await NotificationService.instance.scheduleRiskWindow(
-                    recovery.reminderMessages,
-                  );
-                } else {
-                  await NotificationService.instance.cancelRiskWindow();
-                }
-              },
+              onChanged: (value) =>
+                  ref.read(recoveryProvider).setSetting('riskReminders', value),
             ),
             SettingToggle(
               title: 'Relapse lock',
               subtitle: recovery.requirePinAfterRelapse
-                  ? 'PIN gate enabled'
-                  : 'Protect history after a relapse',
+                  ? 'Biometric first // encrypted PIN fallback'
+                  : 'Authenticate before resetting clean time',
               value: recovery.requirePinAfterRelapse,
               color: magenta,
               onChanged: (value) => showPinSetup(context, ref, value),
             ),
             SettingAction(
               icon: Icons.fingerprint,
-              title: 'Test device biometrics',
-              subtitle: 'Use fingerprint / face unlock when available',
+              title: 'Verify biometrics',
+              subtitle: 'Run a real fingerprint / face authentication',
               color: cyan,
-              onTap: () => testBiometricAvailability(context),
+              onTap: () => verifyBiometricAuthentication(context),
             ),
           ],
         ),
