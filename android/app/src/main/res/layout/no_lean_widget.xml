@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="14dp"
+    android:background="#E60B0F1A">
+    <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="NO LEAN / CLEAN TIME"
+        android:textColor="#4DE8FF"
+        android:textSize="10sp"
+        android:fontFamily="monospace"
+        android:textStyle="bold" />
+    <TextView
+        android:id="@+id/widget_clean_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="7dp"
+        android:text="3d 04h 18m"
+        android:textColor="#FFFFFF"
+        android:textSize="22sp"
+        android:fontFamily="monospace"
+        android:textStyle="bold" />
+    <TextView
+        android:id="@+id/widget_streak"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="3 DAYS"
+        android:textColor="#B5FF5E"
+        android:textSize="10sp"
+        android:fontFamily="monospace" />
+</LinearLayout>
