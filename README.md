@@ -31,3 +31,26 @@ flutter build apk --debug
 ```
 
 The visual system bundles a condensed display face (`NoLeanDisplay`) and a monospace terminal face (`NoLeanMono`) under `assets/fonts/`, so the look does not depend on network font loading at runtime.
+
+## Project structure
+
+```text
+lib/
+├── app/                         # App composition and tab shell
+├── core/
+│   ├── theme/                   # Shared visual tokens and ThemeData
+│   ├── utils/                   # Formatting helpers
+│   └── widgets/                 # Reusable UI primitives
+├── features/
+│   ├── cravings/                # Craving log and entry flow
+│   ├── dashboard/               # Counter and daily actions
+│   ├── emergency/               # SOS override experience
+│   ├── progress/                # Heat map, chart, and milestones
+│   ├── recovery/                # Shared models, state, persistence, services
+│   └── settings/                # Settings UI and platform-facing actions
+└── main.dart                    # Platform bootstrap only
+```
+
+Feature folders own their presentation code. Cross-feature recovery state lives
+under `features/recovery`, while visual primitives that are reused by multiple
+features live under `core`.
