@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/services/app_feedback.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/theme/no_lean_visuals.dart';
 import '../../../../core/widgets/glass_card.dart';
 import '../../../recovery/domain/effect_intensity.dart';
 
@@ -139,40 +140,127 @@ class SettingIntensity extends StatelessWidget {
   final ValueChanged<EffectIntensity> onChanged;
 
   @override
-  Widget build(BuildContext context) => GlassCard(
-    accent: purple,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('EFFECT INTENSITY', style: microStyle.copyWith(color: purple)),
-        const SizedBox(height: 10),
-        SegmentedButton<EffectIntensity>(
-          segments: const [
-            ButtonSegment(value: EffectIntensity.calm, label: Text('CALM')),
-            ButtonSegment(
-              value: EffectIntensity.standard,
-              label: Text('STANDARD'),
-            ),
-            ButtonSegment(
-              value: EffectIntensity.aggressive,
-              label: Text('AGGRESSIVE'),
+  Widget build(BuildContext context) {
+    final accent = value == EffectIntensity.ultra ? magenta : purple;
+    return GlassCard(
+      accent: accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'EFFECT INTENSITY',
+                style: microStyle.copyWith(color: accent),
+              ),
+              if (value == EffectIntensity.ultra) ...[
+                const Spacer(),
+                Text(
+                  '/// GLYPH OVERDRIVE',
+                  style: microStyle.copyWith(color: cyan, fontSize: 8),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              for (final intensity in EffectIntensity.values)
+                Expanded(
+                  child: _IntensitySegment(
+                    intensity: intensity,
+                    selected: value == intensity,
+                    onTap: () {
+                      if (value == intensity) return;
+                      AppFeedback.selection();
+                      onChanged(intensity);
+                    },
+                  ),
+                ),
+            ],
+          ),
+          if (value == EffectIntensity.ultra) ...[
+            const SizedBox(height: 9),
+            Text(
+              'MAX BLOOM // ACTIVE GLYPHS // CHROMATIC GLITCH SURGE',
+              style: microStyle.copyWith(color: magenta, fontSize: 8),
             ),
           ],
-          selected: {value},
-          onSelectionChanged: (selection) {
-            AppFeedback.selection();
-            onChanged(selection.first);
-          },
-          style: ButtonStyle(
-            textStyle: const WidgetStatePropertyAll(
-              TextStyle(fontSize: 9, fontFamily: 'NoLeanMono'),
+        ],
+      ),
+    );
+  }
+}
+
+class _IntensitySegment extends StatelessWidget {
+  const _IntensitySegment({
+    required this.intensity,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final EffectIntensity intensity;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final visuals = NoLeanVisuals.of(context);
+    final accent = intensity == EffectIntensity.ultra ? magenta : purple;
+    final label = switch (intensity) {
+      EffectIntensity.calm => 'CALM',
+      EffectIntensity.standard => 'STANDARD',
+      EffectIntensity.aggressive => 'AGGRESSIVE',
+      EffectIntensity.ultra => 'ULTRA',
+    };
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label effect intensity',
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 1.5),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: AnimatedContainer(
+            duration: visuals.motionDuration(const Duration(milliseconds: 160)),
+            height: 42,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: BoxDecoration(
+              color: selected
+                  ? accent.withValues(alpha: .92)
+                  : Colors.black.withValues(alpha: .24),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: accent.withValues(alpha: selected ? .95 : .28),
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: accent.withValues(
+                          alpha: visuals.glowOpacity(.28),
+                        ),
+                        blurRadius: 12 * visuals.glowRadiusScale,
+                      ),
+                    ]
+                  : null,
             ),
-            side: WidgetStatePropertyAll(
-              BorderSide(color: purple.withValues(alpha: .35)),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                selected ? '✓  $label' : label,
+                style: TextStyle(
+                  color: selected ? Colors.black : Colors.white,
+                  fontFamily: 'NoLeanMono',
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ),
         ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }

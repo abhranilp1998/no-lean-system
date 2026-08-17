@@ -30,14 +30,7 @@ class BrandHeader extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'NO LEAN',
-              style: displayFont(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 1.6,
-              ),
-            ),
+            _BrandWordmark(ultra: visuals.ultraMode && !visuals.reduceMotion),
             const SizedBox(height: 2),
             Text(
               'PERSONAL OVERRIDE SYSTEM',
@@ -62,6 +55,44 @@ class BrandHeader extends StatelessWidget {
             ],
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _BrandWordmark extends StatelessWidget {
+  const _BrandWordmark({required this.ultra});
+
+  final bool ultra;
+
+  @override
+  Widget build(BuildContext context) {
+    final mainStyle = displayFont(
+      fontSize: 15,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1.6,
+    );
+    if (!ultra) return Text('NO LEAN', style: mainStyle);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          left: -1.5,
+          top: .8,
+          child: Text(
+            'NO LEAN',
+            style: mainStyle.copyWith(color: magenta.withValues(alpha: .7)),
+          ),
+        ),
+        Positioned(
+          left: 1.5,
+          top: -.8,
+          child: Text(
+            'NO LEAN',
+            style: mainStyle.copyWith(color: cyan.withValues(alpha: .72)),
+          ),
+        ),
+        Text('NO LEAN', style: mainStyle),
       ],
     );
   }

@@ -15,12 +15,15 @@ class NoLeanApp extends ConsumerWidget {
     final effectScale = switch (recovery.intensity.index) {
       0 => .62,
       2 => 1.42,
+      3 => 2.05,
       _ => 1.0,
     };
 
     AppFeedback.configure(
       soundEnabled: recovery.soundscape,
+      vibrationEnabled: recovery.hapticFeedback,
       effectIntensity: recovery.intensity.index,
+      soundEffect: recovery.feedbackSound,
     );
 
     return MaterialApp(

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../domain/craving_entry.dart';
 import '../domain/effect_intensity.dart';
@@ -32,7 +33,7 @@ class RecoveryController extends ChangeNotifier {
   RecoveryController({RelapseLockGateway? relapseLock})
     : _relapseLock = relapseLock ?? SecureRelapseLockService.instance;
 
-  static const stateVersion = 4;
+  static const stateVersion = 5;
 
   final RelapseLockGateway _relapseLock;
   SharedPreferences? _prefs;
@@ -52,6 +53,8 @@ class RecoveryController extends ChangeNotifier {
   bool highContrast = false;
   bool riskReminders = true;
   bool soundscape = false;
+  bool hapticFeedback = true;
+  FeedbackSoundEffect feedbackSound = FeedbackSoundEffect.neonPulse;
   bool requirePinAfterRelapse = false;
   EffectIntensity intensity = EffectIntensity.standard;
   bool isLoaded = false;
@@ -63,7 +66,7 @@ class RecoveryController extends ChangeNotifier {
       try {
         final map = Map<String, dynamic>.from(jsonDecode(stored) as Map);
         final version = map['stateVersion'] as int?;
-        if (version == stateVersion || version == 3) {
+        if (version == stateVersion || version == 4 || version == 3) {
           _restoreState(map);
           if (version == 3) {
             await _migrateLegacyPin(map['pin'] as String?);
@@ -116,6 +119,11 @@ class RecoveryController extends ChangeNotifier {
     highContrast = map['highContrast'] as bool? ?? highContrast;
     riskReminders = map['riskReminders'] as bool? ?? riskReminders;
     soundscape = map['soundscape'] as bool? ?? soundscape;
+    hapticFeedback = map['hapticFeedback'] as bool? ?? hapticFeedback;
+    feedbackSound = FeedbackSoundEffect.values.firstWhere(
+      (value) => value.name == map['feedbackSound'],
+      orElse: () => FeedbackSoundEffect.neonPulse,
+    );
     requirePinAfterRelapse =
         map['requirePinAfterRelapse'] as bool? ?? requirePinAfterRelapse;
     intensity = EffectIntensity.values.firstWhere(
@@ -169,6 +177,8 @@ class RecoveryController extends ChangeNotifier {
       'highContrast': highContrast,
       'riskReminders': riskReminders,
       'soundscape': soundscape,
+      'hapticFeedback': hapticFeedback,
+      'feedbackSound': feedbackSound.name,
       'requirePinAfterRelapse': requirePinAfterRelapse,
       'intensity': intensity.name,
     };
@@ -305,12 +315,29 @@ class RecoveryController extends ChangeNotifier {
       case 'soundscape':
         soundscape = value as bool;
         break;
+      case 'hapticFeedback':
+        hapticFeedback = value as bool;
+        break;
+      case 'feedbackSound':
+        feedbackSound = value as FeedbackSoundEffect;
+        break;
       case 'intensity':
         intensity = value as EffectIntensity;
         break;
     }
     await _save();
     if (key == 'riskReminders') await _syncRiskNotifications();
+  }
+
+  Future<void> updateFeedbackPreferences({
+    required bool soundEnabled,
+    required bool vibrationEnabled,
+    required FeedbackSoundEffect soundEffect,
+  }) async {
+    soundscape = soundEnabled;
+    hapticFeedback = vibrationEnabled;
+    feedbackSound = soundEffect;
+    await _save();
   }
 
   Future<void> _syncRiskNotifications() async {

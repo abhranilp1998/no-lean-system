@@ -29,6 +29,8 @@ class NoLeanVisuals extends ThemeExtension<NoLeanVisuals> {
   final double effectScale;
   final Color secondaryTextColor;
 
+  bool get ultraMode => effectScale >= 1.75;
+
   static NoLeanVisuals of(BuildContext context) =>
       Theme.of(context).extension<NoLeanVisuals>() ?? fallback;
 
@@ -52,7 +54,7 @@ class NoLeanVisuals extends ThemeExtension<NoLeanVisuals> {
 
   Duration motionDuration(Duration duration) {
     if (reduceMotion) return Duration.zero;
-    final speed = effectScale.clamp(.75, 1.3);
+    final speed = effectScale.clamp(.65, 1.8);
     return Duration(microseconds: (duration.inMicroseconds / speed).round());
   }
 

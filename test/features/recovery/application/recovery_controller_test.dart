@@ -1,7 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:no_lean/core/services/feedback_preferences.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
+import 'package:no_lean/features/recovery/domain/effect_intensity.dart';
 import 'package:no_lean/features/recovery/services/relapse_lock_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -97,6 +99,44 @@ void main() {
     expect(controller.requirePinAfterRelapse, isTrue);
     expect(migratedState['stateVersion'], RecoveryController.stateVersion);
     expect(migratedState.containsKey('pin'), isFalse);
+  });
+
+  test('version 4 settings migrate and feedback preferences persist', () async {
+    SharedPreferences.setMockInitialValues({
+      'recovery_state': jsonEncode({
+        'stateVersion': 4,
+        'lastDose': DateTime(2026, 8, 1).toIso8601String(),
+        'riskReminders': false,
+        'soundscape': true,
+        'intensity': 'aggressive',
+      }),
+    });
+    final controller = RecoveryController(
+      relapseLock: _FakeRelapseLockGateway(),
+    );
+
+    await controller.load();
+
+    expect(controller.soundscape, isTrue);
+    expect(controller.hapticFeedback, isTrue);
+    expect(controller.feedbackSound, FeedbackSoundEffect.neonPulse);
+
+    await controller.updateFeedbackPreferences(
+      soundEnabled: true,
+      vibrationEnabled: false,
+      soundEffect: FeedbackSoundEffect.reactorPing,
+    );
+    await controller.setSetting('intensity', EffectIntensity.ultra);
+
+    final preferences = await SharedPreferences.getInstance();
+    final migratedState =
+        jsonDecode(preferences.getString('recovery_state')!)
+            as Map<String, dynamic>;
+    expect(migratedState['stateVersion'], 5);
+    expect(migratedState['soundscape'], isTrue);
+    expect(migratedState['hapticFeedback'], isFalse);
+    expect(migratedState['feedbackSound'], 'reactorPing');
+    expect(migratedState['intensity'], 'ultra');
   });
 }
 

@@ -16,6 +16,8 @@ NO LEAN is an offline-first Android recovery tracker built around a direct inter
 - Configurable risk windows with high-visibility scheduled interrupts.
 - Trigger, time-of-day, weekly, and SOS-completion recovery insights.
 - Native Android home-screen widget with live clean-time seconds and streak.
+- Four-level visual effects with an Ultra glyph/glitch overdrive mode.
+- Independent tap sounds, vibration, and selectable cyberpunk sound profiles.
 - Generated cyberpunk icon at `assets/no_lean_icon.png` and Android launcher resource.
 
 ## Run

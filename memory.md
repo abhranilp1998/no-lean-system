@@ -30,7 +30,7 @@ Read it before changing code.
 
 ## Recovery and security rules
 
-- Persisted recovery JSON is currently state version 4. Any schema change must
+- Persisted recovery JSON is currently state version 5. Any schema change must
   increment the version and provide a non-destructive migration in
   `RecoveryController.load()`.
 - The relapse PIN belongs only in `flutter_secure_storage`. Never put PIN text,
@@ -48,8 +48,14 @@ Read it before changing code.
 - Use `AppDialog` for app-styled modal content.
 - Use `AppFeedback` for haptic/sound feedback. Shared controls already emit
   interaction feedback, so avoid adding a second haptic for the same tap.
+- Tap sound, vibration, and sound profile are independent persisted settings.
+  Android custom UI tones use the `no_lean/feedback` channel; keep a safe
+  platform fallback and never make feedback failures block an action.
 - Runtime appearance values come from `NoLeanVisuals.of(context)`. Wire new
   effects to high contrast, reduce motion, and effect intensity.
+- `EffectIntensity.ultra` is the deliberate visual maximum: animated glyphs,
+  chromatic glitches, bloom, and faster motion. `Reduce motion` must always
+  override Ultra animation without erasing the neon visual hierarchy.
 
 ## Android bridge contract
 

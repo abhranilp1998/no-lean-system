@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/app_feedback.dart';
 import '../../../core/services/app_notice.dart';
+import '../../../core/services/feedback_preferences.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../recovery/application/recovery_controller.dart';
@@ -264,6 +266,108 @@ Future<void> showRiskWindowDialog(BuildContext context, WidgetRef ref) async {
   }
 }
 
+Future<void> showFeedbackDialog(BuildContext context, WidgetRef ref) async {
+  final recovery = ref.read(recoveryProvider);
+  var soundEnabled = recovery.soundscape;
+  var vibrationEnabled = recovery.hapticFeedback;
+  var soundEffect = recovery.feedbackSound;
+
+  final preferences = await showDialog<FeedbackPreferences>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (_, setState) => AppDialog(
+        title: 'TAP FEEDBACK MATRIX',
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Sound and vibration are independent. Select a signal and audition it before saving.',
+                style: TextStyle(color: muted, fontSize: 11, height: 1.45),
+              ),
+              const SizedBox(height: 12),
+              _FeedbackToggle(
+                icon: Icons.volume_up_outlined,
+                title: 'SOUND EFFECTS',
+                subtitle: soundEnabled ? soundEffect.label : 'MUTED',
+                value: soundEnabled,
+                color: magenta,
+                onChanged: (value) {
+                  setState(() => soundEnabled = value);
+                  if (value) AppFeedback.previewSound(soundEffect);
+                },
+              ),
+              const SizedBox(height: 8),
+              _FeedbackToggle(
+                icon: Icons.vibration,
+                title: 'VIBRATION',
+                subtitle: vibrationEnabled ? 'TACTILE SIGNAL ON' : 'DISABLED',
+                value: vibrationEnabled,
+                color: cyan,
+                onChanged: (value) {
+                  setState(() => vibrationEnabled = value);
+                  if (value) AppFeedback.previewVibration();
+                },
+              ),
+              const SizedBox(height: 18),
+              Text('SOUND PROFILE', style: microStyle.copyWith(color: purple)),
+              const SizedBox(height: 8),
+              for (final effect in FeedbackSoundEffect.values)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 7),
+                  child: _SoundEffectOption(
+                    effect: effect,
+                    selected: soundEffect == effect,
+                    onTap: () {
+                      setState(() {
+                        soundEffect = effect;
+                        soundEnabled = true;
+                      });
+                      AppFeedback.previewSound(effect);
+                    },
+                  ),
+                ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.pop(
+                    dialogContext,
+                    FeedbackPreferences(
+                      soundEnabled: soundEnabled,
+                      vibrationEnabled: vibrationEnabled,
+                      soundEffect: soundEffect,
+                    ),
+                  ),
+                  icon: const Icon(Icons.save_outlined, size: 17),
+                  label: const Text('SAVE FEEDBACK'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  if (preferences == null || !context.mounted) return;
+  await ref
+      .read(recoveryProvider)
+      .updateFeedbackPreferences(
+        soundEnabled: preferences.soundEnabled,
+        vibrationEnabled: preferences.vibrationEnabled,
+        soundEffect: preferences.soundEffect,
+      );
+  if (context.mounted) {
+    AppNotice.show(
+      context,
+      'FEEDBACK UPDATED // SOUND ${preferences.soundEnabled ? preferences.soundEffect.label : 'OFF'} // VIBRATION ${preferences.vibrationEnabled ? 'ON' : 'OFF'}',
+      type: AppNoticeType.success,
+    );
+  }
+}
+
 Future<void> showPinSetup(
   BuildContext context,
   WidgetRef ref,
@@ -428,6 +532,111 @@ class _TimeSelector extends StatelessWidget {
         const SizedBox(width: 8),
         const Icon(Icons.edit_outlined, size: 16),
       ],
+    ),
+  );
+}
+
+class _FeedbackToggle extends StatelessWidget {
+  const _FeedbackToggle({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.color,
+    required this.onChanged,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final Color color;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: value ? .1 : .035),
+      borderRadius: BorderRadius.circular(13),
+      border: Border.all(color: color.withValues(alpha: value ? .55 : .16)),
+    ),
+    child: SwitchListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 11),
+      secondary: Icon(icon, color: value ? color : muted, size: 20),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(fontSize: 9.5, color: value ? color : muted),
+      ),
+      value: value,
+      activeThumbColor: color,
+      onChanged: onChanged,
+    ),
+  );
+}
+
+class _SoundEffectOption extends StatelessWidget {
+  const _SoundEffectOption({
+    required this.effect,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final FeedbackSoundEffect effect;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(12),
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: selected
+            ? purple.withValues(alpha: .16)
+            : Colors.white.withValues(alpha: .025),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: selected
+              ? purple.withValues(alpha: .75)
+              : muted.withValues(alpha: .18),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            selected ? Icons.radio_button_checked : Icons.radio_button_off,
+            color: selected ? purple : muted,
+            size: 17,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  effect.label,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  effect.description,
+                  style: const TextStyle(color: muted, fontSize: 9.5),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.play_arrow_rounded, color: selected ? cyan : muted),
+        ],
+      ),
     ),
   );
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/feedback_preferences.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/brand_header.dart';
@@ -89,13 +90,13 @@ class SettingsScreen extends ConsumerWidget {
               onChanged: (value) =>
                   ref.read(recoveryProvider).setSetting('highContrast', value),
             ),
-            SettingToggle(
-              title: 'Tactile sound cues',
-              subtitle: 'Pair cyberpunk UI haptics with system audio cues',
-              value: recovery.soundscape,
+            SettingAction(
+              icon: Icons.graphic_eq,
+              title: 'Tap feedback',
+              subtitle:
+                  '${recovery.soundscape ? recovery.feedbackSound.label : 'SOUND OFF'} // VIBRATION ${recovery.hapticFeedback ? 'ON' : 'OFF'}',
               color: magenta,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('soundscape', value),
+              onTap: () => showFeedbackDialog(context, ref),
             ),
             SettingIntensity(
               value: recovery.intensity,

@@ -1,1 +1,1 @@
-enum EffectIntensity { calm, standard, aggressive }
+enum EffectIntensity { calm, standard, aggressive, ultra }
