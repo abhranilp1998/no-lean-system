@@ -132,7 +132,7 @@ void main() {
     final migratedState =
         jsonDecode(preferences.getString('recovery_state')!)
             as Map<String, dynamic>;
-    expect(migratedState['stateVersion'], 5);
+    expect(migratedState['stateVersion'], 6);
     expect(migratedState['soundscape'], isTrue);
     expect(migratedState['hapticFeedback'], isFalse);
     expect(migratedState['feedbackSound'], 'reactorPing');
