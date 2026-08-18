@@ -27,6 +27,7 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
   int _remaining = 60;
   bool _finished = false;
   bool _sessionRecorded = false;
+  String? _selectedDebrief;
 
   @override
   void initState() {
@@ -57,12 +58,12 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
     super.dispose();
   }
 
-  Future<void> _recordSession({DateTime? completedAt}) async {
+  Future<void> _recordSession({DateTime? completedAt, String? debrief}) async {
     if (_sessionRecorded) return;
     _sessionRecorded = true;
     if (completedAt != null) AppFeedback.success();
     await _recovery.recordSosSession(
-      SosSession(startedAt: _startedAt, completedAt: completedAt),
+      SosSession(startedAt: _startedAt, completedAt: completedAt, debrief: debrief),
     );
   }
 
@@ -77,39 +78,58 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
         : _remaining > 15
         ? 'BREATHE OUT'
         : 'LET THE WAVE PASS';
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _SosPainter(
-                  _remaining,
-                  effectScale: visuals.effectScale,
-                  reduceMotion: visuals.reduceMotion,
+    return PopScope(
+      canPop: _remaining <= 45,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Breathe for at least 15 seconds before leaving.',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+              backgroundColor: red.withValues(alpha: .8),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _SosPainter(
+                    _remaining,
+                    effectScale: visuals.effectScale,
+                    reduceMotion: visuals.reduceMotion,
+                  ),
                 ),
               ),
-            ),
-            ListView(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
-              children: [
-                Row(
-                  children: [
-                    IconButton(
-                      onPressed: () {},
-                      icon: const Icon(Icons.close, color: Colors.transparent),
-                    ),
-                    const Spacer(),
-                    const StatusPill(label: 'SYSTEM OVERRIDE', color: red),
-                    const Spacer(),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close, color: red),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
+              ListView(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 28),
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        onPressed: () {},
+                        icon: const Icon(Icons.close, color: Colors.transparent),
+                      ),
+                      const Spacer(),
+                      const StatusPill(label: 'SYSTEM OVERRIDE', color: red),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: _remaining <= 45 ? () => Navigator.pop(context) : null,
+                        icon: Icon(
+                          Icons.close,
+                          color: _remaining <= 45 ? red : red.withValues(alpha: .3),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
                 Text(
                   'SOS MODE',
                   textAlign: TextAlign.center,
@@ -234,7 +254,7 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
                   ),
                 if (_finished) ...[
                   const Text(
-                    'You stayed for the wave. Lock in the next decision before you leave.',
+                    'You stayed for the wave. How are you feeling?',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: toxic,
@@ -244,11 +264,40 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _DebriefButton(
+                        label: 'BETTER',
+                        icon: Icons.arrow_downward,
+                        selected: _selectedDebrief == 'down',
+                        onTap: () => setState(() => _selectedDebrief = 'down'),
+                      ),
+                      const SizedBox(width: 8),
+                      _DebriefButton(
+                        label: 'SAME',
+                        icon: Icons.compare_arrows,
+                        selected: _selectedDebrief == 'same',
+                        onTap: () => setState(() => _selectedDebrief = 'same'),
+                      ),
+                      const SizedBox(width: 8),
+                      _DebriefButton(
+                        label: 'WORSE',
+                        icon: Icons.arrow_upward,
+                        selected: _selectedDebrief == 'worse',
+                        onTap: () => setState(() => _selectedDebrief = 'worse'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
                   GlowButton(
                     label: 'I WILL NOT BUY LEAN TODAY',
                     icon: Icons.lock_outline,
                     color: toxic,
                     onTap: () async {
+                      if (_selectedDebrief != null && !_sessionRecorded) {
+                        unawaited(_recordSession(completedAt: DateTime.now(), debrief: _selectedDebrief));
+                      }
                       await ref.read(recoveryProvider).pledge();
                       if (context.mounted) Navigator.pop(context);
                     },
@@ -259,7 +308,7 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 
@@ -296,4 +345,51 @@ class _SosPainter extends CustomPainter {
       oldDelegate.remaining != remaining ||
       oldDelegate.effectScale != effectScale ||
       oldDelegate.reduceMotion != reduceMotion;
+}
+
+class _DebriefButton extends StatelessWidget {
+  const _DebriefButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? toxic.withValues(alpha: .2) : Colors.white.withValues(alpha: .05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? toxic : Colors.white.withValues(alpha: .1),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: selected ? toxic : Colors.white54, size: 24),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? toxic : Colors.white54,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

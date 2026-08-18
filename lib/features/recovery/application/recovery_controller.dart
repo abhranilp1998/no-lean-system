@@ -56,6 +56,7 @@ class RecoveryController extends ChangeNotifier {
   List<String> reasons = List<String>.from(defaultReasons);
   List<String> reminderMessages = List<String>.from(defaultReminderMessages);
   RiskWindow riskWindow = const RiskWindow.defaultWindow();
+  int postSosWindowMinutes = 60; // Default 1 hour
   bool scanlines = true;
   bool reduceMotion = false;
   bool highContrast = false;
@@ -218,6 +219,7 @@ class RecoveryController extends ChangeNotifier {
     if (map['riskWindow'] != null) {
       riskWindow = RiskWindow.fromJson(map['riskWindow']);
     }
+    postSosWindowMinutes = map['postSosWindowMinutes'] as int? ?? postSosWindowMinutes;
     scanlines = map['scanlines'] as bool? ?? scanlines;
     reduceMotion = map['reduceMotion'] as bool? ?? reduceMotion;
     highContrast = map['highContrast'] as bool? ?? highContrast;
@@ -272,6 +274,7 @@ class RecoveryController extends ChangeNotifier {
       'reasons': reasons,
       'reminderMessages': reminderMessages,
       'riskWindow': riskWindow.toJson(),
+      'postSosWindowMinutes': postSosWindowMinutes,
       'scanlines': scanlines,
       'reduceMotion': reduceMotion,
       'highContrast': highContrast,
@@ -293,6 +296,19 @@ class RecoveryController extends ChangeNotifier {
     await _save();
   }
 
+  Future<void> clearRelapseCooldown(String reason) async {
+    relapseCooldownUntil = null;
+    if (events.isNotEmpty) {
+      final index = events.length - 1;
+      final metadata = Map<String, dynamic>.from(events[index].metadata);
+      metadata['debrief'] = reason;
+      events[index] = events[index].copyWith(metadata: metadata);
+    }
+    _recomputeDerivedState();
+    notifyListeners();
+    await _save();
+  }
+
   Future<void> deleteEvent(String id) async {
     events.removeWhere((e) => e.id == id);
     _recomputeDerivedState();
@@ -306,6 +322,17 @@ class RecoveryController extends ChangeNotifier {
       _recomputeDerivedState();
       await _save();
     }
+  }
+
+  Future<void> mergeImportedEvents(List<RecoveryEvent> importedEvents) async {
+    final existingIds = events.map((e) => e.id).toSet();
+    final newEvents = importedEvents.where((e) => !existingIds.contains(e.id));
+    
+    events.addAll(newEvents);
+    events.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    
+    _recomputeDerivedState();
+    await _save();
   }
 
   Future<void> pledge() async {
@@ -333,8 +360,19 @@ class RecoveryController extends ChangeNotifier {
       return authorization;
     }
 
-    await appendEvent(RecoveryEvent.create(type: RecoveryEventType.relapse));
-    relapseCooldownUntil = DateTime.now().add(Duration(minutes: cooldownMinutes));
+    final now = DateTime.now();
+    final lastSosComplete = events.reversed.firstWhere(
+      (e) => e.type == RecoveryEventType.sosComplete,
+      orElse: () => RecoveryEvent.create(type: RecoveryEventType.sosComplete, timestamp: DateTime.fromMillisecondsSinceEpoch(0)),
+    );
+    final isPostSos = lastSosComplete.timestamp.millisecondsSinceEpoch > 0 &&
+        now.difference(lastSosComplete.timestamp).inMinutes <= postSosWindowMinutes;
+
+    await appendEvent(RecoveryEvent.create(
+      type: RecoveryEventType.relapse,
+      metadata: {'postSos': isPostSos, 'streakLost': longestStreak},
+    ));
+    relapseCooldownUntil = now.add(Duration(minutes: cooldownMinutes));
     await _save();
     return ProtectedActionResult.completed;
   }
@@ -428,6 +466,12 @@ class RecoveryController extends ChangeNotifier {
     riskWindow = value;
     await _save();
     await _syncRiskNotifications();
+  }
+
+  Future<void> updatePostSosWindow(int minutes) async {
+    postSosWindowMinutes = minutes;
+    await _save();
+    _recomputeDerivedState();
   }
 
   Future<void> setSetting(String key, dynamic value) async {

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/core/services/feedback_preferences.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/domain/effect_intensity.dart';
+import 'package:no_lean/features/recovery/domain/recovery_event.dart';
 import 'package:no_lean/features/recovery/services/relapse_lock_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -137,6 +138,32 @@ void main() {
     expect(migratedState['hapticFeedback'], isFalse);
     expect(migratedState['feedbackSound'], 'reactorPing');
     expect(migratedState['intensity'], 'ultra');
+  });
+
+  test('relapseCooldownUntil and cooldownMinutes persist to storage', () async {
+    SharedPreferences.setMockInitialValues({
+      'recovery_state': jsonEncode({
+        'stateVersion': RecoveryController.stateVersion,
+        'events': [],
+        'relapseCooldownUntil': DateTime(2026, 8, 1).toIso8601String(),
+      }),
+    });
+    final controller = RecoveryController(
+      relapseLock: _FakeRelapseLockGateway(),
+    );
+
+    await controller.load();
+    expect(controller.relapseCooldownUntil, DateTime(2026, 8, 1));
+
+    controller.relapseCooldownUntil = DateTime(2026, 8, 2);
+    await controller.appendEvent(RecoveryEvent.create(type: RecoveryEventType.settingsChange)); // trigger save
+
+    final preferences = await SharedPreferences.getInstance();
+    final migratedState =
+        jsonDecode(preferences.getString('recovery_state')!)
+            as Map<String, dynamic>;
+    
+    expect(migratedState['relapseCooldownUntil'], DateTime(2026, 8, 2).toIso8601String());
   });
 }
 

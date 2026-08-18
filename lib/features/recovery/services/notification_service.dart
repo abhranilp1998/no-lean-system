@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -12,6 +13,9 @@ class NotificationService {
 
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  
+  final _actionStreamController = StreamController<String>.broadcast();
+  Stream<String> get actionStream => _actionStreamController.stream;
 
   Future<void> _initialize() async {
     if (_initialized) return;
@@ -30,6 +34,11 @@ class NotificationService {
       const InitializationSettings(
         android: AndroidInitializationSettings('no_lean_icon'),
       ),
+      onDidReceiveNotificationResponse: (response) {
+        if (response.actionId != null) {
+          _actionStreamController.add(response.actionId!);
+        }
+      },
     );
     final android = _plugin
         .resolvePlatformSpecificImplementation<
@@ -93,6 +102,26 @@ class NotificationService {
                 contentTitle: 'NO LEAN // RISK WINDOW',
                 summaryText: 'STAY MOVING. DO NOT BUY.',
               ),
+              actions: const [
+                AndroidNotificationAction(
+                  'action_sos',
+                  'OPEN SOS',
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+                AndroidNotificationAction(
+                  'action_safe',
+                  'I\'M SAFE',
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+                AndroidNotificationAction(
+                  'action_crave',
+                  'LOG CRAVING',
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+              ],
             ),
           ),
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,

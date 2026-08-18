@@ -10,6 +10,7 @@ import '../../recovery/application/recovery_provider.dart';
 import '../services/biometric_service.dart';
 import '../services/recovery_export_service.dart';
 import 'settings_dialogs.dart';
+import 'trusted_contact_dialog.dart';
 import 'widgets/settings_controls.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -56,10 +57,17 @@ class SettingsScreen extends ConsumerWidget {
             ),
             SettingAction(
               icon: Icons.ios_share,
-              title: 'Export recovery data',
+              title: 'Export backup',
               subtitle: 'Portable JSON file',
-              color: purple,
+              color: cyan,
               onTap: () => exportRecoveryData(context, recovery),
+            ),
+            SettingAction(
+              icon: Icons.download_outlined,
+              title: 'Import backup',
+              subtitle: 'Merge events from file',
+              color: purple,
+              onTap: () => importRecoveryData(context, ref),
             ),
           ],
         ),
@@ -108,6 +116,13 @@ class SettingsScreen extends ConsumerWidget {
         SettingsSection(
           title: 'PROTECTION',
           children: [
+            SettingAction(
+              icon: Icons.contact_emergency,
+              title: 'Trusted contact',
+              subtitle: 'Emergency dial during SOS',
+              color: cyan,
+              onTap: () => showTrustedContactDialog(context, ref),
+            ),
             SettingAction(
               icon: Icons.schedule,
               title: 'Risk window',

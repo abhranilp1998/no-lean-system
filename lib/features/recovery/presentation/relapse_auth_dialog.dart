@@ -8,10 +8,32 @@ Future<String?> showRelapsePinDialog(
   BuildContext context, {
   required String actionLabel,
 }) async {
-  final controller = TextEditingController();
-  final pin = await showDialog<String>(
+  return showDialog<String>(
     context: context,
-    builder: (dialogContext) => AppDialog(
+    builder: (dialogContext) => _RelapsePinDialog(actionLabel: actionLabel),
+  );
+}
+
+class _RelapsePinDialog extends StatefulWidget {
+  const _RelapsePinDialog({required this.actionLabel});
+  final String actionLabel;
+
+  @override
+  State<_RelapsePinDialog> createState() => _RelapsePinDialogState();
+}
+
+class _RelapsePinDialogState extends State<_RelapsePinDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppDialog(
       title: 'RELAPSE LOCK // PIN',
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -23,14 +45,14 @@ Future<String?> showRelapsePinDialog(
           ),
           const SizedBox(height: 16),
           TextField(
-            controller: controller,
+            controller: _controller,
             autofocus: true,
             obscureText: true,
             keyboardType: TextInputType.number,
             maxLength: 6,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             onSubmitted: (value) {
-              if (value.length >= 4) Navigator.pop(dialogContext, value);
+              if (value.length >= 4) Navigator.pop(context, value);
             },
             decoration: const InputDecoration(
               labelText: '4–6 digit PIN',
@@ -42,24 +64,22 @@ Future<String?> showRelapsePinDialog(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
+                onPressed: () => Navigator.pop(context),
                 child: const Text('CANCEL'),
               ),
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: () {
-                  if (controller.text.length < 4) return;
-                  Navigator.pop(dialogContext, controller.text);
+                  if (_controller.text.length < 4) return;
+                  Navigator.pop(context, _controller.text);
                 },
                 style: FilledButton.styleFrom(backgroundColor: magenta),
-                child: Text(actionLabel),
+                child: Text(widget.actionLabel),
               ),
             ],
           ),
         ],
       ),
-    ),
-  );
-  controller.dispose();
-  return pin;
+    );
+  }
 }

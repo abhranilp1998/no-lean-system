@@ -7,9 +7,14 @@ import '../core/theme/no_lean_visuals.dart';
 import '../core/widgets/animated_background.dart';
 import '../features/cravings/presentation/cravings_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
+import '../features/emergency/presentation/emergency_screen.dart';
 import '../features/progress/presentation/progress_screen.dart';
 import '../features/recovery/application/recovery_provider.dart';
+import '../features/recovery/domain/recovery_event.dart';
+import '../features/recovery/presentation/relapse_cooldown_screen.dart';
+import '../features/recovery/services/notification_service.dart';
 import '../features/settings/presentation/settings_screen.dart';
+import '../features/timeline/presentation/timeline_screen.dart';
 
 class Shell extends ConsumerStatefulWidget {
   const Shell({super.key});
@@ -21,10 +26,42 @@ class Shell extends ConsumerStatefulWidget {
 class _ShellState extends ConsumerState<Shell> {
   int _selectedTab = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    NotificationService.instance.actionStream.listen(_handleNotificationAction);
+  }
+
+  void _handleNotificationAction(String actionId) {
+    if (!mounted) return;
+    final recovery = ref.read(recoveryProvider);
+    
+    // If in cooldown, most actions just redirect to the cooldown screen anyway,
+    // but SOS can still open.
+    if (actionId == 'action_sos') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const EmergencyScreen()),
+      );
+    } else if (actionId == 'action_safe') {
+      if (recovery.relapseCooldownUntil == null) {
+        recovery.appendEvent(RecoveryEvent.create(type: RecoveryEventType.cleanCheckIn));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Safe check-in recorded.'), backgroundColor: toxic),
+        );
+      }
+    } else if (actionId == 'action_crave') {
+      if (recovery.relapseCooldownUntil == null) {
+        setState(() => _selectedTab = 1); // Switch to cravings tab
+      }
+    }
+  }
+
   static const _pages = [
     DashboardScreen(),
     CravingsScreen(),
     ProgressScreen(),
+    TimelineScreen(),
     SettingsScreen(),
   ];
 
@@ -32,6 +69,8 @@ class _ShellState extends ConsumerState<Shell> {
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
     final visuals = NoLeanVisuals.of(context);
+    final isInCooldown = recovery.relapseCooldownUntil != null;
+
     return Scaffold(
       body: Stack(
         children: [
@@ -40,11 +79,15 @@ class _ShellState extends ConsumerState<Shell> {
             scanlines: recovery.scanlines && !recovery.reduceMotion,
           ),
           SafeArea(
-            child: IndexedStack(index: _selectedTab, children: _pages),
+            child: isInCooldown
+                ? const RelapseCooldownScreen()
+                : IndexedStack(index: _selectedTab, children: _pages),
           ),
         ],
       ),
-      bottomNavigationBar: DecoratedBox(
+      bottomNavigationBar: isInCooldown
+          ? null
+          : DecoratedBox(
         decoration: BoxDecoration(
           border: Border(
             top: BorderSide(
@@ -82,6 +125,11 @@ class _ShellState extends ConsumerState<Shell> {
               icon: Icon(Icons.insights_outlined),
               selectedIcon: Icon(Icons.insights, color: cyan),
               label: 'Progress',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.history_outlined),
+              selectedIcon: Icon(Icons.history, color: cyan),
+              label: 'Timeline',
             ),
             NavigationDestination(
               icon: Icon(Icons.tune_outlined),

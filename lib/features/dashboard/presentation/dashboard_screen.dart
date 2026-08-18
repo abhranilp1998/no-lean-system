@@ -12,6 +12,7 @@ import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/glow_button.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/stat_card.dart';
+import '../../recovery/domain/event_derived_state.dart';
 import '../../../core/widgets/status_pill.dart';
 import '../../cravings/presentation/craving_dialog.dart';
 import '../../emergency/presentation/emergency_screen.dart';
@@ -158,6 +159,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ],
           ),
           const SizedBox(height: 22),
+          Text('ADAPTIVE INSIGHT', style: eyebrowStyle.copyWith(color: magenta)),
+          const SizedBox(height: 10),
+          _RiskSuggestionCard(events: recovery.events),
+          const SizedBox(height: 22),
           Text('FAST INTERRUPTS', style: eyebrowStyle.copyWith(color: muted)),
           const SizedBox(height: 10),
           Row(
@@ -240,6 +245,51 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RiskSuggestionCard extends StatelessWidget {
+  const _RiskSuggestionCard({required this.events});
+  
+  final List<dynamic> events;
+
+  @override
+  Widget build(BuildContext context) {
+    // We cast to List<RecoveryEvent> because the import is available.
+    // wait, RecoveryEvent is from domain
+    final highRisk = computeHighRiskHours(events as dynamic); // Type hack to avoid another import if needed, but we imported event_derived_state.dart
+    
+    if (highRisk.isEmpty) {
+      return const GlassCard(
+        accent: magenta,
+        child: Text(
+          'Log more cravings to unlock personalized risk window suggestions.',
+          style: TextStyle(color: muted, fontSize: 12, height: 1.4),
+        ),
+      );
+    }
+    
+    final topHours = highRisk.take(2).map((h) => '${h.toString().padLeft(2, '0')}:00').join(' & ');
+    return GlassCard(
+      accent: magenta,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.psychology, color: magenta, size: 18),
+              const SizedBox(width: 8),
+              Text('HIGH RISK DETECTED', style: microStyle.copyWith(color: magenta)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Based on your logs, you are most vulnerable around $topHours. Consider updating your risk window in Settings.',
+            style: const TextStyle(fontSize: 12, height: 1.4),
           ),
         ],
       ),
