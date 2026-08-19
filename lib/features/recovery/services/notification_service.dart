@@ -13,39 +13,45 @@ class NotificationService {
 
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
-  
+  bool _permissionRequested = false;
+
   final _actionStreamController = StreamController<String>.broadcast();
   Stream<String> get actionStream => _actionStreamController.stream;
 
-  Future<void> _initialize() async {
-    if (_initialized) return;
-    try {
-      final zone = await const MethodChannel(
-        'no_lean/timezone',
-      ).invokeMethod<String>('get');
-      if (zone != null) {
-        tz.setLocalLocation(tz.getLocation(zone));
+  Future<void> _initialize({required bool requestPermission}) async {
+    if (!_initialized) {
+      try {
+        final zone = await const MethodChannel(
+          'no_lean/timezone',
+        ).invokeMethod<String>('get');
+        if (zone != null) {
+          tz.setLocalLocation(tz.getLocation(zone));
+        }
+      } catch (_) {
+        // UTC is the safe fallback if a platform does not expose its IANA zone.
       }
-    } catch (_) {
-      // UTC is the safe fallback if a platform does not expose its IANA zone.
+
+      await _plugin.initialize(
+        const InitializationSettings(
+          android: AndroidInitializationSettings('no_lean_icon'),
+        ),
+        onDidReceiveNotificationResponse: (response) {
+          if (response.actionId != null) {
+            _actionStreamController.add(response.actionId!);
+          }
+        },
+      );
+      _initialized = true;
     }
 
-    await _plugin.initialize(
-      const InitializationSettings(
-        android: AndroidInitializationSettings('no_lean_icon'),
-      ),
-      onDidReceiveNotificationResponse: (response) {
-        if (response.actionId != null) {
-          _actionStreamController.add(response.actionId!);
-        }
-      },
-    );
-    final android = _plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
-    await android?.requestNotificationsPermission();
-    _initialized = true;
+    if (requestPermission && !_permissionRequested) {
+      final android = _plugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      await android?.requestNotificationsPermission();
+      _permissionRequested = true;
+    }
   }
 
   Future<void> scheduleRiskWindow(
@@ -53,7 +59,7 @@ class NotificationService {
     required RiskWindow riskWindow,
   }) async {
     try {
-      await _initialize();
+      await _initialize(requestPermission: true);
       await _cancelScheduled();
       if (messages.isEmpty) return;
 
@@ -93,7 +99,7 @@ class NotificationService {
               ledColor: cyan,
               enableVibration: true,
               playSound: true,
-              visibility: NotificationVisibility.public,
+              visibility: NotificationVisibility.private,
               category: AndroidNotificationCategory.reminder,
               ticker: 'NO LEAN // HOLD THE LINE',
               subText: '${riskWindow.label} // PERSONAL OVERRIDE',
@@ -135,7 +141,8 @@ class NotificationService {
 
   Future<void> cancelRiskWindow() async {
     try {
-      await _initialize();
+      // Cancellation does not require permission and Android can service it
+      // without initializing the notification callback pipeline first.
       await _cancelScheduled();
     } catch (_) {
       // Notifications are optional on tests and unsupported platforms.

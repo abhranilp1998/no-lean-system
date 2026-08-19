@@ -61,9 +61,8 @@ Future<void> showReminderDialog(BuildContext context, WidgetRef ref) async {
 Future<void> showSpendDialog(BuildContext context, WidgetRef ref) async {
   final updatedSpend = await showDialog<double>(
     context: context,
-    builder: (dialogContext) => _SpendDialog(
-      initialSpend: ref.read(recoveryProvider).dailySpend,
-    ),
+    builder: (dialogContext) =>
+        _SpendDialog(initialSpend: ref.read(recoveryProvider).dailySpend),
   );
   if (updatedSpend != null && context.mounted) {
     await ref.read(recoveryProvider).updateDailySpend(updatedSpend);
@@ -74,6 +73,62 @@ Future<void> showSpendDialog(BuildContext context, WidgetRef ref) async {
         type: AppNoticeType.success,
       );
     }
+  }
+}
+
+Future<void> showCooldownDialog(BuildContext context, WidgetRef ref) async {
+  final recovery = ref.read(recoveryProvider);
+  const choices = [5, 10, 15, 20, 30, 60];
+  var selected = choices.contains(recovery.cooldownMinutes)
+      ? recovery.cooldownMinutes
+      : 15;
+  final updated = await showDialog<int>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (_, setState) => AppDialog(
+        title: 'RELAPSE RESET WINDOW',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Choose how long the app holds the reset screen before asking what led to the relapse.',
+              style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final minutes in choices)
+                  ChoiceChip(
+                    label: Text('$minutes MIN'),
+                    selected: selected == minutes,
+                    onSelected: (_) => setState(() => selected = minutes),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, selected),
+                child: const Text('SAVE RESET WINDOW'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (updated == null || !context.mounted) return;
+  await ref.read(recoveryProvider).updateCooldownMinutes(updated);
+  if (context.mounted) {
+    AppNotice.show(
+      context,
+      'RESET WINDOW UPDATED // $updated MINUTES.',
+      type: AppNoticeType.success,
+    );
   }
 }
 
@@ -176,7 +231,9 @@ class _SpendDialogState extends State<_SpendDialog> {
   void initState() {
     super.initState();
     _controller = TextEditingController(
-      text: widget.initialSpend > 0 ? widget.initialSpend.round().toString() : '',
+      text: widget.initialSpend > 0
+          ? widget.initialSpend.round().toString()
+          : '',
     );
   }
 
@@ -685,4 +742,3 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
     );
   }
 }
-

@@ -75,7 +75,41 @@ class NoLeanApp extends ConsumerWidget {
         }
         return result;
       },
-      home: const Shell(),
+      home: recovery.isLoaded ? const Shell() : const _LoadingScreen(),
+    );
+  }
+}
+
+class _LoadingScreen extends StatelessWidget {
+  const _LoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'NO LEAN',
+              style: TextStyle(
+                fontFamily: 'NoLeanDisplay',
+                color: cyan,
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 2,
+              ),
+            ),
+            SizedBox(height: 18),
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(color: cyan, strokeWidth: 2),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

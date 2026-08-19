@@ -7,6 +7,8 @@ class HomeWidgetService {
     required DateTime lastDose,
     required String cleanTime,
     required int streak,
+    required bool isRiskWindow,
+    required bool hasPledgedToday,
   }) async {
     try {
       await const MethodChannel(
@@ -15,6 +17,8 @@ class HomeWidgetService {
         'lastDoseEpochMillis': lastDose.millisecondsSinceEpoch,
         'cleanTime': cleanTime,
         'streak': '$streak DAYS',
+        'isRiskWindow': isRiskWindow,
+        'hasPledgedToday': hasPledgedToday,
       });
     } catch (_) {
       // Widget support is optional on unsupported launchers; core tracking stays local.

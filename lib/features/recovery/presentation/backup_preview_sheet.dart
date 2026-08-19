@@ -5,7 +5,13 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../services/backup_service.dart';
 
-class BackupPreviewSheet extends StatelessWidget {
+class BackupImportChoice {
+  const BackupImportChoice({required this.restorePreferences});
+
+  final bool restorePreferences;
+}
+
+class BackupPreviewSheet extends StatefulWidget {
   const BackupPreviewSheet({
     required this.preview,
     required this.onConfirm,
@@ -13,24 +19,37 @@ class BackupPreviewSheet extends StatelessWidget {
   });
 
   final BackupPreview preview;
-  final VoidCallback onConfirm;
+  final ValueChanged<bool> onConfirm;
 
-  static Future<bool> show(BuildContext context, BackupPreview preview) async {
-    final result = await showModalBottomSheet<bool>(
+  static Future<BackupImportChoice?> show(
+    BuildContext context,
+    BackupPreview preview,
+  ) {
+    return showModalBottomSheet<BackupImportChoice>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (context) => BackupPreviewSheet(
         preview: preview,
-        onConfirm: () => Navigator.pop(context, true),
+        onConfirm: (restorePreferences) => Navigator.pop(
+          context,
+          BackupImportChoice(restorePreferences: restorePreferences),
+        ),
       ),
     );
-    return result ?? false;
   }
+
+  @override
+  State<BackupPreviewSheet> createState() => _BackupPreviewSheetState();
+}
+
+class _BackupPreviewSheetState extends State<BackupPreviewSheet> {
+  bool _restorePreferences = false;
 
   @override
   Widget build(BuildContext context) {
     final format = DateFormat('MMM d, yyyy - h:mm a');
+    final preview = widget.preview;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -81,17 +100,35 @@ class BackupPreviewSheet extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             const Text(
-              'Importing this backup will merge these events with your current history. Duplicate events will be ignored. Your current settings (theme, feedback, PIN) will NOT be overwritten.',
+              'Events are merged without replacing matching IDs. The encrypted relapse PIN and trusted contact are never included in a backup.',
               style: TextStyle(color: muted, fontSize: 12, height: 1.5),
             ),
+            if (preview.hasPreferences) ...[
+              const SizedBox(height: 12),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _restorePreferences,
+                activeColor: cyan,
+                title: const Text(
+                  'Restore personalizations',
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                ),
+                subtitle: const Text(
+                  'Reasons, reminders, spend, risk window, cooldown, and interface preferences.',
+                  style: TextStyle(color: muted, fontSize: 11),
+                ),
+                onChanged: (value) =>
+                    setState(() => _restorePreferences = value ?? false),
+              ),
+            ],
             const SizedBox(height: 24),
             FilledButton(
-              onPressed: onConfirm,
+              onPressed: () => widget.onConfirm(_restorePreferences),
               child: const Text('MERGE BACKUP DATA'),
             ),
             const SizedBox(height: 12),
             TextButton(
-              onPressed: () => Navigator.pop(context, false),
+              onPressed: () => Navigator.pop(context),
               child: const Text('CANCEL', style: TextStyle(color: muted)),
             ),
           ],

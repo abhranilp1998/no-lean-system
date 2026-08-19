@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/theme/app_theme.dart';
@@ -15,6 +16,8 @@ import 'widgets/settings_controls.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
+
+  static final Future<PackageInfo> _packageInfo = PackageInfo.fromPlatform();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -130,6 +133,13 @@ class SettingsScreen extends ConsumerWidget {
               color: purple,
               onTap: () => showRiskWindowDialog(context, ref),
             ),
+            SettingAction(
+              icon: Icons.hourglass_bottom,
+              title: 'Relapse reset window',
+              subtitle: '${recovery.cooldownMinutes} minute guided pause',
+              color: magenta,
+              onTap: () => showCooldownDialog(context, ref),
+            ),
             SettingToggle(
               title: 'Risk-window reminders',
               subtitle: 'Enable ${recovery.riskWindow.label} interrupts',
@@ -156,7 +166,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ],
         ),
-        const SettingsSection(
+        SettingsSection(
           title: 'ABOUT THE BUILD',
           children: [
             GlassCard(
@@ -164,15 +174,24 @@ class SettingsScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'NO LEAN  /  MVP 01',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  FutureBuilder<PackageInfo>(
+                    future: _packageInfo,
+                    builder: (context, snapshot) {
+                      final info = snapshot.data;
+                      final version = info == null
+                          ? 'VERSION LOADING'
+                          : 'VERSION ${info.version} (${info.buildNumber})';
+                      return Text(
+                        'NO LEAN  /  $version',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      );
+                    },
                   ),
-                  SizedBox(height: 8),
-                  Text(
+                  const SizedBox(height: 8),
+                  const Text(
                     'Offline-first recovery tracking with a direct voice, local data, a risk-window interrupt, SOS breathing timer, data export, and Android widget support.',
                     style: TextStyle(color: muted, fontSize: 11, height: 1.45),
                   ),

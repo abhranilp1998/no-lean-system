@@ -1,20 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../core/services/app_notice.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_dialog.dart';
 import '../../../../core/widgets/glow_button.dart';
 import '../services/trusted_contact_service.dart';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
-final trustedContactServiceProvider = Provider<TrustedContactService>((ref) {
-  return TrustedContactService(const FlutterSecureStorage());
-});
-
-Future<void> showTrustedContactDialog(BuildContext context, WidgetRef ref) async {
+Future<void> showTrustedContactDialog(
+  BuildContext context,
+  WidgetRef ref,
+) async {
   final service = ref.read(trustedContactServiceProvider);
-  final current = await service.getContact();
+  TrustedContact? current;
+  try {
+    current = await service.getContact();
+  } catch (_) {
+    if (context.mounted) {
+      AppNotice.show(
+        context,
+        'CONTACT STORE UNAVAILABLE // TRY AGAIN.',
+        type: AppNoticeType.error,
+      );
+    }
+    return;
+  }
 
   if (!context.mounted) return;
 
@@ -46,6 +56,7 @@ class _TrustedContactDialog extends StatefulWidget {
 class _TrustedContactDialogState extends State<_TrustedContactDialog> {
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
+  String? _error;
 
   @override
   void initState() {
@@ -64,10 +75,20 @@ class _TrustedContactDialogState extends State<_TrustedContactDialog> {
   Future<void> _save() async {
     final name = _nameController.text.trim();
     final phone = _phoneController.text.trim();
-    if (name.isEmpty && phone.isEmpty) {
-      await widget.service.clearContact();
-    } else {
-      await widget.service.saveContact(name, phone);
+    try {
+      if (name.isEmpty && phone.isEmpty) {
+        await widget.service.clearContact();
+      } else {
+        await widget.service.saveContact(name, phone);
+      }
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+      return;
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Could not securely save this contact.');
+      }
+      return;
     }
     if (mounted) Navigator.pop(context);
   }
@@ -86,7 +107,7 @@ class _TrustedContactDialogState extends State<_TrustedContactDialog> {
           const SizedBox(height: 16),
           TextField(
             controller: _nameController,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Name',
               hintText: 'e.g. Sponsor or Partner',
             ),
@@ -95,9 +116,10 @@ class _TrustedContactDialogState extends State<_TrustedContactDialog> {
           TextField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Phone Number',
               hintText: '+1 555 123 4567',
+              errorText: _error,
             ),
           ),
           const SizedBox(height: 24),

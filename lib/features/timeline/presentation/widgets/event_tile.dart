@@ -3,8 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/glass_card.dart';
+import '../../../recovery/application/recovery_controller.dart';
 import '../../../recovery/application/recovery_provider.dart';
 import '../../../recovery/domain/recovery_event.dart';
+import '../../../recovery/presentation/relapse_auth_dialog.dart';
 import 'event_edit_dialog.dart';
 
 class EventTile extends ConsumerWidget {
@@ -52,11 +54,12 @@ class EventTile extends ConsumerWidget {
                   if (event.metadata.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     _MetadataView(metadata: event.metadata),
-                  ]
+                  ],
                 ],
               ),
             ),
-            _ActionsMenu(event: event),
+            if (event.type != RecoveryEventType.recoveryStart)
+              _ActionsMenu(event: event),
           ],
         ),
       ),
@@ -65,6 +68,8 @@ class EventTile extends ConsumerWidget {
 
   (String, IconData, Color) _getEventDetails(RecoveryEvent event) {
     switch (event.type) {
+      case RecoveryEventType.recoveryStart:
+        return ('RECOVERY STARTED', Icons.flag, toxic);
       case RecoveryEventType.pledge:
         return ('PLEDGE', Icons.shield, toxic);
       case RecoveryEventType.craving:
@@ -136,8 +141,10 @@ class _ActionsMenu extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isEditable = event.type == RecoveryEventType.craving ||
+    final isEditable =
+        event.type == RecoveryEventType.craving ||
         event.type == RecoveryEventType.sosComplete;
+    final canDelete = event.type != RecoveryEventType.recoveryStart;
 
     return PopupMenuButton<String>(
       icon: const Icon(Icons.more_vert, color: muted, size: 20),
@@ -154,16 +161,17 @@ class _ActionsMenu extends ConsumerWidget {
               ],
             ),
           ),
-        const PopupMenuItem(
-          value: 'delete',
-          child: Row(
-            children: [
-              Icon(Icons.delete, color: red, size: 18),
-              SizedBox(width: 8),
-              Text('Delete Event', style: TextStyle(color: Colors.white)),
-            ],
+        if (canDelete)
+          const PopupMenuItem(
+            value: 'delete',
+            child: Row(
+              children: [
+                Icon(Icons.delete, color: red, size: 18),
+                SizedBox(width: 8),
+                Text('Delete Event', style: TextStyle(color: Colors.white)),
+              ],
+            ),
           ),
-        ),
       ],
       onSelected: (val) async {
         if (val == 'delete') {
@@ -171,7 +179,10 @@ class _ActionsMenu extends ConsumerWidget {
             context: context,
             builder: (ctx) => AlertDialog(
               backgroundColor: panelRaised,
-              title: const Text('Delete Event', style: TextStyle(color: Colors.white)),
+              title: const Text(
+                'Delete Event',
+                style: TextStyle(color: Colors.white),
+              ),
               content: const Text(
                 'Are you sure? This may permanently alter your computed progress stats.',
                 style: TextStyle(color: Colors.white70),
@@ -189,7 +200,31 @@ class _ActionsMenu extends ConsumerWidget {
             ),
           );
           if (confirm == true) {
-            await ref.read(recoveryProvider).deleteEvent(event.id);
+            final recovery = ref.read(recoveryProvider);
+            var result = await recovery.deleteEvent(id: event.id);
+            if (result == ProtectedActionResult.authenticationRequired &&
+                context.mounted) {
+              final pin = await showRelapsePinDialog(
+                context,
+                actionLabel: 'AUTHORIZE DELETE',
+              );
+              if (pin == null) return;
+              result = await recovery.deleteEvent(
+                id: event.id,
+                pin: pin,
+                tryBiometrics: false,
+              );
+            }
+            if (result == ProtectedActionResult.denied && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Authentication failed. History was not changed.',
+                  ),
+                  backgroundColor: red,
+                ),
+              );
+            }
           }
         } else if (val == 'edit') {
           await showDialog(

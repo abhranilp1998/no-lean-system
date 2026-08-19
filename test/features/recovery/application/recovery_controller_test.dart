@@ -5,11 +5,34 @@ import 'package:no_lean/core/services/feedback_preferences.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/domain/effect_intensity.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
+import 'package:no_lean/features/recovery/domain/sos_session.dart';
 import 'package:no_lean/features/recovery/services/relapse_lock_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  test(
+    'fresh install creates a neutral baseline and a zero-day streak',
+    () async {
+      final before = DateTime.now();
+      final controller = RecoveryController(
+        relapseLock: _FakeRelapseLockGateway(),
+      );
+
+      await controller.load();
+
+      expect(controller.events, hasLength(1));
+      expect(controller.events.single.type, RecoveryEventType.recoveryStart);
+      expect(controller.lastDose.isBefore(before), isFalse);
+      expect(controller.streak, 0);
+      expect(controller.riskReminders, isFalse);
+    },
+  );
 
   test(
     'relapse lock rejects an invalid PIN without resetting clean time',
@@ -140,12 +163,48 @@ void main() {
     expect(migratedState['intensity'], 'ultra');
   });
 
+  test(
+    'legacy lastDose migrates as baseline without inventing a relapse',
+    () async {
+      final baseline = DateTime(2026, 8, 1, 8, 30);
+      SharedPreferences.setMockInitialValues({
+        'recovery_state': jsonEncode({
+          'stateVersion': 5,
+          'lastDose': baseline.toIso8601String(),
+          'longestStreak': 31,
+          'riskReminders': false,
+        }),
+      });
+      final controller = RecoveryController(
+        relapseLock: _FakeRelapseLockGateway(),
+      );
+
+      await controller.load();
+
+      expect(controller.lastDose, baseline);
+      expect(
+        controller.events.where(
+          (event) => event.type == RecoveryEventType.recoveryStart,
+        ),
+        hasLength(1),
+      );
+      expect(
+        controller.events.where(
+          (event) => event.type == RecoveryEventType.relapse,
+        ),
+        isEmpty,
+      );
+      expect(controller.longestStreak, 31);
+    },
+  );
+
   test('relapseCooldownUntil and cooldownMinutes persist to storage', () async {
     SharedPreferences.setMockInitialValues({
       'recovery_state': jsonEncode({
         'stateVersion': RecoveryController.stateVersion,
         'events': [],
         'relapseCooldownUntil': DateTime(2026, 8, 1).toIso8601String(),
+        'cooldownMinutes': 30,
       }),
     });
     final controller = RecoveryController(
@@ -154,16 +213,186 @@ void main() {
 
     await controller.load();
     expect(controller.relapseCooldownUntil, DateTime(2026, 8, 1));
+    expect(controller.cooldownMinutes, 30);
 
     controller.relapseCooldownUntil = DateTime(2026, 8, 2);
-    await controller.appendEvent(RecoveryEvent.create(type: RecoveryEventType.settingsChange)); // trigger save
+    await controller.updateCooldownMinutes(20);
 
     final preferences = await SharedPreferences.getInstance();
     final migratedState =
         jsonDecode(preferences.getString('recovery_state')!)
             as Map<String, dynamic>;
-    
-    expect(migratedState['relapseCooldownUntil'], DateTime(2026, 8, 2).toIso8601String());
+
+    expect(
+      migratedState['relapseCooldownUntil'],
+      DateTime(2026, 8, 2).toIso8601String(),
+    );
+    expect(migratedState['cooldownMinutes'], 20);
+  });
+
+  test('malformed current event state is preserved before reset', () async {
+    final stored = jsonEncode({
+      'stateVersion': RecoveryController.stateVersion,
+      'events': [42],
+      'riskReminders': false,
+    });
+    SharedPreferences.setMockInitialValues({'recovery_state': stored});
+    final controller = RecoveryController(
+      relapseLock: _FakeRelapseLockGateway(),
+    );
+
+    await controller.load();
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('recovery_state_rejected_backup'), stored);
+    expect(controller.events, hasLength(1));
+    expect(controller.events.single.type, RecoveryEventType.recoveryStart);
+  });
+
+  test(
+    'relapse debrief is attached to the relapse that opened cooldown',
+    () async {
+      final controller = RecoveryController(
+        relapseLock: _FakeRelapseLockGateway(),
+      );
+      final relapse = RecoveryEvent.create(type: RecoveryEventType.relapse);
+      controller.events.addAll([
+        relapse,
+        RecoveryEvent.create(type: RecoveryEventType.settingsChange),
+      ]);
+      controller.relapseCooldownEventId = relapse.id;
+      controller.relapseCooldownUntil = DateTime.now();
+
+      await controller.clearRelapseCooldown('stress');
+
+      expect(
+        controller.events
+            .firstWhere((event) => event.id == relapse.id)
+            .metadata,
+        containsPair('debrief', 'stress'),
+      );
+      expect(
+        controller.events
+            .firstWhere(
+              (event) => event.type == RecoveryEventType.settingsChange,
+            )
+            .metadata,
+        isEmpty,
+      );
+    },
+  );
+
+  test('history deletion uses relapse-lock authentication', () async {
+    final lock = _FakeRelapseLockGateway();
+    final controller = RecoveryController(relapseLock: lock);
+    final baseline = RecoveryEvent.create(
+      type: RecoveryEventType.recoveryStart,
+    );
+    final craving = RecoveryEvent.create(
+      type: RecoveryEventType.craving,
+      metadata: {'intensity': 7, 'trigger': 'Stress', 'note': ''},
+    );
+    controller.events.addAll([baseline, craving]);
+    await controller.enableRelapseLock('2468');
+
+    expect(
+      await controller.deleteEvent(
+        id: craving.id,
+        pin: '1111',
+        tryBiometrics: false,
+      ),
+      ProtectedActionResult.denied,
+    );
+    expect(controller.events.any((event) => event.id == craving.id), isTrue);
+    expect(
+      await controller.deleteEvent(
+        id: craving.id,
+        pin: '2468',
+        tryBiometrics: false,
+      ),
+      ProtectedActionResult.completed,
+    );
+    expect(controller.events.any((event) => event.id == craving.id), isFalse);
+    expect(
+      await controller.deleteEvent(
+        id: baseline.id,
+        pin: '2468',
+        tryBiometrics: false,
+      ),
+      ProtectedActionResult.denied,
+    );
+  });
+
+  test('completed SOS session preserves its linked debrief', () async {
+    final controller = RecoveryController(
+      relapseLock: _FakeRelapseLockGateway(),
+    );
+    final started = DateTime(2026, 8, 20, 20);
+
+    await controller.recordSosSession(
+      SosSession(
+        id: 'sos-test',
+        startedAt: started,
+        completedAt: started.add(const Duration(minutes: 1)),
+        debrief: 'down',
+      ),
+    );
+
+    final completion = controller.events.singleWhere(
+      (event) => event.type == RecoveryEventType.sosComplete,
+    );
+    expect(completion.metadata['startId'], 'sos-test');
+    expect(completion.metadata['debrief'], 'down');
+    expect(controller.sosSessions.single.debrief, 'down');
+  });
+
+  test('live SOS is persisted at start and completion is idempotent', () async {
+    final controller = RecoveryController(
+      relapseLock: _FakeRelapseLockGateway(),
+    );
+    final started = DateTime(2026, 8, 20, 21);
+
+    final id = await controller.startSosSession(
+      id: 'live-sos',
+      startedAt: started,
+    );
+    expect(id, 'live-sos');
+    expect(controller.sosSessions.single.isCompleted, isFalse);
+
+    final completed = started.add(const Duration(minutes: 1));
+    await controller.completeSosSession(startId: id, completedAt: completed);
+    await controller.completeSosSession(
+      startId: id,
+      completedAt: completed,
+      debrief: 'same',
+    );
+
+    expect(
+      controller.events.where(
+        (event) => event.type == RecoveryEventType.sosComplete,
+      ),
+      hasLength(1),
+    );
+    expect(controller.sosSessions.single.debrief, 'same');
+  });
+
+  test('SOS start rejects an ID already owned by another event', () async {
+    final controller = RecoveryController(
+      relapseLock: _FakeRelapseLockGateway(),
+    );
+    controller.events.add(
+      RecoveryEvent.fromJson({
+        'id': 'shared-id',
+        'type': RecoveryEventType.craving.name,
+        'timestamp': DateTime(2026, 8, 20, 21).toIso8601String(),
+        'metadata': {'intensity': 5, 'trigger': 'stress'},
+      }),
+    );
+
+    await expectLater(
+      controller.startSosSession(id: 'shared-id'),
+      throwsStateError,
+    );
   });
 }
 

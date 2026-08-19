@@ -1,15 +1,28 @@
 import '../../../core/utils/formatters.dart';
 import 'recovery_event.dart';
 
-/// Finds the most recent relapse event timestamp.
-/// If no relapse events exist, returns a very old DateTime (epoch) indicating 'never relapsed in the log'.
+/// Finds the most recent counter-reset timestamp. A recovery-start event is a
+/// neutral baseline and a relapse is a subsequent reset.
 DateTime computeLastDose(List<RecoveryEvent> events) {
-  final relapses = events.where((e) => e.type == RecoveryEventType.relapse).toList();
-  if (relapses.isEmpty) {
-    return DateTime.fromMillisecondsSinceEpoch(0);
+  final relapses = events
+      .where((event) => event.type == RecoveryEventType.relapse)
+      .toList();
+  if (relapses.isNotEmpty) {
+    relapses.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return relapses.first.timestamp;
   }
-  relapses.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-  return relapses.first.timestamp;
+
+  final baselines = events
+      .where((event) => event.type == RecoveryEventType.recoveryStart)
+      .toList();
+  if (baselines.isNotEmpty) {
+    baselines.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return baselines.first.timestamp;
+  }
+  if (events.isEmpty) return DateTime.now();
+  return events
+      .map((event) => event.timestamp)
+      .reduce((a, b) => a.isBefore(b) ? a : b);
 }
 
 /// Builds the clean days map.
@@ -19,10 +32,11 @@ Map<String, bool> computeCleanDaysMap(List<RecoveryEvent> events) {
   final map = <String, bool>{};
 
   for (final event in events) {
-    final key = dateKey(event.timestamp);
+    final key = dateKey(event.timestamp.toLocal());
     if (event.type == RecoveryEventType.relapse) {
       map[key] = false;
-    } else if (event.type == RecoveryEventType.pledge || event.type == RecoveryEventType.cleanCheckIn) {
+    } else if (event.type == RecoveryEventType.pledge ||
+        event.type == RecoveryEventType.cleanCheckIn) {
       if (map[key] != false) {
         map[key] = true;
       }
@@ -38,7 +52,7 @@ int computeCurrentStreak(List<RecoveryEvent> events) {
   final cleanMap = computeCleanDaysMap(events);
   int streak = 0;
   DateTime current = DateTime.now();
-  
+
   while (true) {
     final key = dateKey(current);
     if (cleanMap[key] == true) {
@@ -48,28 +62,41 @@ int computeCurrentStreak(List<RecoveryEvent> events) {
       break;
     }
   }
-  
+
   return streak;
 }
 
 /// Finds the longest consecutive run of clean days across all time.
 int computeLongestStreak(List<RecoveryEvent> events) {
   final cleanMap = computeCleanDaysMap(events);
-  if (cleanMap.isEmpty || events.isEmpty) return 0;
-  
+  final historicalBest = events
+      .where(
+        (event) =>
+            event.type == RecoveryEventType.milestone ||
+            event.type == RecoveryEventType.relapse,
+      )
+      .map(
+        (event) => event.type == RecoveryEventType.milestone
+            ? event.metadata['days']
+            : event.metadata['streakLost'],
+      )
+      .whereType<num>()
+      .fold<int>(0, (best, days) => days.round() > best ? days.round() : best);
+  if (cleanMap.isEmpty || events.isEmpty) return historicalBest;
+
   DateTime minDate = events.first.timestamp;
   DateTime maxDate = events.first.timestamp;
   for (final e in events) {
     if (e.timestamp.isBefore(minDate)) minDate = e.timestamp;
     if (e.timestamp.isAfter(maxDate)) maxDate = e.timestamp;
   }
-  
+
   int longest = 0;
   int currentStreak = 0;
-  
+
   DateTime current = DateTime(minDate.year, minDate.month, minDate.day);
   final end = DateTime(maxDate.year, maxDate.month, maxDate.day);
-  
+
   while (!current.isAfter(end)) {
     final key = dateKey(current);
     if (cleanMap[key] == true) {
@@ -82,29 +109,37 @@ int computeLongestStreak(List<RecoveryEvent> events) {
     }
     current = current.add(const Duration(days: 1));
   }
-  
-  return longest;
+
+  return longest > historicalBest ? longest : historicalBest;
 }
 
 /// Counts completed SOS sessions that were NOT followed by a relapse within [windowMinutes].
 /// Returns a record with `held` (sessions that didn't lead to relapse) and `total` (all completed SOS sessions).
-({int held, int total}) computePostSosHoldRate(List<RecoveryEvent> events, int windowMinutes) {
-  final sosCompleteEvents = events.where((e) => e.type == RecoveryEventType.sosComplete).toList();
-  final relapseEvents = events.where((e) => e.type == RecoveryEventType.relapse).toList();
-  
+({int held, int total}) computePostSosHoldRate(
+  List<RecoveryEvent> events,
+  int windowMinutes,
+) {
+  final sosCompleteEvents = events
+      .where((e) => e.type == RecoveryEventType.sosComplete)
+      .toList();
+  final relapseEvents = events
+      .where((e) => e.type == RecoveryEventType.relapse)
+      .toList();
+
   int held = 0;
   int total = sosCompleteEvents.length;
-  
+
   for (final sos in sosCompleteEvents) {
     final limit = sos.timestamp.add(Duration(minutes: windowMinutes));
-    final hasRelapse = relapseEvents.any((r) => 
-        r.timestamp.isAfter(sos.timestamp) && r.timestamp.isBefore(limit));
-    
+    final hasRelapse = relapseEvents.any(
+      (r) => r.timestamp.isAfter(sos.timestamp) && r.timestamp.isBefore(limit),
+    );
+
     if (!hasRelapse) {
       held++;
     }
   }
-  
+
   return (held: held, total: total);
 }
 
@@ -112,16 +147,17 @@ int computeLongestStreak(List<RecoveryEvent> events) {
 /// Useful for scheduling adaptive reminders.
 List<int> computeHighRiskHours(List<RecoveryEvent> events) {
   final hourCounts = <int, int>{};
-  
+
   for (final event in events) {
-    if (event.type == RecoveryEventType.craving || event.type == RecoveryEventType.relapse) {
+    if (event.type == RecoveryEventType.craving ||
+        event.type == RecoveryEventType.relapse) {
       final hour = event.timestamp.hour;
       hourCounts[hour] = (hourCounts[hour] ?? 0) + 1;
     }
   }
-  
+
   final sortedEntries = hourCounts.entries.toList()
     ..sort((a, b) => b.value.compareTo(a.value));
-    
+
   return sortedEntries.map((e) => e.key).toList();
 }

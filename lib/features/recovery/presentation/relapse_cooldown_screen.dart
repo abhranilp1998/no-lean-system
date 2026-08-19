@@ -103,7 +103,9 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(vertical: 24),
                 decoration: BoxDecoration(
-                  border: Border.all(color: red.withValues(alpha: visuals.accentOpacity(.3))),
+                  border: Border.all(
+                    color: red.withValues(alpha: visuals.accentOpacity(.3)),
+                  ),
                   borderRadius: BorderRadius.circular(16),
                   color: red.withValues(alpha: .05),
                 ),
@@ -130,7 +132,7 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
                   flex: 2,
                   child: ListView.separated(
                     itemCount: recovery.reasons.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
                     itemBuilder: (context, index) => GlassCard(
                       accent: muted,
                       child: Text(
@@ -229,6 +231,11 @@ class _DebriefView extends StatelessWidget {
                 label: 'SOCIAL PRESSURE',
                 onTap: () => onComplete('social'),
               ),
+              const SizedBox(height: 16),
+              _DebriefButton(
+                label: 'OTHER / MIXED',
+                onTap: () => onComplete('other_or_mixed'),
+              ),
             ],
           ),
         ),
@@ -245,7 +252,6 @@ class _DebriefButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visuals = NoLeanVisuals.of(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),

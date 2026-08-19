@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">NO LEAN</string>
+    <string name="widget_title">NO LEAN // LIVE</string>
+    <string name="widget_status_stable">SYSTEM STABLE</string>
+    <string name="widget_status_risk">RISK WINDOW</string>
+    <string name="widget_counter_placeholder">0d 00:00</string>
+    <string name="widget_streak_placeholder">OPEN APP TO SYNC</string>
+    <string name="widget_pledge_pending">PLEDGE OPEN</string>
+    <string name="widget_pledge_complete">TODAY LOCKED</string>
+    <string name="widget_action_sos">SOS</string>
+    <string name="widget_action_craving">LOG CRAVING</string>
+    <string name="widget_description">Recovery timer with SOS and craving actions</string>
+    <plurals name="widget_clean_days">
+        <item quantity="one">%d DAY CLEAN</item>
+        <item quantity="other">%d DAYS CLEAN</item>
+    </plurals>
+</resources>

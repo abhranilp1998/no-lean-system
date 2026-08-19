@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/glow_button.dart';
+import '../../../recovery/application/recovery_controller.dart';
 import '../../../recovery/application/recovery_provider.dart';
 import '../../../recovery/domain/recovery_event.dart';
+import '../../../recovery/presentation/relapse_auth_dialog.dart';
 
 class EventEditDialog extends ConsumerStatefulWidget {
   const EventEditDialog({required this.event, super.key});
@@ -23,7 +25,9 @@ class _EventEditDialogState extends ConsumerState<EventEditDialog> {
   void initState() {
     super.initState();
     const encoder = JsonEncoder.withIndent('  ');
-    _controller = TextEditingController(text: encoder.convert(widget.event.metadata));
+    _controller = TextEditingController(
+      text: encoder.convert(widget.event.metadata),
+    );
   }
 
   @override
@@ -32,17 +36,44 @@ class _EventEditDialogState extends ConsumerState<EventEditDialog> {
     super.dispose();
   }
 
-  void _save() {
+  Future<void> _save() async {
     try {
       final decoded = jsonDecode(_controller.text);
-      if (decoded is! Map<String, dynamic>) {
+      if (decoded is! Map) {
         setState(() => _error = 'Must be a valid JSON object');
         return;
       }
-      ref.read(recoveryProvider).editEventMetadata(widget.event.id, decoded);
-      Navigator.pop(context);
-    } catch (e) {
-      setState(() => _error = 'Invalid JSON: $e');
+      final metadata = Map<String, dynamic>.from(decoded);
+      final recovery = ref.read(recoveryProvider);
+      var result = await recovery.editEventMetadata(
+        id: widget.event.id,
+        metadata: metadata,
+      );
+      if (result == ProtectedActionResult.authenticationRequired && mounted) {
+        final pin = await showRelapsePinDialog(
+          context,
+          actionLabel: 'AUTHORIZE EDIT',
+        );
+        if (pin == null) return;
+        result = await recovery.editEventMetadata(
+          id: widget.event.id,
+          metadata: metadata,
+          pin: pin,
+          tryBiometrics: false,
+        );
+      }
+      if (!mounted) return;
+      if (result == ProtectedActionResult.completed) {
+        Navigator.pop(context);
+      } else {
+        setState(
+          () => _error = 'Authentication failed. History was not changed.',
+        );
+      }
+    } on FormatException catch (error) {
+      setState(() => _error = error.message);
+    } catch (error) {
+      setState(() => _error = 'Invalid JSON: $error');
     }
   }
 
@@ -62,7 +93,7 @@ class _EventEditDialogState extends ConsumerState<EventEditDialog> {
               color: Colors.black.withValues(alpha: .5),
               blurRadius: 20,
               offset: const Offset(0, 10),
-            )
+            ),
           ],
         ),
         child: Column(
@@ -71,7 +102,11 @@ class _EventEditDialogState extends ConsumerState<EventEditDialog> {
           children: [
             Text(
               'EDIT METADATA',
-              style: displayFont(fontSize: 16, fontWeight: FontWeight.bold, color: cyan),
+              style: displayFont(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: cyan,
+              ),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -82,17 +117,25 @@ class _EventEditDialogState extends ConsumerState<EventEditDialog> {
             TextField(
               controller: _controller,
               maxLines: 8,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: Colors.white),
+              style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 12,
+                color: Colors.white,
+              ),
               decoration: InputDecoration(
                 filled: true,
                 fillColor: Colors.black45,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.white.withValues(alpha: .1)),
+                  borderSide: BorderSide(
+                    color: Colors.white.withValues(alpha: .1),
+                  ),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: BorderSide(color: Colors.white.withValues(alpha: .1)),
+                  borderSide: BorderSide(
+                    color: Colors.white.withValues(alpha: .1),
+                  ),
                 ),
                 errorText: _error,
               ),
