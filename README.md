@@ -34,6 +34,11 @@ The debug APK is produced at `build/app/outputs/flutter-apk/app-debug.apk` after
 flutter build apk --debug
 ```
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the production gate and planned functionality,
+accessibility, and UI/UX direction.
+
 The visual system bundles a condensed display face (`NoLeanDisplay`) and a monospace terminal face (`NoLeanMono`) under `assets/fonts/`, so the look does not depend on network font loading at runtime.
 
 ## Project structure
