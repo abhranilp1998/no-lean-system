@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/app_feedback.dart';
 import '../../../core/services/app_notice.dart';
+import '../../../core/services/save_action.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -13,61 +14,23 @@ import '../../recovery/domain/risk_window.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
 
 Future<void> showReasonsDialog(BuildContext context, WidgetRef ref) async {
-  final controllers = ref
-      .read(recoveryProvider)
-      .reasons
-      .map((text) => TextEditingController(text: text))
-      .toList();
   final updatedReasons = await showDialog<List<String>>(
     context: context,
-    builder: (dialogContext) => AppDialog(
+    builder: (dialogContext) => _StringListDialog(
       title: 'WHY YOU ARE DONE',
-      child: StatefulBuilder(
-        builder: (_, setState) => SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final controller in controllers)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
-                  child: TextField(
-                    controller: controller,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      labelText: 'Reason',
-                    ),
-                  ),
-                ),
-              TextButton.icon(
-                onPressed: () =>
-                    setState(() => controllers.add(TextEditingController())),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('ADD REASON'),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () {
-                    Navigator.pop(
-                      dialogContext,
-                      controllers.map((item) => item.text).toList(),
-                    );
-                  },
-                  child: const Text('SAVE REASONS'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      initialItems: ref.read(recoveryProvider).reasons,
+      itemLabel: 'Reason',
+      buttonLabel: 'SAVE REASONS',
+      maxLines: 1,
     ),
   );
-  for (final controller in controllers) {
-    controller.dispose();
-  }
   if (updatedReasons != null && context.mounted) {
-    await ref.read(recoveryProvider).updateReasons(updatedReasons);
+    if (!await saveAction(
+      context,
+      () => ref.read(recoveryProvider).updateReasons(updatedReasons),
+    )) {
+      return;
+    }
     if (context.mounted) {
       AppNotice.show(
         context,
@@ -79,62 +42,23 @@ Future<void> showReasonsDialog(BuildContext context, WidgetRef ref) async {
 }
 
 Future<void> showReminderDialog(BuildContext context, WidgetRef ref) async {
-  final controllers = ref
-      .read(recoveryProvider)
-      .reminderMessages
-      .map((text) => TextEditingController(text: text))
-      .toList();
   final updatedMessages = await showDialog<List<String>>(
     context: context,
-    builder: (dialogContext) => AppDialog(
+    builder: (dialogContext) => _StringListDialog(
       title: 'RISK-WINDOW MESSAGES',
-      child: StatefulBuilder(
-        builder: (_, setState) => SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final controller in controllers)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 9),
-                  child: TextField(
-                    controller: controller,
-                    maxLines: 2,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      labelText: 'Reminder',
-                    ),
-                  ),
-                ),
-              TextButton.icon(
-                onPressed: () =>
-                    setState(() => controllers.add(TextEditingController())),
-                icon: const Icon(Icons.add, size: 16),
-                label: const Text('ADD MESSAGE'),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () {
-                    Navigator.pop(
-                      dialogContext,
-                      controllers.map((item) => item.text).toList(),
-                    );
-                  },
-                  child: const Text('SAVE MESSAGES'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      initialItems: ref.read(recoveryProvider).reminderMessages,
+      itemLabel: 'Reminder',
+      buttonLabel: 'SAVE MESSAGES',
+      maxLines: 2,
     ),
   );
-  for (final controller in controllers) {
-    controller.dispose();
-  }
   if (updatedMessages != null && context.mounted) {
-    await ref.read(recoveryProvider).updateReminders(updatedMessages);
+    if (!await saveAction(
+      context,
+      () => ref.read(recoveryProvider).updateReminders(updatedMessages),
+    )) {
+      return;
+    }
     if (context.mounted) {
       AppNotice.show(
         context,
@@ -146,19 +70,204 @@ Future<void> showReminderDialog(BuildContext context, WidgetRef ref) async {
 }
 
 Future<void> showSpendDialog(BuildContext context, WidgetRef ref) async {
-  final recovery = ref.read(recoveryProvider);
-  final controller = TextEditingController(
-    text: recovery.dailySpend > 0 ? recovery.dailySpend.round().toString() : '',
-  );
   final updatedSpend = await showDialog<double>(
     context: context,
-    builder: (dialogContext) => AppDialog(
+    builder: (dialogContext) =>
+        _SpendDialog(initialSpend: ref.read(recoveryProvider).dailySpend),
+  );
+  if (updatedSpend != null && context.mounted) {
+    if (!await saveAction(
+      context,
+      () => ref.read(recoveryProvider).updateDailySpend(updatedSpend),
+    )) {
+      return;
+    }
+    if (context.mounted) {
+      AppNotice.show(
+        context,
+        'DAILY SPEND BASELINE UPDATED.',
+        type: AppNoticeType.success,
+      );
+    }
+  }
+}
+
+Future<void> showCooldownDialog(BuildContext context, WidgetRef ref) async {
+  final recovery = ref.read(recoveryProvider);
+  const choices = [5, 10, 15, 20, 30, 60];
+  var selected = choices.contains(recovery.cooldownMinutes)
+      ? recovery.cooldownMinutes
+      : 15;
+  final updated = await showDialog<int>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (_, setState) => AppDialog(
+        title: 'RELAPSE RESET WINDOW',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Choose how long the app holds the reset screen before asking what led to the relapse.',
+              style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final minutes in choices)
+                  ChoiceChip(
+                    label: Text('$minutes MIN'),
+                    selected: selected == minutes,
+                    onSelected: (_) => setState(() => selected = minutes),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, selected),
+                child: const Text('SAVE RESET WINDOW'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (updated == null || !context.mounted) return;
+  await ref.read(recoveryProvider).updateCooldownMinutes(updated);
+  if (context.mounted) {
+    AppNotice.show(
+      context,
+      'RESET WINDOW UPDATED // $updated MINUTES.',
+      type: AppNoticeType.success,
+    );
+  }
+}
+
+class _StringListDialog extends StatefulWidget {
+  const _StringListDialog({
+    required this.title,
+    required this.initialItems,
+    required this.itemLabel,
+    required this.buttonLabel,
+    required this.maxLines,
+  });
+
+  final String title;
+  final List<String> initialItems;
+  final String itemLabel;
+  final String buttonLabel;
+  final int maxLines;
+
+  @override
+  State<_StringListDialog> createState() => _StringListDialogState();
+}
+
+class _StringListDialogState extends State<_StringListDialog> {
+  late final List<TextEditingController> _controllers;
+
+  @override
+  void initState() {
+    super.initState();
+    _controllers = widget.initialItems
+        .map((text) => TextEditingController(text: text))
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppDialog(
+      title: widget.title,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final controller in _controllers)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 9),
+                child: TextField(
+                  controller: controller,
+                  maxLines: widget.maxLines,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: widget.itemLabel,
+                  ),
+                ),
+              ),
+            TextButton.icon(
+              onPressed: () =>
+                  setState(() => _controllers.add(TextEditingController())),
+              icon: const Icon(Icons.add, size: 16),
+              label: Text('ADD ${widget.itemLabel.toUpperCase()}'),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () {
+                  Navigator.pop(
+                    context,
+                    _controllers.map((item) => item.text).toList(),
+                  );
+                },
+                child: Text(widget.buttonLabel),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SpendDialog extends StatefulWidget {
+  const _SpendDialog({required this.initialSpend});
+  final double initialSpend;
+
+  @override
+  State<_SpendDialog> createState() => _SpendDialogState();
+}
+
+class _SpendDialogState extends State<_SpendDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.initialSpend > 0
+          ? widget.initialSpend.round().toString()
+          : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppDialog(
       title: 'AVERAGE DAILY SPEND',
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
-            controller: controller,
+            controller: _controller,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             decoration: const InputDecoration(
@@ -171,26 +280,15 @@ Future<void> showSpendDialog(BuildContext context, WidgetRef ref) async {
             alignment: Alignment.centerRight,
             child: FilledButton(
               onPressed: () => Navigator.pop(
-                dialogContext,
-                double.tryParse(controller.text) ?? 0,
+                context,
+                double.tryParse(_controller.text) ?? 0,
               ),
               child: const Text('SAVE'),
             ),
           ),
         ],
       ),
-    ),
-  );
-  controller.dispose();
-  if (updatedSpend != null && context.mounted) {
-    await ref.read(recoveryProvider).updateDailySpend(updatedSpend);
-    if (context.mounted) {
-      AppNotice.show(
-        context,
-        'DAILY SPEND BASELINE UPDATED.',
-        type: AppNoticeType.success,
-      );
-    }
+    );
   }
 }
 
@@ -256,7 +354,12 @@ Future<void> showRiskWindowDialog(BuildContext context, WidgetRef ref) async {
   );
 
   if (updatedWindow == null || !context.mounted) return;
-  await ref.read(recoveryProvider).updateRiskWindow(updatedWindow);
+  if (!await saveAction(
+    context,
+    () => ref.read(recoveryProvider).updateRiskWindow(updatedWindow),
+  )) {
+    return;
+  }
   if (context.mounted) {
     AppNotice.show(
       context,
@@ -352,13 +455,18 @@ Future<void> showFeedbackDialog(BuildContext context, WidgetRef ref) async {
   );
 
   if (preferences == null || !context.mounted) return;
-  await ref
-      .read(recoveryProvider)
-      .updateFeedbackPreferences(
-        soundEnabled: preferences.soundEnabled,
-        vibrationEnabled: preferences.vibrationEnabled,
-        soundEffect: preferences.soundEffect,
-      );
+  if (!await saveAction(
+    context,
+    () => ref
+        .read(recoveryProvider)
+        .updateFeedbackPreferences(
+          soundEnabled: preferences.soundEnabled,
+          vibrationEnabled: preferences.vibrationEnabled,
+          soundEffect: preferences.soundEffect,
+        ),
+  )) {
+    return;
+  }
   if (context.mounted) {
     AppNotice.show(
       context,
@@ -373,104 +481,62 @@ Future<void> showPinSetup(
   WidgetRef ref,
   bool enabled,
 ) async {
-  if (!enabled) {
-    final recovery = ref.read(recoveryProvider);
-    var result = await recovery.disableRelapseLock();
-    if (result == ProtectedActionResult.authenticationRequired &&
-        context.mounted) {
-      final pin = await showRelapsePinDialog(
+  try {
+    if (!enabled) {
+      final recovery = ref.read(recoveryProvider);
+      var result = await recovery.disableRelapseLock();
+      if (result == ProtectedActionResult.authenticationRequired &&
+          context.mounted) {
+        final pin = await showRelapsePinDialog(
+          context,
+          actionLabel: 'DISABLE LOCK',
+        );
+        if (pin == null) return;
+        result = await recovery.disableRelapseLock(
+          pin: pin,
+          tryBiometrics: false,
+        );
+      }
+      if (!context.mounted) return;
+      AppNotice.show(
         context,
-        actionLabel: 'DISABLE LOCK',
+        result == ProtectedActionResult.completed
+            ? 'RELAPSE LOCK DISABLED.'
+            : 'AUTHENTICATION FAILED // LOCK REMAINS ACTIVE.',
+        type: result == ProtectedActionResult.completed
+            ? AppNoticeType.info
+            : AppNoticeType.error,
       );
-      if (pin == null) return;
-      result = await recovery.disableRelapseLock(
-        pin: pin,
-        tryBiometrics: false,
-      );
+      return;
     }
-    if (!context.mounted) return;
-    AppNotice.show(
-      context,
-      result == ProtectedActionResult.completed
-          ? 'RELAPSE LOCK DISABLED.'
-          : 'AUTHENTICATION FAILED // LOCK REMAINS ACTIVE.',
-      type: result == ProtectedActionResult.completed
-          ? AppNoticeType.info
-          : AppNoticeType.error,
+    final enteredPin = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => const _PinSetupDialog(),
     );
-    return;
-  }
-  final pinController = TextEditingController();
-  final confirmController = TextEditingController();
-  String? validationMessage;
-  final enteredPin = await showDialog<String>(
-    context: context,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (_, setState) => AppDialog(
-        title: 'SET RELAPSE LOCK PIN',
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Biometrics will be attempted first. This encrypted PIN is your fallback.',
-              style: TextStyle(color: muted, fontSize: 12, height: 1.45),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: pinController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(labelText: '4–6 digit PIN'),
-            ),
-            TextField(
-              controller: confirmController,
-              obscureText: true,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: InputDecoration(
-                labelText: 'Confirm PIN',
-                errorText: validationMessage,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                onPressed: () {
-                  final pin = pinController.text;
-                  if (pin.length < 4 || pin != confirmController.text) {
-                    setState(() {
-                      validationMessage = pin.length < 4
-                          ? 'Use 4–6 digits.'
-                          : 'PIN values do not match.';
-                    });
-                    return;
-                  }
-                  Navigator.pop(dialogContext, pin);
-                },
-                child: const Text('ENABLE SECURE LOCK'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-  if (enteredPin != null && context.mounted) {
-    await ref.read(recoveryProvider).enableRelapseLock(enteredPin);
+    if (enteredPin != null && context.mounted) {
+      if (!await saveAction(
+        context,
+        () => ref.read(recoveryProvider).enableRelapseLock(enteredPin),
+      )) {
+        return;
+      }
+      if (context.mounted) {
+        AppNotice.show(
+          context,
+          'RELAPSE LOCK ARMED // BIOMETRIC + ENCRYPTED PIN.',
+          type: AppNoticeType.success,
+        );
+      }
+    }
+  } catch (_) {
     if (context.mounted) {
       AppNotice.show(
         context,
-        'RELAPSE LOCK ARMED // BIOMETRIC + ENCRYPTED PIN.',
-        type: AppNoticeType.success,
+        'Lock settings could not be changed. Please try again.',
+        type: AppNoticeType.error,
       );
     }
   }
-  pinController.dispose();
-  confirmController.dispose();
 }
 
 Future<int?> _pickTime(BuildContext context, int initialMinutes) async {
@@ -639,4 +705,81 @@ class _SoundEffectOption extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _PinSetupDialog extends StatefulWidget {
+  const _PinSetupDialog();
+
+  @override
+  State<_PinSetupDialog> createState() => _PinSetupDialogState();
+}
+
+class _PinSetupDialogState extends State<_PinSetupDialog> {
+  final _pinController = TextEditingController();
+  final _confirmController = TextEditingController();
+  String? _validationMessage;
+
+  @override
+  void dispose() {
+    _pinController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AppDialog(
+      title: 'SET RELAPSE LOCK PIN',
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Biometrics will be attempted first. This encrypted PIN is your fallback.',
+              style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _pinController,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(labelText: '4–6 digit PIN'),
+            ),
+            TextField(
+              controller: _confirmController,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: 'Confirm PIN',
+                errorText: _validationMessage,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: () {
+                  final pin = _pinController.text;
+                  if (pin.length < 4 || pin != _confirmController.text) {
+                    setState(() {
+                      _validationMessage = pin.length < 4
+                          ? 'Use 4–6 digits.'
+                          : 'PIN values do not match.';
+                    });
+                    return;
+                  }
+                  Navigator.pop(context, pin);
+                },
+                child: const Text('ENABLE SECURE LOCK'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

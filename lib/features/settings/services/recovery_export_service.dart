@@ -1,57 +1,21 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/app_notice.dart';
 import '../../recovery/application/recovery_controller.dart';
+import '../../recovery/application/recovery_provider.dart';
+import '../../recovery/presentation/backup_preview_sheet.dart';
+import '../../recovery/presentation/relapse_auth_dialog.dart';
+import '../../recovery/services/backup_service.dart';
 
 Future<void> exportRecoveryData(
   BuildContext context,
   RecoveryController recovery,
 ) async {
   try {
-    final directory = await getApplicationDocumentsDirectory();
-    final file = File('${directory.path}/no_lean_recovery_export.json');
-    await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert({
-        'exportedAt': DateTime.now().toIso8601String(),
-        'stateVersion': RecoveryController.stateVersion,
-        'lastDose': recovery.lastDose.toIso8601String(),
-        'lastPledge': recovery.lastPledge?.toIso8601String(),
-        'currentStreakDays': recovery.streak,
-        'longestStreakDays': recovery.longestStreak,
-        'dailySpend': recovery.dailySpend,
-        'cravings': recovery.cravings.map((entry) => entry.toJson()).toList(),
-        'sosSessions': recovery.sosSessions
-            .map((session) => session.toJson())
-            .toList(),
-        'reasons': recovery.reasons,
-        'reminderMessages': recovery.reminderMessages,
-        'cleanDays': recovery.cleanDays,
-        'riskWindow': recovery.riskWindow.toJson(),
-        'settings': {
-          'scanlines': recovery.scanlines,
-          'reduceMotion': recovery.reduceMotion,
-          'highContrast': recovery.highContrast,
-          'riskReminders': recovery.riskReminders,
-          'soundEffectsEnabled': recovery.soundscape,
-          'vibrationEnabled': recovery.hapticFeedback,
-          'soundEffect': recovery.feedbackSound.name,
-          'effectIntensity': recovery.intensity.name,
-          'relapseLockEnabled': recovery.requirePinAfterRelapse,
-        },
-        'securityNote':
-            'Relapse-lock PIN and biometric material are intentionally excluded.',
-      }),
-    );
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [XFile(file.path)],
-        subject: 'NO LEAN recovery export',
-      ),
+    await BackupService().exportBackup(
+      recovery.events,
+      preferences: recovery.portablePreferences,
     );
     if (context.mounted) {
       AppNotice.show(
@@ -65,6 +29,72 @@ Future<void> exportRecoveryData(
       AppNotice.show(
         context,
         'EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
+        type: AppNoticeType.error,
+      );
+    }
+  }
+}
+
+Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
+  try {
+    final service = BackupService();
+    final preview = await service.pickAndValidateBackup();
+
+    if (preview == null) return; // User canceled
+
+    if (!context.mounted) return;
+
+    final choice = await BackupPreviewSheet.show(context, preview);
+    if (choice != null && context.mounted) {
+      final recovery = ref.read(recoveryProvider);
+      var result = await recovery.mergeImportedEvents(
+        preview.events,
+        preferences: preview.preferences,
+        restorePreferences: choice.restorePreferences,
+      );
+      if (result == ProtectedActionResult.authenticationRequired &&
+          context.mounted) {
+        final pin = await showRelapsePinDialog(
+          context,
+          actionLabel: 'MERGE BACKUP',
+        );
+        if (pin == null) return;
+        result = await recovery.mergeImportedEvents(
+          preview.events,
+          preferences: preview.preferences,
+          restorePreferences: choice.restorePreferences,
+          pin: pin,
+          tryBiometrics: false,
+        );
+      }
+      if (result != ProtectedActionResult.completed) {
+        if (context.mounted) {
+          AppNotice.show(
+            context,
+            'Authentication failed. History was not changed.',
+            type: AppNoticeType.error,
+          );
+        }
+        return;
+      }
+      if (context.mounted) {
+        AppNotice.show(
+          context,
+          choice.restorePreferences
+              ? 'BACKUP MERGED // EVENTS AND CUSTOMIZATIONS RESTORED.'
+              : 'BACKUP MERGED // EVENTS UPDATED.',
+          type: AppNoticeType.success,
+        );
+      }
+    }
+  } catch (error) {
+    if (context.mounted) {
+      final detail = error is FormatException
+          ? error.message.toString()
+          : 'The selected file could not be imported.';
+      AppNotice.show(
+        context,
+        'IMPORT FAILED // $detail',
         type: AppNoticeType.error,
       );
     }

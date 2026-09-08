@@ -7,7 +7,6 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.SystemClock
 import android.widget.RemoteViews
 import kotlin.math.max
@@ -24,9 +23,23 @@ class NoLeanWidgetProvider : AppWidgetProvider() {
         }
         val wholeDays = elapsedMillis / DAY_MILLIS
         val withinDayMillis = elapsedMillis % DAY_MILLIS
+        val isRiskWindow = prefs.getBoolean(KEY_IS_RISK_WINDOW, false)
+        val hasPledgedToday = prefs.getBoolean(KEY_HAS_PLEDGED_TODAY, false)
 
         appWidgetIds.forEach { id ->
             val views = RemoteViews(context.packageName, R.layout.no_lean_widget)
+            val status = context.getString(
+                if (isRiskWindow) R.string.widget_status_risk else R.string.widget_status_stable,
+            )
+            views.setTextViewText(
+                R.id.widget_status,
+                status,
+            )
+            views.setContentDescription(R.id.widget_status, status)
+            views.setTextColor(
+                R.id.widget_status,
+                context.getColor(if (isRiskWindow) R.color.widget_red else R.color.widget_toxic),
+            )
             if (lastDoseEpochMillis > 0L) {
                 // Chronometer is rendered and ticked by the launcher process. This gives the
                 // widget real seconds without waking this app once a second. Its base is scoped
@@ -40,7 +53,11 @@ class NoLeanWidgetProvider : AppWidgetProvider() {
                 views.setChronometer(R.id.widget_clean_time, chronometerBase, chronometerFormat, true)
                 views.setTextViewText(
                     R.id.widget_streak,
-                    if (wholeDays == 1L) "1 DAY // STREAK ACTIVE" else "$wholeDays DAYS // STREAK ACTIVE",
+                    context.resources.getQuantityString(
+                        R.plurals.widget_clean_days,
+                        wholeDays.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                        wholeDays,
+                    ),
                 )
             } else {
                 views.setChronometer(R.id.widget_clean_time, SystemClock.elapsedRealtime(), "0d 00:%s", false)
@@ -55,6 +72,28 @@ class NoLeanWidgetProvider : AppWidgetProvider() {
             }
 
             views.setOnClickPendingIntent(R.id.widget_root, openAppPendingIntent(context))
+            views.setOnClickPendingIntent(
+                R.id.widget_action_sos,
+                widgetActionPendingIntent(context, MainActivity.WIDGET_ACTION_SOS, 10),
+            )
+            views.setOnClickPendingIntent(
+                R.id.widget_action_craving,
+                widgetActionPendingIntent(context, MainActivity.WIDGET_ACTION_CRAVING, 11),
+            )
+            views.setOnClickPendingIntent(
+                R.id.widget_action_relapse,
+                widgetActionPendingIntent(context, MainActivity.WIDGET_ACTION_RELAPSE, 12),
+            )
+            views.setTextViewText(
+                R.id.widget_pledge,
+                context.getString(
+                    if (hasPledgedToday) {
+                        R.string.widget_pledge_complete
+                    } else {
+                        R.string.widget_pledge_pending
+                    },
+                ),
+            )
             appWidgetManager.updateAppWidget(id, views)
         }
 
@@ -93,6 +132,23 @@ class NoLeanWidgetProvider : AppWidgetProvider() {
         )
     }
 
+    private fun widgetActionPendingIntent(
+        context: Context,
+        action: String,
+        requestCode: Int,
+    ): PendingIntent {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(MainActivity.EXTRA_WIDGET_ACTION, action)
+        }
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
     private fun scheduleNextFormatBoundary(context: Context, elapsedMillis: Long) {
         // The system AppWidget update interval bottoms out at 30 minutes. A lightweight,
         // inexact boundary alarm only repairs D/H formatting when the Chronometer rolls over;
@@ -101,11 +157,11 @@ class NoLeanWidgetProvider : AppWidgetProvider() {
         val triggerAtElapsed = SystemClock.elapsedRealtime() + untilNextHour
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val operation = refreshPendingIntent(context)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            alarmManager.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME, triggerAtElapsed, operation)
-        } else {
-            alarmManager.set(AlarmManager.ELAPSED_REALTIME, triggerAtElapsed, operation)
-        }
+        alarmManager.setAndAllowWhileIdle(
+            AlarmManager.ELAPSED_REALTIME,
+            triggerAtElapsed,
+            operation,
+        )
     }
 
     private fun refreshPendingIntent(context: Context): PendingIntent {
@@ -123,6 +179,8 @@ class NoLeanWidgetProvider : AppWidgetProvider() {
     companion object {
         const val PREFERENCES_NAME = "no_lean_widget"
         const val KEY_LAST_DOSE_EPOCH_MILLIS = "last_dose_epoch_millis"
+        const val KEY_IS_RISK_WINDOW = "is_risk_window"
+        const val KEY_HAS_PLEDGED_TODAY = "has_pledged_today"
 
         private const val ACTION_REFRESH_BOUNDARY =
             "com.nolean.no_lean.action.REFRESH_WIDGET_BOUNDARY"

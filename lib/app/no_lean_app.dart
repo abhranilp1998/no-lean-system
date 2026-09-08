@@ -5,6 +5,7 @@ import '../core/services/app_feedback.dart';
 import '../core/theme/app_theme.dart';
 import '../features/recovery/application/recovery_provider.dart';
 import 'shell.dart';
+import '../features/recovery/presentation/recovery_startup_screen.dart';
 
 class NoLeanApp extends ConsumerWidget {
   const NoLeanApp({super.key});
@@ -75,7 +76,7 @@ class NoLeanApp extends ConsumerWidget {
         }
         return result;
       },
-      home: const Shell(),
+      home: recovery.isLoaded ? const Shell() : const RecoveryStartupScreen(),
     );
   }
 }

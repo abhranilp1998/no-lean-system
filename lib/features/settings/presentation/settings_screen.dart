@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/services/feedback_preferences.dart';
+import '../../../core/services/save_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/brand_header.dart';
@@ -10,10 +12,13 @@ import '../../recovery/application/recovery_provider.dart';
 import '../services/biometric_service.dart';
 import '../services/recovery_export_service.dart';
 import 'settings_dialogs.dart';
+import 'trusted_contact_dialog.dart';
 import 'widgets/settings_controls.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
+
+  static final Future<PackageInfo> _packageInfo = PackageInfo.fromPlatform();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -56,10 +61,17 @@ class SettingsScreen extends ConsumerWidget {
             ),
             SettingAction(
               icon: Icons.ios_share,
-              title: 'Export recovery data',
+              title: 'Export backup',
               subtitle: 'Portable JSON file',
-              color: purple,
+              color: cyan,
               onTap: () => exportRecoveryData(context, recovery),
+            ),
+            SettingAction(
+              icon: Icons.download_outlined,
+              title: 'Import backup',
+              subtitle: 'Merge events from file',
+              color: purple,
+              onTap: () => importRecoveryData(context, ref),
             ),
           ],
         ),
@@ -71,24 +83,34 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: 'Subtle display texture',
               value: recovery.scanlines,
               color: cyan,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('scanlines', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).setSetting('scanlines', value),
+              ),
             ),
             SettingToggle(
               title: 'Reduce motion',
               subtitle: 'Softer transitions and glow',
               value: recovery.reduceMotion,
               color: toxic,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('reduceMotion', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setSetting('reduceMotion', value),
+              ),
             ),
             SettingToggle(
               title: 'High contrast',
               subtitle: 'Increase edge and text separation',
               value: recovery.highContrast,
               color: purple,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('highContrast', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setSetting('highContrast', value),
+              ),
             ),
             SettingAction(
               icon: Icons.graphic_eq,
@@ -100,8 +122,10 @@ class SettingsScreen extends ConsumerWidget {
             ),
             SettingIntensity(
               value: recovery.intensity,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('intensity', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).setSetting('intensity', value),
+              ),
             ),
           ],
         ),
@@ -109,19 +133,37 @@ class SettingsScreen extends ConsumerWidget {
           title: 'PROTECTION',
           children: [
             SettingAction(
+              icon: Icons.contact_emergency,
+              title: 'Trusted contact',
+              subtitle: 'Emergency dial during SOS',
+              color: cyan,
+              onTap: () => showTrustedContactDialog(context, ref),
+            ),
+            SettingAction(
               icon: Icons.schedule,
               title: 'Risk window',
               subtitle: '${recovery.riskWindow.label} // 4 interrupts',
               color: purple,
               onTap: () => showRiskWindowDialog(context, ref),
             ),
+            SettingAction(
+              icon: Icons.hourglass_bottom,
+              title: 'Relapse reset window',
+              subtitle: '${recovery.cooldownMinutes} minute guided pause',
+              color: magenta,
+              onTap: () => showCooldownDialog(context, ref),
+            ),
             SettingToggle(
               title: 'Risk-window reminders',
               subtitle: 'Enable ${recovery.riskWindow.label} interrupts',
               value: recovery.riskReminders,
               color: red,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('riskReminders', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setSetting('riskReminders', value),
+              ),
             ),
             SettingToggle(
               title: 'Relapse lock',
@@ -141,7 +183,7 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ],
         ),
-        const SettingsSection(
+        SettingsSection(
           title: 'ABOUT THE BUILD',
           children: [
             GlassCard(
@@ -149,15 +191,24 @@ class SettingsScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'NO LEAN  /  MVP 01',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  FutureBuilder<PackageInfo>(
+                    future: _packageInfo,
+                    builder: (context, snapshot) {
+                      final info = snapshot.data;
+                      final version = info == null
+                          ? 'VERSION LOADING'
+                          : 'VERSION ${info.version} (${info.buildNumber})';
+                      return Text(
+                        'NO LEAN  /  $version',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      );
+                    },
                   ),
-                  SizedBox(height: 8),
-                  Text(
+                  const SizedBox(height: 8),
+                  const Text(
                     'Offline-first recovery tracking with a direct voice, local data, a risk-window interrupt, SOS breathing timer, data export, and Android widget support.',
                     style: TextStyle(color: muted, fontSize: 11, height: 1.45),
                   ),
