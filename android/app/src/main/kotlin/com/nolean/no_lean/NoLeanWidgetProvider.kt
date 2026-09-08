@@ -80,6 +80,10 @@ class NoLeanWidgetProvider : AppWidgetProvider() {
                 R.id.widget_action_craving,
                 widgetActionPendingIntent(context, MainActivity.WIDGET_ACTION_CRAVING, 11),
             )
+            views.setOnClickPendingIntent(
+                R.id.widget_action_relapse,
+                widgetActionPendingIntent(context, MainActivity.WIDGET_ACTION_RELAPSE, 12),
+            )
             views.setTextViewText(
                 R.id.widget_pledge,
                 context.getString(

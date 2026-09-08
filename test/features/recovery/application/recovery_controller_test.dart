@@ -23,6 +23,7 @@ void main() {
       final controller = RecoveryController(
         relapseLock: _FakeRelapseLockGateway(),
       );
+      await controller.load();
 
       await controller.load();
 
@@ -38,8 +39,11 @@ void main() {
     'relapse lock rejects an invalid PIN without resetting clean time',
     () async {
       final lock = _FakeRelapseLockGateway();
-      final controller = RecoveryController(relapseLock: lock)
-        ..lastDose = DateTime.now().subtract(const Duration(days: 5));
+      final controller = RecoveryController(relapseLock: lock);
+      await controller.load();
+      await controller.recordRelapse(
+        occurredAt: [DateTime.now().subtract(const Duration(days: 5))],
+      );
       await controller.enableRelapseLock('2468');
       final before = controller.lastDose;
 
@@ -56,8 +60,11 @@ void main() {
 
   test('relapse lock accepts the encrypted PIN fallback', () async {
     final lock = _FakeRelapseLockGateway();
-    final controller = RecoveryController(relapseLock: lock)
-      ..lastDose = DateTime.now().subtract(const Duration(days: 5));
+    final controller = RecoveryController(relapseLock: lock);
+    await controller.load();
+    await controller.recordRelapse(
+      occurredAt: [DateTime.now().subtract(const Duration(days: 5))],
+    );
     await controller.enableRelapseLock('2468');
 
     final result = await controller.recordRelapse(
@@ -72,8 +79,11 @@ void main() {
   test('relapse lock accepts a successful biometric challenge', () async {
     final lock = _FakeRelapseLockGateway()
       ..biometricResult = BiometricAuthResult.authenticated;
-    final controller = RecoveryController(relapseLock: lock)
-      ..lastDose = DateTime.now().subtract(const Duration(days: 2));
+    final controller = RecoveryController(relapseLock: lock);
+    await controller.load();
+    await controller.recordRelapse(
+      occurredAt: [DateTime.now().subtract(const Duration(days: 2))],
+    );
     await controller.enableRelapseLock('2468');
 
     final result = await controller.recordRelapse();
@@ -86,6 +96,7 @@ void main() {
   test('disabling the lock also requires authentication', () async {
     final lock = _FakeRelapseLockGateway();
     final controller = RecoveryController(relapseLock: lock);
+    await controller.load();
     await controller.enableRelapseLock('2468');
 
     final unauthenticated = await controller.disableRelapseLock();
@@ -112,6 +123,7 @@ void main() {
     });
     final lock = _FakeRelapseLockGateway();
     final controller = RecoveryController(relapseLock: lock);
+    await controller.load();
 
     await controller.load();
 
@@ -138,6 +150,7 @@ void main() {
     final controller = RecoveryController(
       relapseLock: _FakeRelapseLockGateway(),
     );
+    await controller.load();
 
     await controller.load();
 
@@ -156,7 +169,7 @@ void main() {
     final migratedState =
         jsonDecode(preferences.getString('recovery_state')!)
             as Map<String, dynamic>;
-    expect(migratedState['stateVersion'], 6);
+    expect(migratedState['stateVersion'], RecoveryController.stateVersion);
     expect(migratedState['soundscape'], isTrue);
     expect(migratedState['hapticFeedback'], isFalse);
     expect(migratedState['feedbackSound'], 'reactorPing');
@@ -166,7 +179,7 @@ void main() {
   test(
     'legacy lastDose migrates as baseline without inventing a relapse',
     () async {
-      final baseline = DateTime(2026, 8, 1, 8, 30);
+      final baseline = DateTime.now().subtract(const Duration(days: 5));
       SharedPreferences.setMockInitialValues({
         'recovery_state': jsonEncode({
           'stateVersion': 5,
@@ -178,6 +191,7 @@ void main() {
       final controller = RecoveryController(
         relapseLock: _FakeRelapseLockGateway(),
       );
+      await controller.load();
 
       await controller.load();
 
@@ -210,6 +224,7 @@ void main() {
     final controller = RecoveryController(
       relapseLock: _FakeRelapseLockGateway(),
     );
+    await controller.load();
 
     await controller.load();
     expect(controller.relapseCooldownUntil, DateTime(2026, 8, 1));
@@ -230,24 +245,28 @@ void main() {
     expect(migratedState['cooldownMinutes'], 20);
   });
 
-  test('malformed current event state is preserved before reset', () async {
-    final stored = jsonEncode({
-      'stateVersion': RecoveryController.stateVersion,
-      'events': [42],
-      'riskReminders': false,
-    });
-    SharedPreferences.setMockInitialValues({'recovery_state': stored});
-    final controller = RecoveryController(
-      relapseLock: _FakeRelapseLockGateway(),
-    );
+  test(
+    'malformed current event state stays untouched with a recovery error',
+    () async {
+      final stored = jsonEncode({
+        'stateVersion': RecoveryController.stateVersion,
+        'events': [42],
+        'riskReminders': false,
+      });
+      SharedPreferences.setMockInitialValues({'recovery_state': stored});
+      final controller = RecoveryController(
+        relapseLock: _FakeRelapseLockGateway(),
+      );
+      await controller.load();
 
-    await controller.load();
+      await controller.load();
 
-    final preferences = await SharedPreferences.getInstance();
-    expect(preferences.getString('recovery_state_rejected_backup'), stored);
-    expect(controller.events, hasLength(1));
-    expect(controller.events.single.type, RecoveryEventType.recoveryStart);
-  });
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getString('recovery_state'), stored);
+      expect(controller.isLoaded, isFalse);
+      expect(controller.loadStatus, RecoveryLoadStatus.error);
+    },
+  );
 
   test(
     'relapse debrief is attached to the relapse that opened cooldown',
@@ -255,6 +274,7 @@ void main() {
       final controller = RecoveryController(
         relapseLock: _FakeRelapseLockGateway(),
       );
+      await controller.load();
       final relapse = RecoveryEvent.create(type: RecoveryEventType.relapse);
       controller.events.addAll([
         relapse,
@@ -285,6 +305,7 @@ void main() {
   test('history deletion uses relapse-lock authentication', () async {
     final lock = _FakeRelapseLockGateway();
     final controller = RecoveryController(relapseLock: lock);
+    await controller.load();
     final baseline = RecoveryEvent.create(
       type: RecoveryEventType.recoveryStart,
     );
@@ -327,6 +348,7 @@ void main() {
     final controller = RecoveryController(
       relapseLock: _FakeRelapseLockGateway(),
     );
+    await controller.load();
     final started = DateTime(2026, 8, 20, 20);
 
     await controller.recordSosSession(
@@ -350,6 +372,7 @@ void main() {
     final controller = RecoveryController(
       relapseLock: _FakeRelapseLockGateway(),
     );
+    await controller.load();
     final started = DateTime(2026, 8, 20, 21);
 
     final id = await controller.startSosSession(
@@ -380,6 +403,7 @@ void main() {
     final controller = RecoveryController(
       relapseLock: _FakeRelapseLockGateway(),
     );
+    await controller.load();
     controller.events.add(
       RecoveryEvent.fromJson({
         'id': 'shared-id',

@@ -52,19 +52,19 @@ void main() {
     expect(session.isCompleted, isTrue);
   });
 
-  test('SosSession complete preserves id and updates completedAt and debrief', () {
-    final started = DateTime.parse('2026-08-07T18:00:00.000');
-    final completed = DateTime.parse('2026-08-07T18:02:00.000');
-    final active = SosSession(
-      id: 'active-1',
-      startedAt: started,
-    );
+  test(
+    'SosSession complete preserves id and updates completedAt and debrief',
+    () {
+      final started = DateTime.parse('2026-08-07T18:00:00.000');
+      final completed = DateTime.parse('2026-08-07T18:02:00.000');
+      final active = SosSession(id: 'active-1', startedAt: started);
 
-    final finished = active.complete(completed, 'same');
-    expect(finished.id, 'active-1');
-    expect(finished.startedAt, started);
-    expect(finished.completedAt, completed);
-    expect(finished.debrief, 'same');
-    expect(finished.isCompleted, isTrue);
-  });
+      final finished = active.complete(completed, 'same');
+      expect(finished.id, 'active-1');
+      expect(finished.startedAt, started);
+      expect(finished.completedAt, completed);
+      expect(finished.debrief, 'same');
+      expect(finished.isCompleted, isTrue);
+    },
+  );
 }

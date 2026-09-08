@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/app_notice.dart';
+import '../../../core/services/save_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/glow_button.dart';
 import '../../../core/widgets/status_pill.dart';
-import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
-import '../../recovery/presentation/relapse_auth_dialog.dart';
+import '../../recovery/presentation/relapse_log_sheet.dart';
 
 Future<void> showPledgeDialog(BuildContext context, WidgetRef ref) async {
   final confirm =
@@ -46,7 +46,9 @@ Future<void> showPledgeDialog(BuildContext context, WidgetRef ref) async {
       ) ??
       false;
   if (confirm && context.mounted) {
-    await ref.read(recoveryProvider).pledge();
+    if (!await saveAction(context, () => ref.read(recoveryProvider).pledge())) {
+      return;
+    }
     if (!context.mounted) return;
     AppNotice.show(
       context,
@@ -95,7 +97,9 @@ Future<void> showCheckInDialog(BuildContext context, WidgetRef ref) async {
   );
   if (!context.mounted) return;
   if (stayedClean == true) {
-    await ref.read(recoveryProvider).pledge();
+    if (!await saveAction(context, () => ref.read(recoveryProvider).pledge())) {
+      return;
+    }
     if (context.mounted) {
       AppNotice.show(
         context,
@@ -108,77 +112,8 @@ Future<void> showCheckInDialog(BuildContext context, WidgetRef ref) async {
   }
 }
 
-Future<void> showRelapseDialog(BuildContext context, WidgetRef ref) async {
-  final confirm =
-      await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AppDialog(
-          title: 'RECORD THE FACTS',
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'This resets the timer. It does not erase the data. Record it, learn from the chain, and start the next clean minute.',
-                style: TextStyle(color: muted, fontSize: 12, height: 1.45),
-              ),
-              const SizedBox(height: 18),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext, false),
-                    child: const Text('CANCEL'),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(dialogContext, true),
-                    style: FilledButton.styleFrom(backgroundColor: red),
-                    child: const Text('RESET TIMER'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ) ??
-      false;
-  if (confirm) {
-    final recovery = ref.read(recoveryProvider);
-    var result = await recovery.recordRelapse();
-    if (result == ProtectedActionResult.authenticationRequired &&
-        context.mounted) {
-      final pin = await showRelapsePinDialog(
-        context,
-        actionLabel: 'AUTHORIZE RESET',
-      );
-      if (pin == null) {
-        if (context.mounted) {
-          AppNotice.show(
-            context,
-            'RESET CANCELLED // CLEAN TIME UNCHANGED.',
-            type: AppNoticeType.info,
-          );
-        }
-        return;
-      }
-      result = await recovery.recordRelapse(pin: pin, tryBiometrics: false);
-    }
-    if (!context.mounted) return;
-    if (result == ProtectedActionResult.completed) {
-      AppNotice.show(
-        context,
-        'TIMER RESET // START THE NEXT CLEAN MINUTE.',
-        type: AppNoticeType.warning,
-      );
-    } else {
-      AppNotice.show(
-        context,
-        'AUTHENTICATION FAILED // CLEAN TIME UNCHANGED.',
-        type: AppNoticeType.error,
-      );
-    }
-  }
-}
+Future<void> showRelapseDialog(BuildContext context, WidgetRef ref) =>
+    showRelapseLogSheet(context);
 
 Future<void> showCodeChallenge(BuildContext context) async {
   const challenges = [

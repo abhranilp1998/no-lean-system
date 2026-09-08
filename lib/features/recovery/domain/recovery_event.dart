@@ -1,6 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 enum RecoveryEventType {
+  daySummary, // Legacy date-only fact; occurrence count/time were not recorded.
   recoveryStart, // Counter baseline. This is not evidence of a relapse.
   pledge, // Daily "mark today clean" / "I WILL NOT BUY LEAN TODAY"
   craving, // Craving logged — metadata: {intensity, trigger, note}
@@ -107,6 +108,15 @@ class RecoveryEvent {
   ) {
     final result = Map<String, dynamic>.from(metadata);
     switch (type) {
+      case RecoveryEventType.daySummary:
+        final date = result['date'];
+        if (date is! String ||
+            !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date) ||
+            DateTime.tryParse(date) == null ||
+            DateTime.parse(date).toIso8601String().substring(0, 10) != date ||
+            result['clean'] is! bool) {
+          throw const FormatException('Invalid legacy day summary.');
+        }
       case RecoveryEventType.craving:
         final intensity = result['intensity'];
         if (intensity is! num || intensity < 1 || intensity > 10) {

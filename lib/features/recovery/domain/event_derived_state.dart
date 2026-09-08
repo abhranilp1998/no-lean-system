@@ -7,6 +7,13 @@ DateTime computeLastDose(List<RecoveryEvent> events) {
   final relapses = events
       .where((event) => event.type == RecoveryEventType.relapse)
       .toList();
+  relapses.addAll(
+    events.where(
+      (event) =>
+          event.type == RecoveryEventType.recoveryStart &&
+          event.metadata['source'] == 'legacyLastDose',
+    ),
+  );
   if (relapses.isNotEmpty) {
     relapses.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     return relapses.first.timestamp;
@@ -32,7 +39,12 @@ Map<String, bool> computeCleanDaysMap(List<RecoveryEvent> events) {
   final map = <String, bool>{};
 
   for (final event in events) {
-    final key = dateKey(event.timestamp.toLocal());
+    final key = event.type == RecoveryEventType.daySummary
+        ? event.metadata['date'] as String
+        : dateKey(event.timestamp.toLocal());
+    if (event.type == RecoveryEventType.daySummary) {
+      if (map[key] != false) map[key] = event.metadata['clean'] as bool;
+    }
     if (event.type == RecoveryEventType.relapse) {
       map[key] = false;
     } else if (event.type == RecoveryEventType.pledge ||
@@ -84,30 +96,21 @@ int computeLongestStreak(List<RecoveryEvent> events) {
       .fold<int>(0, (best, days) => days.round() > best ? days.round() : best);
   if (cleanMap.isEmpty || events.isEmpty) return historicalBest;
 
-  DateTime minDate = events.first.timestamp;
-  DateTime maxDate = events.first.timestamp;
-  for (final e in events) {
-    if (e.timestamp.isBefore(minDate)) minDate = e.timestamp;
-    if (e.timestamp.isAfter(maxDate)) maxDate = e.timestamp;
-  }
-
+  final days = cleanMap.keys.toList()..sort();
   int longest = 0;
   int currentStreak = 0;
-
-  DateTime current = DateTime(minDate.year, minDate.month, minDate.day);
-  final end = DateTime(maxDate.year, maxDate.month, maxDate.day);
-
-  while (!current.isAfter(end)) {
-    final key = dateKey(current);
+  DateTime? previous;
+  for (final key in days) {
+    final day = DateTime.parse('${key}T00:00:00Z');
     if (cleanMap[key] == true) {
-      currentStreak++;
-      if (currentStreak > longest) {
-        longest = currentStreak;
-      }
+      currentStreak = previous != null && day.difference(previous).inDays == 1
+          ? currentStreak + 1
+          : 1;
+      if (currentStreak > longest) longest = currentStreak;
     } else {
-      currentStreak = 0; // Streak broken if no pledge or if relapsed
+      currentStreak = 0;
     }
-    current = current.add(const Duration(days: 1));
+    previous = day;
   }
 
   return longest > historicalBest ? longest : historicalBest;

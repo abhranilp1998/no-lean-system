@@ -3,12 +3,13 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../domain/craving_entry.dart';
+import '../domain/legacy_recovery_migration.dart';
+import '../services/recovery_state_store.dart';
 import '../domain/effect_intensity.dart';
 import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
@@ -33,15 +34,45 @@ const defaultReminderMessages = <String>[
 
 enum ProtectedActionResult { completed, authenticationRequired, denied }
 
-class RecoveryController extends ChangeNotifier {
-  RecoveryController({RelapseLockGateway? relapseLock})
-    : _relapseLock = relapseLock ?? SecureRelapseLockService.instance;
+enum RecoveryLoadStatus { loading, ready, error, incompatible }
 
-  static const stateVersion = 6;
+class RecoverySaveException implements Exception {
+  const RecoverySaveException();
+  @override
+  String toString() =>
+      'Could not save. Your previous history is intact. Please try again.';
+}
+
+class RecoveryController extends ChangeNotifier {
+  RecoveryController({
+    RelapseLockGateway? relapseLock,
+    RecoveryStateStore? store,
+  }) : _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
+       _store = store ?? PreferencesRecoveryStateStore();
+
+  static const stateVersion = 7;
 
   final RelapseLockGateway _relapseLock;
-  SharedPreferences? _prefs;
+  final RecoveryStateStore _store;
   Future<void>? _loadFuture;
+  Future<void> _writeQueue = Future.value();
+  Map<String, dynamic> _extraState = {};
+  RecoveryLoadStatus loadStatus = RecoveryLoadStatus.loading;
+  String? loadMessage;
+  String? saveMessage;
+  DateTime? lastOpenedAt;
+  DateTime? welcomeBackSince;
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
 
   List<RecoveryEvent> events = [];
   DateTime? relapseCooldownUntil;
@@ -132,158 +163,114 @@ class RecoveryController extends ChangeNotifier {
 
   Future<void> load() => _loadFuture ??= _load();
 
+  Future<void> retryLoad() async {
+    if (isLoaded) return;
+    _loadFuture = null;
+    await load();
+  }
+
   Future<void> _load() async {
-    _prefs = await SharedPreferences.getInstance();
-    final stored = _prefs!.getString('recovery_state');
-    if (stored != null) {
-      try {
-        final map = Map<String, dynamic>.from(jsonDecode(stored) as Map);
-        final version = map['stateVersion'] as int?;
-        if (version == stateVersion) {
-          if (map['events'] is! List) {
-            throw const FormatException(
-              'Current state is missing its event log.',
-            );
-          }
-          events = _decodeCurrentEvents(map['events']);
-          _restoreSettings(map);
-          final cooldownStr = map['relapseCooldownUntil'] as String?;
-          if (cooldownStr != null) {
-            relapseCooldownUntil = DateTime.tryParse(cooldownStr);
-          }
-          relapseCooldownEventId = map['relapseCooldownEventId'] as String?;
-        } else if (version != null && version < stateVersion) {
-          await _prefs!.setString('recovery_state_v5_backup', stored);
-          _restoreSettings(map);
-          if (version <= 3) {
-            await _migrateLegacyPin(map['pin'] as String?);
-          }
-          _migrateToV6(map);
-        } else {
-          await _preserveRejectedState(stored);
-        }
-      } catch (_) {
-        await _preserveRejectedState(stored);
+    loadStatus = RecoveryLoadStatus.loading;
+    loadMessage = null;
+    _notify();
+    try {
+      final stored = await _store.read().timeout(const Duration(seconds: 15));
+      final map = stored == null
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(jsonDecode(stored) as Map);
+      final version = map['stateVersion'];
+      if (stored != null &&
+          (version is! int || version < 2 || version > stateVersion)) {
+        loadStatus = RecoveryLoadStatus.incompatible;
+        loadMessage =
+            'This recovery history needs a compatible app version. It has been kept unchanged.';
+        _notify();
+        return;
       }
-    }
-
-    _ensureBaselineEvent();
-    _sortAndRecompute();
-    isLoaded = true;
-    await _save();
-    await _syncRiskNotifications();
-  }
-
-  Future<void> _preserveRejectedState(String stored) async {
-    await _prefs!.setString('recovery_state_rejected_backup', stored);
-    events = [];
-    relapseCooldownUntil = null;
-    relapseCooldownEventId = null;
-    dailySpend = 0;
-    reasons = List<String>.from(defaultReasons);
-    reminderMessages = List<String>.from(defaultReminderMessages);
-    riskWindow = const RiskWindow.defaultWindow();
-    postSosWindowMinutes = 60;
-    cooldownMinutes = 15;
-    scanlines = true;
-    reduceMotion = false;
-    highContrast = false;
-    riskReminders = false;
-    soundscape = false;
-    hapticFeedback = true;
-    feedbackSound = FeedbackSoundEffect.neonPulse;
-    requirePinAfterRelapse = await _relapseLock.hasPin();
-    intensity = EffectIntensity.standard;
-  }
-
-  void _migrateToV6(Map<String, dynamic> map) {
-    final synthesizedEvents = <RecoveryEvent>[];
-
-    final legacyCravings = _decodeList(map['cravings'], CravingEntry.fromJson);
-    for (final c in legacyCravings) {
-      synthesizedEvents.add(
-        RecoveryEvent.create(
-          type: RecoveryEventType.craving,
-          timestamp: c.createdAt,
-          metadata: {
-            'intensity': c.intensity,
-            'trigger': c.trigger,
-            'note': c.note,
-          },
-        ),
-      );
-    }
-
-    final legacySos = _decodeList(map['sosSessions'], SosSession.fromJson);
-    final uuid = const Uuid();
-    for (final s in legacySos) {
-      final startId = s.id ?? uuid.v4();
-      synthesizedEvents.add(
-        RecoveryEvent.fromJson({
-          'id': startId,
-          'type': RecoveryEventType.sosStart.name,
-          'timestamp': s.startedAt.toIso8601String(),
-          'metadata': {},
-        }),
-      );
-
-      if (s.isCompleted) {
-        synthesizedEvents.add(
-          RecoveryEvent.fromJson({
-            'id': uuid.v4(),
-            'type': RecoveryEventType.sosComplete.name,
-            'timestamp': s.completedAt!.toIso8601String(),
-            'metadata': {'startId': startId, 'debrief': s.debrief},
-          }),
-        );
+      if (version is int && version <= 3 && map['pin'] is String) {
+        await _migrateLegacyPin(map['pin'] as String);
+        await _store.removeLegacyPin();
       }
-    }
-
-    final savedCleanDays = map['cleanDays'];
-    if (savedCleanDays is Map) {
-      for (final entry in savedCleanDays.entries) {
-        if (entry.value == true) {
-          final date = DateTime.tryParse(entry.key.toString());
-          if (date != null) {
-            synthesizedEvents.add(
-              RecoveryEvent.create(
-                type: RecoveryEventType.pledge,
-                timestamp: DateTime(date.year, date.month, date.day, 12),
-              ),
-            );
+      map.remove('pin');
+      if (stored != null && version != stateVersion) {
+        await _store.preserve(jsonEncode(map));
+      }
+      _extraState = Map.from(map);
+      events = version is int && version < 6
+          ? migrateLegacyRecovery(map)
+          : _decodeCurrentEvents(map['events'] ?? (stored == null ? [] : null));
+      if (version == 6) {
+        // Repair day-level facts lost by earlier v5→v6 migrations when the
+        // original backup is still present; never synthesize timed relapses.
+        for (final copy in await _store.recoveryCopies()) {
+          try {
+            final legacy = Map<String, dynamic>.from(jsonDecode(copy) as Map);
+            if (legacy['stateVersion'] is int && legacy['stateVersion'] <= 5) {
+              final ids = events.map((e) => e.id).toSet();
+              for (final event in migrateLegacyRecovery(legacy)) {
+                if ((event.type == RecoveryEventType.daySummary ||
+                        event.metadata['source'] == 'legacyLastPledge') &&
+                    ids.add(event.id)) {
+                  events.add(event);
+                }
+              }
+            }
+          } catch (_) {
+            /* The preserved copy stays intact for manual recovery. */
           }
         }
       }
-    }
-
-    final lastDoseDate = DateTime.tryParse(map['lastDose'] as String? ?? '');
-    if (lastDoseDate != null) {
-      synthesizedEvents.add(
-        RecoveryEvent.create(
-          type: RecoveryEventType.recoveryStart,
-          timestamp: lastDoseDate,
-          metadata: const {'source': 'legacyLastDose'},
-        ),
+      _restoreSettings(map);
+      relapseCooldownUntil = DateTime.tryParse(
+        map['relapseCooldownUntil']?.toString() ?? '',
       );
+      relapseCooldownEventId = map['relapseCooldownEventId'] is String
+          ? map['relapseCooldownEventId'] as String
+          : null;
+      lastOpenedAt = DateTime.tryParse(map['lastOpenedAt']?.toString() ?? '');
+      _ensureBaselineEvent();
+      _sortAndRecompute();
+      final previousVisit =
+          lastOpenedAt ?? (events.isEmpty ? null : events.last.timestamp);
+      welcomeBackSince =
+          previousVisit != null &&
+              DateTime.now().difference(previousVisit) >=
+                  const Duration(hours: 6)
+          ? previousVisit
+          : null;
+      if (version != stateVersion) await _store.write(jsonEncode(_snapshot()));
+      isLoaded = true;
+      loadStatus = RecoveryLoadStatus.ready;
+      _notify();
+      unawaited(syncWidget());
+      unawaited(_syncRiskNotifications());
+    } catch (_) {
+      isLoaded = false;
+      loadStatus = RecoveryLoadStatus.error;
+      loadMessage =
+          'Your recovery history could not be opened. Nothing has been reset. Retry, or export a preserved copy.';
+      _notify();
     }
+  }
 
-    final legacyLongestStreak = map['longestStreak'];
-    if (legacyLongestStreak is num && legacyLongestStreak > 0) {
-      synthesizedEvents.add(
-        RecoveryEvent.create(
-          type: RecoveryEventType.milestone,
-          timestamp: lastDoseDate ?? DateTime.now(),
-          metadata: {
-            'days': legacyLongestStreak.round(),
-            'source': 'legacyLongestStreak',
-          },
-        ),
-      );
+  Future<List<String>> recoveryCopies() async {
+    final current = await _store.read();
+    return [?current, ...await _store.recoveryCopies()];
+  }
+
+  Future<void> markOpened() async {
+    try {
+      await _transaction(() {
+        if (lastOpenedAt != null &&
+            DateTime.now().difference(lastOpenedAt!) >=
+                const Duration(hours: 6)) {
+          welcomeBackSince = lastOpenedAt;
+        }
+        lastOpenedAt = DateTime.now();
+      });
+    } on RecoverySaveException {
+      /* The shell displays the non-blocking save error. */
     }
-
-    events = synthesizedEvents;
-    _ensureBaselineEvent();
-    _sortAndRecompute();
   }
 
   void _ensureBaselineEvent() {
@@ -316,51 +303,56 @@ class RecoveryController extends ChangeNotifier {
   }
 
   void _restoreSettings(Map<String, dynamic> map) {
-    dailySpend = math.max(
-      0,
-      (map['dailySpend'] as num?)?.toDouble() ?? dailySpend,
-    );
-    reasons = _decodeStrings(map['reasons'], defaultReasons);
+    final spend = map['dailySpend'];
+    if (spend is num && spend.isFinite && spend >= 0) {
+      dailySpend = spend.toDouble();
+    }
+    reasons = _decodeStrings(map['reasons'], reasons);
     reminderMessages = _decodeStrings(
       map['reminderMessages'],
-      defaultReminderMessages,
+      reminderMessages,
     );
-    if (map['riskWindow'] != null) {
-      riskWindow = RiskWindow.fromJson(map['riskWindow']);
+    if (map['riskWindow'] is Map) {
+      try {
+        riskWindow = RiskWindow.fromJson(map['riskWindow']);
+      } catch (_) {
+        /* Optional setting. */
+      }
     }
-    postSosWindowMinutes =
-        (map['postSosWindowMinutes'] as num?)?.round().clamp(15, 360).toInt() ??
-        postSosWindowMinutes;
-    cooldownMinutes =
-        (map['cooldownMinutes'] as num?)?.round().clamp(1, 120).toInt() ??
-        cooldownMinutes;
-    scanlines = map['scanlines'] as bool? ?? scanlines;
-    reduceMotion = map['reduceMotion'] as bool? ?? reduceMotion;
-    highContrast = map['highContrast'] as bool? ?? highContrast;
-    riskReminders = map['riskReminders'] as bool? ?? riskReminders;
-    soundscape = map['soundscape'] as bool? ?? soundscape;
-    hapticFeedback = map['hapticFeedback'] as bool? ?? hapticFeedback;
-    feedbackSound = FeedbackSoundEffect.values.firstWhere(
-      (value) => value.name == map['feedbackSound'],
-      orElse: () => FeedbackSoundEffect.neonPulse,
-    );
-    requirePinAfterRelapse =
-        map['requirePinAfterRelapse'] as bool? ?? requirePinAfterRelapse;
-    intensity = EffectIntensity.values.firstWhere(
-      (value) => value.name == map['intensity'],
-      orElse: () => EffectIntensity.standard,
-    );
-  }
+    int minutes(String key, int fallback, int min, int max) {
+      final value = map[key];
+      return value is num && value.isFinite
+          ? value.round().clamp(min, max)
+          : fallback;
+    }
 
-  List<T> _decodeList<T>(
-    Object? value,
-    T Function(Map<String, dynamic>) fromJson,
-  ) {
-    if (value is! List) return [];
-    return value
-        .whereType<Map>()
-        .map((item) => fromJson(Map<String, dynamic>.from(item)))
-        .toList();
+    postSosWindowMinutes = minutes(
+      'postSosWindowMinutes',
+      postSosWindowMinutes,
+      15,
+      360,
+    );
+    cooldownMinutes = minutes('cooldownMinutes', cooldownMinutes, 1, 120);
+    bool flag(String key, bool fallback) =>
+        map[key] is bool ? map[key] as bool : fallback;
+    scanlines = flag('scanlines', scanlines);
+    reduceMotion = flag('reduceMotion', reduceMotion);
+    highContrast = flag('highContrast', highContrast);
+    riskReminders = flag('riskReminders', riskReminders);
+    soundscape = flag('soundscape', soundscape);
+    hapticFeedback = flag('hapticFeedback', hapticFeedback);
+    // A malformed protection flag must not silently disable authentication.
+    requirePinAfterRelapse = map.containsKey('requirePinAfterRelapse')
+        ? map['requirePinAfterRelapse'] != false
+        : requirePinAfterRelapse;
+    feedbackSound = FeedbackSoundEffect.values.firstWhere(
+      (v) => v.name == map['feedbackSound'],
+      orElse: () => feedbackSound,
+    );
+    intensity = EffectIntensity.values.firstWhere(
+      (v) => v.name == map['intensity'],
+      orElse: () => intensity,
+    );
   }
 
   List<RecoveryEvent> _decodeCurrentEvents(Object? value) {
@@ -406,40 +398,99 @@ class RecoveryController extends ChangeNotifier {
   double get moneySaved => math.max(0, cleanDuration.inHours / 24) * dailySpend;
   bool get isRiskWindow => riskWindow.contains(DateTime.now());
 
-  Future<void> _save() async {
-    final map = {
-      'stateVersion': stateVersion,
-      'events': events.map((e) => e.toJson()).toList(),
-      'relapseCooldownUntil': relapseCooldownUntil?.toIso8601String(),
-      'relapseCooldownEventId': relapseCooldownEventId,
-      'cooldownMinutes': cooldownMinutes,
-      'dailySpend': dailySpend,
-      'reasons': reasons,
-      'reminderMessages': reminderMessages,
-      'riskWindow': riskWindow.toJson(),
-      'postSosWindowMinutes': postSosWindowMinutes,
-      'scanlines': scanlines,
-      'reduceMotion': reduceMotion,
-      'highContrast': highContrast,
-      'riskReminders': riskReminders,
-      'soundscape': soundscape,
-      'hapticFeedback': hapticFeedback,
-      'feedbackSound': feedbackSound.name,
-      'requirePinAfterRelapse': requirePinAfterRelapse,
-      'intensity': intensity.name,
-    };
-    await _prefs?.setString('recovery_state', jsonEncode(map));
-    unawaited(syncWidget());
-    notifyListeners();
+  Map<String, dynamic> _snapshot() => {
+    ..._extraState,
+    'stateVersion': stateVersion,
+    'lastOpenedAt': lastOpenedAt?.toIso8601String(),
+    'events': events.map((e) => e.toJson()).toList(),
+    'relapseCooldownUntil': relapseCooldownUntil?.toIso8601String(),
+    'relapseCooldownEventId': relapseCooldownEventId,
+    'cooldownMinutes': cooldownMinutes,
+    'dailySpend': dailySpend,
+    'reasons': reasons,
+    'reminderMessages': reminderMessages,
+    'riskWindow': riskWindow.toJson(),
+    'postSosWindowMinutes': postSosWindowMinutes,
+    'scanlines': scanlines,
+    'reduceMotion': reduceMotion,
+    'highContrast': highContrast,
+    'riskReminders': riskReminders,
+    'soundscape': soundscape,
+    'hapticFeedback': hapticFeedback,
+    'feedbackSound': feedbackSound.name,
+    'requirePinAfterRelapse': requirePinAfterRelapse,
+    'intensity': intensity.name,
+  };
+
+  void _restoreSnapshot(Map<String, dynamic> map) {
+    _extraState = Map.from(map);
+    events = _decodeCurrentEvents(map['events']);
+    _restoreSettings(map);
+    relapseCooldownUntil = DateTime.tryParse(
+      map['relapseCooldownUntil']?.toString() ?? '',
+    );
+    relapseCooldownEventId = map['relapseCooldownEventId'] as String?;
+    lastOpenedAt = DateTime.tryParse(map['lastOpenedAt']?.toString() ?? '');
+    _sortAndRecompute();
   }
 
-  Future<void> appendEvent(RecoveryEvent event) async {
+  Future<T> _transaction<T>(FutureOr<T> Function() change) {
+    final result = _writeQueue.then((_) async {
+      if (!isLoaded) {
+        throw StateError(
+          'Recovery history must be loaded before making changes.',
+        );
+      }
+      final before = _snapshot();
+      try {
+        final value = await change();
+        _sortAndRecompute();
+        final next = _snapshot();
+        if (jsonEncode(before) == jsonEncode(next)) return value;
+        try {
+          await _store.write(jsonEncode(next));
+        } catch (_) {
+          throw const RecoverySaveException();
+        }
+        saveMessage = null;
+        if (before['riskReminders'] != next['riskReminders'] ||
+            jsonEncode(before['riskWindow']) !=
+                jsonEncode(next['riskWindow']) ||
+            jsonEncode(before['reminderMessages']) !=
+                jsonEncode(next['reminderMessages'])) {
+          unawaited(_syncRiskNotifications());
+        }
+        unawaited(syncWidget());
+        _notify();
+        return value;
+      } catch (error) {
+        _restoreSnapshot(before);
+        if (error is RecoverySaveException) saveMessage = error.toString();
+        _notify();
+        rethrow;
+      }
+    });
+    _writeQueue = result.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return result;
+  }
+
+  Future<void> appendEvent(RecoveryEvent event) => _transaction(() async {
+    if (event.type == RecoveryEventType.relapse ||
+        event.type == RecoveryEventType.recoveryStart) {
+      throw StateError('Use the protected relapse flow for timer changes.');
+    }
+    if (events.any((existing) => existing.id == event.id)) {
+      throw StateError('Duplicate event ID.');
+    }
     events.add(event);
     _sortAndRecompute();
-    await _save();
-  }
+  });
 
-  Future<void> clearRelapseCooldown(String reason) async {
+  Future<void> clearRelapseCooldown(String reason) => _transaction(() async {
+    if (relapseCooldownUntil == null && relapseCooldownEventId == null) return;
     relapseCooldownUntil = null;
     var index = relapseCooldownEventId == null
         ? -1
@@ -461,14 +512,13 @@ class RecoveryController extends ChangeNotifier {
     }
     relapseCooldownEventId = null;
     _sortAndRecompute();
-    await _save();
-  }
+  });
 
   Future<ProtectedActionResult> deleteEvent({
     required String id,
     String? pin,
     bool tryBiometrics = true,
-  }) async {
+  }) => _transaction(() async {
     final event = events.where((candidate) => candidate.id == id).firstOrNull;
     if (event == null || event.type == RecoveryEventType.recoveryStart) {
       return ProtectedActionResult.denied;
@@ -493,16 +543,15 @@ class RecoveryController extends ChangeNotifier {
     }
     _ensureBaselineEvent();
     _sortAndRecompute();
-    await _save();
     return ProtectedActionResult.completed;
-  }
+  });
 
   Future<ProtectedActionResult> editEventMetadata({
     required String id,
     required Map<String, dynamic> metadata,
     String? pin,
     bool tryBiometrics = true,
-  }) async {
+  }) => _transaction(() async {
     final index = events.indexWhere((e) => e.id == id);
     if (index == -1 || events[index].type == RecoveryEventType.recoveryStart) {
       return ProtectedActionResult.denied;
@@ -520,27 +569,37 @@ class RecoveryController extends ChangeNotifier {
 
     events[index] = events[index].copyWith(metadata: validated);
     _sortAndRecompute();
-    await _save();
     return ProtectedActionResult.completed;
-  }
+  });
 
-  Future<void> mergeImportedEvents(
+  Future<ProtectedActionResult> mergeImportedEvents(
     List<RecoveryEvent> importedEvents, {
     Map<String, dynamic>? preferences,
     bool restorePreferences = false,
-  }) async {
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    final authorization = await _authorizeProtectedAction(
+      reason: 'Authenticate to merge recovery history.',
+      pin: pin,
+      tryBiometrics: tryBiometrics,
+    );
+    if (authorization != ProtectedActionResult.completed) return authorization;
     final existingIds = events.map((e) => e.id).toSet();
     for (final event in importedEvents) {
       if (existingIds.add(event.id)) events.add(event);
     }
     if (restorePreferences && preferences != null) {
-      _restoreSettings(preferences);
+      _restoreSettings(
+        Map<String, dynamic>.from(preferences)
+          ..remove('requirePinAfterRelapse')
+          ..remove('pin'),
+      );
     }
     _ensureBaselineEvent();
     _sortAndRecompute();
-    await _save();
-    if (restorePreferences) await _syncRiskNotifications();
-  }
+    return ProtectedActionResult.completed;
+  });
 
   Map<String, dynamic> get portablePreferences => {
     'dailySpend': dailySpend,
@@ -576,44 +635,101 @@ class RecoveryController extends ChangeNotifier {
   Future<ProtectedActionResult> recordRelapse({
     String? pin,
     bool tryBiometrics = true,
-  }) async {
-    final authorization = await _authorizeProtectedAction(
-      pin: pin,
-      tryBiometrics: tryBiometrics,
-      reason: 'Authenticate to record a relapse and reset clean time.',
-    );
-    if (authorization != ProtectedActionResult.completed) {
-      return authorization;
-    }
-
-    final now = DateTime.now();
-    final streakBeforeReset = streak;
-    final lastSosComplete = events.reversed.firstWhere(
-      (e) => e.type == RecoveryEventType.sosComplete,
-      orElse: () => RecoveryEvent.create(
-        type: RecoveryEventType.sosComplete,
-        timestamp: DateTime.fromMillisecondsSinceEpoch(0),
-      ),
-    );
-    final isPostSos =
-        lastSosComplete.timestamp.millisecondsSinceEpoch > 0 &&
-        now.difference(lastSosComplete.timestamp).inMinutes <=
-            postSosWindowMinutes;
-
-    final relapse = RecoveryEvent.create(
-      type: RecoveryEventType.relapse,
-      timestamp: now,
-      metadata: {'postSos': isPostSos, 'streakLost': streakBeforeReset},
-    );
-    events.add(relapse);
-    relapseCooldownUntil = now.add(Duration(minutes: cooldownMinutes));
-    relapseCooldownEventId = relapse.id;
-    _sortAndRecompute();
-    await _save();
-    return ProtectedActionResult.completed;
+    List<DateTime>? occurredAt,
+    String? operationId,
+    String source = 'app',
+  }) {
+    final times = List<DateTime>.of(occurredAt ?? [DateTime.now()])..sort();
+    final batch = operationId ?? const Uuid().v4();
+    return _transaction(() async {
+      if (times.isEmpty ||
+          times.length > 50 ||
+          times.any(
+            (at) => at.isBefore(DateTime(2000)) || at.isAfter(DateTime.now()),
+          )) {
+        throw ArgumentError('Choose 1–50 events, dated between 2000 and now.');
+      }
+      final authorization = await _authorizeProtectedAction(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        reason:
+            'Authenticate to save these relapse events and update clean time.',
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+      final existing = events
+          .where((e) => e.metadata['batchId'] == batch)
+          .toList();
+      if (existing.isNotEmpty) {
+        if (existing.length != times.length ||
+            List.generate(
+              times.length,
+              (i) => existing[i].timestamp != times[i],
+            ).any((v) => v)) {
+          throw StateError(
+            'This save request already contains different events.',
+          );
+        }
+        return ProtectedActionResult.completed;
+      }
+      RecoveryEvent? latest;
+      for (var index = 0; index < times.length; index++) {
+        final at = times[index];
+        final resets =
+            events
+                .where(
+                  (e) =>
+                      (e.type == RecoveryEventType.relapse ||
+                          e.type == RecoveryEventType.recoveryStart) &&
+                      !e.timestamp.isAfter(at),
+                )
+                .toList()
+              ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+        final lost = resets.isEmpty
+            ? 0
+            : at.difference(resets.last.timestamp).inDays;
+        final postSos = events.any(
+          (e) =>
+              e.type == RecoveryEventType.sosComplete &&
+              !e.timestamp.isAfter(at) &&
+              at.difference(e.timestamp) <=
+                  Duration(minutes: postSosWindowMinutes),
+        );
+        latest = RecoveryEvent.fromJson({
+          'id': const Uuid().v5(
+            Namespace.url.value,
+            'no-lean/relapse/$batch/$index',
+          ),
+          'type': RecoveryEventType.relapse.name,
+          'timestamp': at.toIso8601String(),
+          'metadata': {
+            'batchId': batch,
+            'source': source,
+            'recordedAt': DateTime.now().toIso8601String(),
+            'postSos': postSos,
+            'streakLost': lost,
+          },
+        });
+        if (events.any((e) => e.id == latest!.id)) {
+          throw StateError('Event ID conflict.');
+        }
+        events.add(latest);
+      }
+      final deadline = latest!.timestamp.add(
+        Duration(minutes: cooldownMinutes),
+      );
+      // Preserve the current debrief owner. Historical logs do not impose a
+      // new cooldown, and another event does not extend an existing reset.
+      if (relapseCooldownEventId == null && deadline.isAfter(DateTime.now())) {
+        relapseCooldownUntil = deadline;
+        relapseCooldownEventId = latest.id;
+      }
+      return ProtectedActionResult.completed;
+    });
   }
 
-  Future<void> recordSosSession(SosSession session) async {
+  Future<void> recordSosSession(SosSession session) => _transaction(() async {
     final startId = session.id ?? const Uuid().v4();
     final start = _ensureSosStart(startId, session.startedAt);
 
@@ -628,16 +744,15 @@ class RecoveryController extends ChangeNotifier {
       );
     }
     _sortAndRecompute();
-    await _save();
-  }
+  });
 
-  Future<String> startSosSession({String? id, DateTime? startedAt}) async {
-    final startId = id ?? const Uuid().v4();
-    _ensureSosStart(startId, startedAt ?? DateTime.now());
-    _sortAndRecompute();
-    await _save();
-    return startId;
-  }
+  Future<String> startSosSession({String? id, DateTime? startedAt}) =>
+      _transaction(() async {
+        final startId = id ?? const Uuid().v4();
+        _ensureSosStart(startId, startedAt ?? DateTime.now());
+        _sortAndRecompute();
+        return startId;
+      });
 
   RecoveryEvent _ensureSosStart(String startId, DateTime startedAt) {
     final existing = events.where((event) => event.id == startId).firstOrNull;
@@ -664,7 +779,7 @@ class RecoveryController extends ChangeNotifier {
     required String startId,
     required DateTime completedAt,
     String? debrief,
-  }) async {
+  }) => _transaction(() async {
     final start = events
         .where(
           (event) =>
@@ -682,8 +797,7 @@ class RecoveryController extends ChangeNotifier {
       debrief: debrief,
     );
     _sortAndRecompute();
-    await _save();
-  }
+  });
 
   void _upsertSosCompletion({
     required String startId,
@@ -710,32 +824,35 @@ class RecoveryController extends ChangeNotifier {
     }
   }
 
-  Future<void> enableRelapseLock(String pin) async {
+  Future<void> enableRelapseLock(String pin) => _transaction(() async {
     if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
       throw ArgumentError.value(pin, 'pin', 'PIN must contain 4–6 digits.');
     }
     await _relapseLock.savePin(pin);
     requirePinAfterRelapse = true;
-    await _save();
-  }
+  });
 
   Future<ProtectedActionResult> disableRelapseLock({
     String? pin,
     bool tryBiometrics = true,
   }) async {
-    final authorization = await _authorizeProtectedAction(
-      pin: pin,
-      tryBiometrics: tryBiometrics,
-      reason: 'Authenticate to disable the NO LEAN relapse lock.',
-    );
-    if (authorization != ProtectedActionResult.completed) {
-      return authorization;
-    }
+    final result = await _transaction(() async {
+      final authorization = await _authorizeProtectedAction(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        reason: 'Authenticate to disable the NO LEAN relapse lock.',
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
 
-    await _relapseLock.clearPin();
-    requirePinAfterRelapse = false;
-    await _save();
-    return ProtectedActionResult.completed;
+      requirePinAfterRelapse = false;
+      return ProtectedActionResult.completed;
+    });
+    if (result == ProtectedActionResult.completed) {
+      await _relapseLock.clearPin();
+    }
+    return result;
   }
 
   Future<ProtectedActionResult> _authorizeProtectedAction({
@@ -760,40 +877,32 @@ class RecoveryController extends ChangeNotifier {
     return ProtectedActionResult.authenticationRequired;
   }
 
-  Future<void> updateReasons(List<String> value) async {
+  Future<void> updateReasons(List<String> value) => _transaction(() async {
     reasons = value.where((item) => item.trim().isNotEmpty).toList();
-    await _save();
-  }
+  });
 
-  Future<void> updateReminders(List<String> value) async {
+  Future<void> updateReminders(List<String> value) => _transaction(() async {
     reminderMessages = value.where((item) => item.trim().isNotEmpty).toList();
-    await _save();
-    await _syncRiskNotifications();
-  }
+  });
 
-  Future<void> updateDailySpend(double value) async {
+  Future<void> updateDailySpend(double value) => _transaction(() async {
     dailySpend = math.max(0, value);
-    await _save();
-  }
+  });
 
-  Future<void> updateRiskWindow(RiskWindow value) async {
+  Future<void> updateRiskWindow(RiskWindow value) => _transaction(() async {
     riskWindow = value;
-    await _save();
-    await _syncRiskNotifications();
-  }
+  });
 
-  Future<void> updatePostSosWindow(int minutes) async {
+  Future<void> updatePostSosWindow(int minutes) => _transaction(() async {
     postSosWindowMinutes = minutes.clamp(15, 360).toInt();
-    await _save();
     _recomputeDerivedState();
-  }
+  });
 
-  Future<void> updateCooldownMinutes(int minutes) async {
+  Future<void> updateCooldownMinutes(int minutes) => _transaction(() async {
     cooldownMinutes = minutes.clamp(1, 120).toInt();
-    await _save();
-  }
+  });
 
-  Future<void> setSetting(String key, dynamic value) async {
+  Future<void> setSetting(String key, dynamic value) => _transaction(() async {
     bool changed = false;
     switch (key) {
       case 'scanlines':
@@ -847,22 +956,20 @@ class RecoveryController extends ChangeNotifier {
     }
 
     if (changed) {
-      await appendEvent(
+      events.add(
         RecoveryEvent.create(
           type: RecoveryEventType.settingsChange,
           metadata: {'setting': key, 'newValue': value.toString()},
         ),
       );
     }
-
-    if (key == 'riskReminders') await _syncRiskNotifications();
-  }
+  });
 
   Future<void> updateFeedbackPreferences({
     required bool soundEnabled,
     required bool vibrationEnabled,
     required FeedbackSoundEffect soundEffect,
-  }) async {
+  }) => _transaction(() async {
     bool changed = false;
     if (soundscape != soundEnabled) {
       soundscape = soundEnabled;
@@ -878,23 +985,27 @@ class RecoveryController extends ChangeNotifier {
     }
 
     if (changed) {
-      await appendEvent(
+      events.add(
         RecoveryEvent.create(
           type: RecoveryEventType.settingsChange,
           metadata: {'setting': 'feedbackPreferences'},
         ),
       );
     }
-  }
+  });
 
   Future<void> _syncRiskNotifications() async {
-    if (riskReminders) {
-      await NotificationService.instance.scheduleRiskWindow(
-        reminderMessages,
-        riskWindow: riskWindow,
-      );
-    } else {
-      await NotificationService.instance.cancelRiskWindow();
+    try {
+      if (riskReminders) {
+        await NotificationService.instance.scheduleRiskWindow(
+          reminderMessages,
+          riskWindow: riskWindow,
+        );
+      } else {
+        await NotificationService.instance.cancelRiskWindow();
+      }
+    } catch (_) {
+      /* Notifications never block local history. */
     }
   }
 

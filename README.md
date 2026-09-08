@@ -36,6 +36,13 @@ flutter build apk --debug
 
 ## Roadmap
 
+Release numbering, Git tags, and data-preserving APK upgrades are documented in
+[docs/RELEASING.md](docs/RELEASING.md). Use `tool/release_version.dart` to prepare
+and validate app versions before distributing a build.
+
+The PR review, validation, merge/reject decision and branch cleanup procedure is
+in [docs/PR_REVIEW_SOP.md](docs/PR_REVIEW_SOP.md).
+
 See [ROADMAP.md](ROADMAP.md) for the production gate and planned functionality,
 accessibility, and UI/UX direction.
 

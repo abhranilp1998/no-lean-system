@@ -90,7 +90,7 @@
         <TextView
             android:id="@+id/widget_action_sos"
             android:layout_width="0dp"
-            android:layout_height="36dp"
+            android:layout_height="48dp"
             android:layout_marginEnd="5dp"
             android:layout_weight="1"
             android:background="@drawable/no_lean_widget_sos_button"
@@ -106,7 +106,7 @@
         <TextView
             android:id="@+id/widget_action_craving"
             android:layout_width="0dp"
-            android:layout_height="36dp"
+            android:layout_height="48dp"
             android:layout_marginStart="5dp"
             android:layout_weight="1"
             android:background="@drawable/no_lean_widget_craving_button"
@@ -115,6 +115,21 @@
             android:fontFamily="monospace"
             android:gravity="center"
             android:text="@string/widget_action_craving"
+            android:textColor="@color/widget_cyan"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+        <TextView
+            android:id="@+id/widget_action_relapse"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="5dp"
+            android:layout_weight="1"
+            android:background="@drawable/no_lean_widget_craving_button"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:text="@string/widget_action_relapse"
             android:textColor="@color/widget_cyan"
             android:textSize="11sp"
             android:textStyle="bold" />

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/app_notice.dart';
+import '../../../core/services/save_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../recovery/application/recovery_provider.dart';
@@ -13,7 +14,12 @@ Future<void> showCravingDialog(BuildContext context, WidgetRef ref) async {
     builder: (dialogContext) => const _CravingDialog(),
   );
   if (entry != null && context.mounted) {
-    await ref.read(recoveryProvider).recordCraving(entry);
+    if (!await saveAction(
+      context,
+      () => ref.read(recoveryProvider).recordCraving(entry),
+    )) {
+      return;
+    }
     if (context.mounted) {
       AppNotice.show(
         context,
@@ -63,10 +69,7 @@ class _CravingDialogState extends State<_CravingDialog> {
           children: [
             Text(
               'Intensity  /  ${intensity.round()} of 10',
-              style: const TextStyle(
-                color: cyan,
-                fontWeight: FontWeight.w700,
-              ),
+              style: const TextStyle(color: cyan, fontWeight: FontWeight.w700),
             ),
             Slider(
               value: intensity,

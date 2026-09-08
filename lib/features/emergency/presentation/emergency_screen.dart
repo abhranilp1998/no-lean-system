@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/services/app_feedback.dart';
 import '../../../core/services/app_notice.dart';
+import '../../../core/services/save_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/no_lean_visuals.dart';
 import '../../../core/widgets/glass_card.dart';
@@ -28,7 +29,8 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
   late final DateTime _startedAt;
   late final RecoveryController _recovery;
   late final String _sessionId;
-  late final Future<String> _startFuture;
+  late final Future<void> _startFuture;
+  bool _startSaved = false;
   int _remaining = 60;
   bool _finished = false;
   String? _selectedDebrief;
@@ -41,10 +43,7 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
     _startedAt = DateTime.now();
     _recovery = ref.read(recoveryProvider);
     _sessionId = const Uuid().v4();
-    _startFuture = _recovery.startSosSession(
-      id: _sessionId,
-      startedAt: _startedAt,
-    );
+    _startFuture = _saveStart();
     unawaited(_loadTrustedContact());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
@@ -72,15 +71,44 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
     super.dispose();
   }
 
-  Future<void> _recordCompletion({String? debrief}) async {
+  Future<void> _saveStart() async {
+    try {
+      await _recovery.startSosSession(id: _sessionId, startedAt: _startedAt);
+      _startSaved = true;
+    } catch (_) {
+      if (mounted) {
+        AppNotice.show(
+          context,
+          'SOS is available, but this session could not be saved. Keep breathing; you can retry when it finishes.',
+          type: AppNoticeType.error,
+        );
+      }
+    }
+  }
+
+  Future<bool> _recordCompletion({String? debrief}) async {
     final completedAt = _completedAt;
-    if (completedAt == null) return;
+    if (completedAt == null) return false;
     await _startFuture;
-    await _recovery.completeSosSession(
-      startId: _sessionId,
-      completedAt: completedAt,
-      debrief: debrief,
-    );
+    if (!_startSaved) await _saveStart();
+    if (!_startSaved) return false;
+    try {
+      await _recovery.completeSosSession(
+        startId: _sessionId,
+        completedAt: completedAt,
+        debrief: debrief,
+      );
+      return true;
+    } catch (_) {
+      if (mounted) {
+        AppNotice.show(
+          context,
+          'Session completion could not be saved. Please retry before leaving.',
+          type: AppNoticeType.error,
+        );
+      }
+      return false;
+    }
   }
 
   Future<void> _loadTrustedContact() async {
@@ -374,8 +402,18 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
                       icon: Icons.lock_outline,
                       color: toxic,
                       onTap: () async {
-                        await _recordCompletion(debrief: _selectedDebrief);
-                        await ref.read(recoveryProvider).pledge();
+                        if (!await _recordCompletion(
+                          debrief: _selectedDebrief,
+                        )) {
+                          return;
+                        }
+                        if (!context.mounted) return;
+                        if (!await saveAction(
+                          context,
+                          () => ref.read(recoveryProvider).pledge(),
+                        )) {
+                          return;
+                        }
                         if (context.mounted) Navigator.pop(context);
                       },
                     ),

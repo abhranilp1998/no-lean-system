@@ -8,6 +8,7 @@ import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import org.json.JSONArray
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -16,15 +17,15 @@ class MainActivity : FlutterFragmentActivity() {
     private val feedbackHandler = Handler(Looper.getMainLooper())
     private var feedbackTone: ToneGenerator? = null
     private var widgetActionChannel: MethodChannel? = null
-    private var pendingWidgetAction: String? = null
+    private val actionPreferences by lazy { getSharedPreferences("no_lean_widget_actions", MODE_PRIVATE) }
     private val releaseFeedbackTone = Runnable {
         feedbackTone?.release()
         feedbackTone = null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        pendingWidgetAction = widgetActionFrom(intent)
         super.onCreate(savedInstanceState)
+        enqueueWidgetAction(intent)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -69,10 +70,13 @@ class MainActivity : FlutterFragmentActivity() {
             "no_lean/widget_actions",
         ).also { channel ->
             channel.setMethodCallHandler { call, result ->
-                if (call.method == "consumeInitialAction") {
-                    val action = pendingWidgetAction
-                    pendingWidgetAction = null
-                    result.success(action)
+                if (call.method == "drainActions") {
+                    val actions = readPendingActions()
+                    if (actionPreferences.edit().remove("pending").commit()) {
+                        result.success(actions)
+                    } else {
+                        result.error("ACTION_STORAGE", "Could not acknowledge widget action", null)
+                    }
                 } else {
                     result.notImplemented()
                 }
@@ -92,17 +96,31 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        enqueueWidgetAction(intent)
+    }
+
+    private fun readPendingActions(): MutableList<String> {
+        return try {
+            val array = JSONArray(actionPreferences.getString("pending", "[]"))
+            MutableList(array.length()) { array.getString(it) }
+        } catch (_: Exception) { mutableListOf() }
+    }
+
+    private fun enqueueWidgetAction(intent: Intent?) {
         val action = widgetActionFrom(intent) ?: return
-        if (widgetActionChannel == null) {
-            pendingWidgetAction = action
-        } else {
-            widgetActionChannel?.invokeMethod("onAction", action)
+        val pending = readPendingActions()
+        if (pending.lastOrNull() != action) pending.add(action)
+        // Navigation requests only, never recovery events. Taps are acknowledged
+        // after Dart has loaded history and subscribed to the action stream.
+        if (actionPreferences.edit().putString("pending", JSONArray(pending.takeLast(20)).toString()).commit()) {
+            intent?.removeExtra(EXTRA_WIDGET_ACTION)
+            widgetActionChannel?.invokeMethod("actionsAvailable", null)
         }
     }
 
     private fun widgetActionFrom(intent: Intent?): String? {
         return when (val action = intent?.getStringExtra(EXTRA_WIDGET_ACTION)) {
-            WIDGET_ACTION_SOS, WIDGET_ACTION_CRAVING -> action
+            WIDGET_ACTION_SOS, WIDGET_ACTION_CRAVING, WIDGET_ACTION_RELAPSE -> action
             else -> null
         }
     }
@@ -146,5 +164,6 @@ class MainActivity : FlutterFragmentActivity() {
         const val EXTRA_WIDGET_ACTION = "com.nolean.no_lean.extra.WIDGET_ACTION"
         const val WIDGET_ACTION_SOS = "sos"
         const val WIDGET_ACTION_CRAVING = "craving"
+        const val WIDGET_ACTION_RELAPSE = "relapse"
     }
 }

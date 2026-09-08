@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/services/app_notice.dart';
 import '../../../../core/widgets/glass_card.dart';
 import '../../../recovery/application/recovery_controller.dart';
 import '../../../recovery/application/recovery_provider.dart';
@@ -48,7 +49,9 @@ class EventTile extends ConsumerWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    _formatDate(event.timestamp),
+                    event.type == RecoveryEventType.daySummary
+                        ? '${event.metadata['date']} · Time and event count were not recorded'
+                        : _formatDate(event.timestamp),
                     style: TextStyle(color: muted, fontSize: 11),
                   ),
                   if (event.metadata.isNotEmpty) ...[
@@ -68,6 +71,14 @@ class EventTile extends ConsumerWidget {
 
   (String, IconData, Color) _getEventDetails(RecoveryEvent event) {
     switch (event.type) {
+      case RecoveryEventType.daySummary:
+        return (
+          event.metadata['clean'] == true
+              ? 'LEGACY CLEAN DAY'
+              : 'LEGACY RELAPSE DAY',
+          Icons.calendar_month,
+          event.metadata['clean'] == true ? toxic : red,
+        );
       case RecoveryEventType.recoveryStart:
         return ('RECOVERY STARTED', Icons.flag, toxic);
       case RecoveryEventType.pledge:
@@ -107,30 +118,45 @@ class _MetadataView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: metadata.entries.map((e) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 2),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${e.key.toUpperCase()}: ',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
+      children: metadata.entries
+          .where(
+            (e) => !{
+              'batchId',
+              'source',
+              'recordedAt',
+              'startId',
+              'date',
+              'clean',
+            }.contains(e.key),
+          )
+          .map((e) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${e.key.toUpperCase()}: ',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      '${e.value}',
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              Expanded(
-                child: Text(
-                  '${e.value}',
-                  style: const TextStyle(color: Colors.white54, fontSize: 10),
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
+            );
+          })
+          .toList(),
     );
   }
 }
@@ -174,63 +200,73 @@ class _ActionsMenu extends ConsumerWidget {
           ),
       ],
       onSelected: (val) async {
-        if (val == 'delete') {
-          final confirm = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              backgroundColor: panelRaised,
-              title: const Text(
-                'Delete Event',
-                style: TextStyle(color: Colors.white),
-              ),
-              content: const Text(
-                'Are you sure? This may permanently alter your computed progress stats.',
-                style: TextStyle(color: Colors.white70),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('CANCEL', style: TextStyle(color: muted)),
+        try {
+          if (val == 'delete') {
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: panelRaised,
+                title: const Text(
+                  'Delete Event',
+                  style: TextStyle(color: Colors.white),
                 ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: const Text('DELETE', style: TextStyle(color: red)),
+                content: const Text(
+                  'Are you sure? This may permanently alter your computed progress stats.',
+                  style: TextStyle(color: Colors.white70),
                 ),
-              ],
-            ),
-          );
-          if (confirm == true) {
-            final recovery = ref.read(recoveryProvider);
-            var result = await recovery.deleteEvent(id: event.id);
-            if (result == ProtectedActionResult.authenticationRequired &&
-                context.mounted) {
-              final pin = await showRelapsePinDialog(
-                context,
-                actionLabel: 'AUTHORIZE DELETE',
-              );
-              if (pin == null) return;
-              result = await recovery.deleteEvent(
-                id: event.id,
-                pin: pin,
-                tryBiometrics: false,
-              );
-            }
-            if (result == ProtectedActionResult.denied && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Authentication failed. History was not changed.',
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('CANCEL', style: TextStyle(color: muted)),
                   ),
-                  backgroundColor: red,
-                ),
-              );
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('DELETE', style: TextStyle(color: red)),
+                  ),
+                ],
+              ),
+            );
+            if (confirm == true) {
+              final recovery = ref.read(recoveryProvider);
+              var result = await recovery.deleteEvent(id: event.id);
+              if (result == ProtectedActionResult.authenticationRequired &&
+                  context.mounted) {
+                final pin = await showRelapsePinDialog(
+                  context,
+                  actionLabel: 'AUTHORIZE DELETE',
+                );
+                if (pin == null) return;
+                result = await recovery.deleteEvent(
+                  id: event.id,
+                  pin: pin,
+                  tryBiometrics: false,
+                );
+              }
+              if (result == ProtectedActionResult.denied && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Authentication failed. History was not changed.',
+                    ),
+                    backgroundColor: red,
+                  ),
+                );
+              }
             }
+          } else if (val == 'edit') {
+            await showDialog(
+              context: context,
+              builder: (ctx) => EventEditDialog(event: event),
+            );
           }
-        } else if (val == 'edit') {
-          await showDialog(
-            context: context,
-            builder: (ctx) => EventEditDialog(event: event),
-          );
+        } catch (_) {
+          if (context.mounted) {
+            AppNotice.show(
+              context,
+              'History could not be changed. Please try again.',
+              type: AppNoticeType.error,
+            );
+          }
         }
       },
     );

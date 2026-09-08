@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/services/feedback_preferences.dart';
+import '../../../core/services/save_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/brand_header.dart';
@@ -82,24 +83,34 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: 'Subtle display texture',
               value: recovery.scanlines,
               color: cyan,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('scanlines', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).setSetting('scanlines', value),
+              ),
             ),
             SettingToggle(
               title: 'Reduce motion',
               subtitle: 'Softer transitions and glow',
               value: recovery.reduceMotion,
               color: toxic,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('reduceMotion', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setSetting('reduceMotion', value),
+              ),
             ),
             SettingToggle(
               title: 'High contrast',
               subtitle: 'Increase edge and text separation',
               value: recovery.highContrast,
               color: purple,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('highContrast', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setSetting('highContrast', value),
+              ),
             ),
             SettingAction(
               icon: Icons.graphic_eq,
@@ -111,8 +122,10 @@ class SettingsScreen extends ConsumerWidget {
             ),
             SettingIntensity(
               value: recovery.intensity,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('intensity', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).setSetting('intensity', value),
+              ),
             ),
           ],
         ),
@@ -145,8 +158,12 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: 'Enable ${recovery.riskWindow.label} interrupts',
               value: recovery.riskReminders,
               color: red,
-              onChanged: (value) =>
-                  ref.read(recoveryProvider).setSetting('riskReminders', value),
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setSetting('riskReminders', value),
+              ),
             ),
             SettingToggle(
               title: 'Relapse lock',

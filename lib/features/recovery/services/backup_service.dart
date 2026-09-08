@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../core/services/feedback_preferences.dart';
 import '../domain/effect_intensity.dart';
+import '../domain/legacy_recovery_migration.dart';
 import '../domain/recovery_event.dart';
 
 class BackupPreview {
@@ -30,7 +31,7 @@ class BackupPreview {
 }
 
 class BackupService {
-  static const int currentBackupVersion = 2;
+  static const int currentBackupVersion = 3;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
@@ -46,7 +47,10 @@ class BackupService {
       'excludedSecureData': const ['relapsePin', 'trustedContact'],
     };
 
-    final jsonString = jsonEncode(payload);
+    await exportJson(jsonEncode(payload));
+  }
+
+  Future<void> exportJson(String jsonString) async {
     if (utf8.encode(jsonString).length > maxBackupBytes) {
       throw const FormatException(
         'Backup is larger than the 5 MB safety limit.',
@@ -120,7 +124,22 @@ class BackupService {
       if (decoded is! Map) {
         throw const FormatException('Backup must be a JSON object.');
       }
-      final map = Map<String, dynamic>.from(decoded);
+      var map = Map<String, dynamic>.from(decoded);
+      if (!map.containsKey('version') && map['stateVersion'] is int) {
+        final stateVersion = map['stateVersion'] as int;
+        if (stateVersion < 2 || stateVersion > 7) {
+          throw FormatException(
+            'Unsupported recovery state version: $stateVersion',
+          );
+        }
+        map = {
+          'version': currentBackupVersion,
+          'events': stateVersion < 6
+              ? migrateLegacyRecovery(map).map((e) => e.toJson()).toList()
+              : map['events'],
+          'preferences': legacyExportPreferences(map),
+        };
+      }
       final version = map['version'];
       if (version is! int || version < 1 || version > currentBackupVersion) {
         throw FormatException('Unsupported backup version: $version');

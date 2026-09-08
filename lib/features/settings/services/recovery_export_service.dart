@@ -5,6 +5,7 @@ import '../../../core/services/app_notice.dart';
 import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/presentation/backup_preview_sheet.dart';
+import '../../recovery/presentation/relapse_auth_dialog.dart';
 import '../../recovery/services/backup_service.dart';
 
 Future<void> exportRecoveryData(
@@ -45,13 +46,37 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
 
     final choice = await BackupPreviewSheet.show(context, preview);
     if (choice != null && context.mounted) {
-      await ref
-          .read(recoveryProvider)
-          .mergeImportedEvents(
-            preview.events,
-            preferences: preview.preferences,
-            restorePreferences: choice.restorePreferences,
+      final recovery = ref.read(recoveryProvider);
+      var result = await recovery.mergeImportedEvents(
+        preview.events,
+        preferences: preview.preferences,
+        restorePreferences: choice.restorePreferences,
+      );
+      if (result == ProtectedActionResult.authenticationRequired &&
+          context.mounted) {
+        final pin = await showRelapsePinDialog(
+          context,
+          actionLabel: 'MERGE BACKUP',
+        );
+        if (pin == null) return;
+        result = await recovery.mergeImportedEvents(
+          preview.events,
+          preferences: preview.preferences,
+          restorePreferences: choice.restorePreferences,
+          pin: pin,
+          tryBiometrics: false,
+        );
+      }
+      if (result != ProtectedActionResult.completed) {
+        if (context.mounted) {
+          AppNotice.show(
+            context,
+            'Authentication failed. History was not changed.',
+            type: AppNoticeType.error,
           );
+        }
+        return;
+      }
       if (context.mounted) {
         AppNotice.show(
           context,

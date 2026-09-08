@@ -30,9 +30,18 @@ Read it before changing code.
 
 ## Recovery and security rules
 
-- Persisted recovery JSON is currently state version 5. Any schema change must
+- Persisted recovery JSON is currently state version 7. Any schema change must
   increment the version and provide a non-destructive migration in
   `RecoveryController.load()`.
+- Production history is stored in `recovery/current.json` in application support
+  storage. Keep the legacy preference, previous commit, and migration snapshots.
+  Serialize mutations, roll back memory on failure, and notify only after commit.
+  Unknown/corrupt current history opens a recovery screen and must never reset.
+- Legacy day summaries retain date-only facts, not invented timestamps/counts.
+  Backup format 3 supports these summaries and imports legacy exports.
+- Multiple relapse rows use one protected, idempotent batch operation with a
+  separate chosen occurrence time per event. Cooldown support never hides tabs,
+  logging, SOS or settings; retain the original cooldown owner on later logs.
 - The relapse PIN belongs only in `flutter_secure_storage`. Never put PIN text,
   biometric material, or authentication tokens in SharedPreferences, exports,
   logs, analytics, or notifications.
@@ -60,12 +69,27 @@ Read it before changing code.
 ## Android bridge contract
 
 - Channel: `no_lean/widget`, method: `update`.
+- Widget actions `sos`, `craving`, `relapse` use request codes 10, 11, 12; root
+  remains 0. Queue native actions until the loaded shell drains them. Remove
+  consumed intent extras so recreation does not replay a completed action.
 - Required source of truth: `lastDoseEpochMillis` as a positive integer.
 - `cleanTime` and `streak` remain compatibility fallback strings.
 - The native widget uses a launcher-side Chronometer for live seconds. Do not
   replace it with a per-second Dart timer or alarm.
 - `MainActivity` must remain a `FlutterFragmentActivity` for `local_auth`.
 - Android minimum SDK is 24 for the resolved biometric plugin.
+
+## Release versioning
+
+- `pubspec.yaml` owns `MAJOR.MINOR.PATCH+BUILD`. The app/build version, stored
+  recovery schema, and backup format are independent version contracts.
+- Use `tool/release_version.dart` and `docs/RELEASING.md` for version increments,
+  validation, and annotated `vMAJOR.MINOR.PATCH+BUILD` Git tags. Fetch existing
+  tags and inventory distributed APKs before reserving a build number.
+- Preserve the existing application ID, compatible signing identity, storage
+  keys, and secure-storage namespaces so upgrades retain installed user data.
+- Create a source release tag only after the main commit and migration/reload
+  behavior pass review and validation; device upgrade validation gates APK distribution.
 
 ## Verification before handoff
 
@@ -80,3 +104,9 @@ flutter build apk --debug
 
 Also run `git diff --check` and ensure no generated `build/` or `.dart_tool/`
 files are added to version control.
+
+## PR completion
+
+Follow `docs/PR_REVIEW_SOP.md` and the PR template. Review the complete diff, fix
+blocking findings, and merge the verified head or close with reasons. Preserve
+useful features and local commits. Remove only merged feature branches.

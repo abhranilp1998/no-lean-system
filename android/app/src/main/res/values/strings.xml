@@ -10,9 +10,10 @@
     <string name="widget_pledge_complete">TODAY LOCKED</string>
     <string name="widget_action_sos">SOS</string>
     <string name="widget_action_craving">LOG CRAVING</string>
-    <string name="widget_description">Recovery timer with SOS and craving actions</string>
+    <string name="widget_description">Recovery timer with SOS, craving and multiple relapse logging</string>
     <plurals name="widget_clean_days">
         <item quantity="one">%d DAY CLEAN</item>
         <item quantity="other">%d DAYS CLEAN</item>
     </plurals>
+    <string name="widget_action_relapse">LOG RELAPSES</string>
 </resources>

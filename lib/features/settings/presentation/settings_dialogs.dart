@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/app_feedback.dart';
 import '../../../core/services/app_notice.dart';
+import '../../../core/services/save_action.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -24,7 +25,12 @@ Future<void> showReasonsDialog(BuildContext context, WidgetRef ref) async {
     ),
   );
   if (updatedReasons != null && context.mounted) {
-    await ref.read(recoveryProvider).updateReasons(updatedReasons);
+    if (!await saveAction(
+      context,
+      () => ref.read(recoveryProvider).updateReasons(updatedReasons),
+    )) {
+      return;
+    }
     if (context.mounted) {
       AppNotice.show(
         context,
@@ -47,7 +53,12 @@ Future<void> showReminderDialog(BuildContext context, WidgetRef ref) async {
     ),
   );
   if (updatedMessages != null && context.mounted) {
-    await ref.read(recoveryProvider).updateReminders(updatedMessages);
+    if (!await saveAction(
+      context,
+      () => ref.read(recoveryProvider).updateReminders(updatedMessages),
+    )) {
+      return;
+    }
     if (context.mounted) {
       AppNotice.show(
         context,
@@ -65,7 +76,12 @@ Future<void> showSpendDialog(BuildContext context, WidgetRef ref) async {
         _SpendDialog(initialSpend: ref.read(recoveryProvider).dailySpend),
   );
   if (updatedSpend != null && context.mounted) {
-    await ref.read(recoveryProvider).updateDailySpend(updatedSpend);
+    if (!await saveAction(
+      context,
+      () => ref.read(recoveryProvider).updateDailySpend(updatedSpend),
+    )) {
+      return;
+    }
     if (context.mounted) {
       AppNotice.show(
         context,
@@ -338,7 +354,12 @@ Future<void> showRiskWindowDialog(BuildContext context, WidgetRef ref) async {
   );
 
   if (updatedWindow == null || !context.mounted) return;
-  await ref.read(recoveryProvider).updateRiskWindow(updatedWindow);
+  if (!await saveAction(
+    context,
+    () => ref.read(recoveryProvider).updateRiskWindow(updatedWindow),
+  )) {
+    return;
+  }
   if (context.mounted) {
     AppNotice.show(
       context,
@@ -434,13 +455,18 @@ Future<void> showFeedbackDialog(BuildContext context, WidgetRef ref) async {
   );
 
   if (preferences == null || !context.mounted) return;
-  await ref
-      .read(recoveryProvider)
-      .updateFeedbackPreferences(
-        soundEnabled: preferences.soundEnabled,
-        vibrationEnabled: preferences.vibrationEnabled,
-        soundEffect: preferences.soundEffect,
-      );
+  if (!await saveAction(
+    context,
+    () => ref
+        .read(recoveryProvider)
+        .updateFeedbackPreferences(
+          soundEnabled: preferences.soundEnabled,
+          vibrationEnabled: preferences.vibrationEnabled,
+          soundEffect: preferences.soundEffect,
+        ),
+  )) {
+    return;
+  }
   if (context.mounted) {
     AppNotice.show(
       context,
@@ -455,44 +481,59 @@ Future<void> showPinSetup(
   WidgetRef ref,
   bool enabled,
 ) async {
-  if (!enabled) {
-    final recovery = ref.read(recoveryProvider);
-    var result = await recovery.disableRelapseLock();
-    if (result == ProtectedActionResult.authenticationRequired &&
-        context.mounted) {
-      final pin = await showRelapsePinDialog(
+  try {
+    if (!enabled) {
+      final recovery = ref.read(recoveryProvider);
+      var result = await recovery.disableRelapseLock();
+      if (result == ProtectedActionResult.authenticationRequired &&
+          context.mounted) {
+        final pin = await showRelapsePinDialog(
+          context,
+          actionLabel: 'DISABLE LOCK',
+        );
+        if (pin == null) return;
+        result = await recovery.disableRelapseLock(
+          pin: pin,
+          tryBiometrics: false,
+        );
+      }
+      if (!context.mounted) return;
+      AppNotice.show(
         context,
-        actionLabel: 'DISABLE LOCK',
+        result == ProtectedActionResult.completed
+            ? 'RELAPSE LOCK DISABLED.'
+            : 'AUTHENTICATION FAILED // LOCK REMAINS ACTIVE.',
+        type: result == ProtectedActionResult.completed
+            ? AppNoticeType.info
+            : AppNoticeType.error,
       );
-      if (pin == null) return;
-      result = await recovery.disableRelapseLock(
-        pin: pin,
-        tryBiometrics: false,
-      );
+      return;
     }
-    if (!context.mounted) return;
-    AppNotice.show(
-      context,
-      result == ProtectedActionResult.completed
-          ? 'RELAPSE LOCK DISABLED.'
-          : 'AUTHENTICATION FAILED // LOCK REMAINS ACTIVE.',
-      type: result == ProtectedActionResult.completed
-          ? AppNoticeType.info
-          : AppNoticeType.error,
+    final enteredPin = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => const _PinSetupDialog(),
     );
-    return;
-  }
-  final enteredPin = await showDialog<String>(
-    context: context,
-    builder: (dialogContext) => const _PinSetupDialog(),
-  );
-  if (enteredPin != null && context.mounted) {
-    await ref.read(recoveryProvider).enableRelapseLock(enteredPin);
+    if (enteredPin != null && context.mounted) {
+      if (!await saveAction(
+        context,
+        () => ref.read(recoveryProvider).enableRelapseLock(enteredPin),
+      )) {
+        return;
+      }
+      if (context.mounted) {
+        AppNotice.show(
+          context,
+          'RELAPSE LOCK ARMED // BIOMETRIC + ENCRYPTED PIN.',
+          type: AppNoticeType.success,
+        );
+      }
+    }
+  } catch (_) {
     if (context.mounted) {
       AppNotice.show(
         context,
-        'RELAPSE LOCK ARMED // BIOMETRIC + ENCRYPTED PIN.',
-        type: AppNoticeType.success,
+        'Lock settings could not be changed. Please try again.',
+        type: AppNoticeType.error,
       );
     }
   }

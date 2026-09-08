@@ -6,11 +6,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:no_lean/main.dart';
+import 'package:no_lean/features/recovery/application/recovery_controller.dart';
+import 'package:no_lean/features/recovery/domain/recovery_event.dart';
+import 'package:no_lean/features/recovery/services/widget_action_service.dart';
+import 'package:flutter/services.dart';
+import 'support/recovery_fakes.dart';
 import 'package:no_lean/features/recovery/application/recovery_provider.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          const MethodChannel('no_lean/widget_actions'),
+          (_) async => <String>[],
+        );
   });
 
   testWidgets('NO LEAN launches into the recovery counter', (
@@ -65,47 +75,124 @@ void main() {
     },
   );
 
-  testWidgets('Phase 3: Relapse Cooldown Screen locks the UI', (
-    WidgetTester tester,
-  ) async {
-    final container = await _pumpLoadedApp(tester);
-    addTearDown(container.dispose);
+  testWidgets(
+    'Cooldown preserves navigation, repeat logging and optional reflection',
+    (tester) async {
+      final container = await _pumpLoadedApp(tester);
+      addTearDown(container.dispose);
+      final controller = container.read(recoveryProvider);
+      await controller.recordRelapse();
+      await tester.pump();
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.text('LOG MORE EVENTS'), findsOneWidget);
+      await tester.tap(find.text('LOG MORE EVENTS'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('ADD ANOTHER EVENT'));
+      await tester.pump();
+      expect(find.byKey(const ValueKey('relapse-date-1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('relapse-time-1')), findsOneWidget);
+      await tester.tap(find.text('SAVE 2 EVENTS'));
+      await tester.pumpAndSettle();
+      expect(
+        controller.events.where((e) => e.type == RecoveryEventType.relapse),
+        hasLength(3),
+      );
+      expect(find.byType(NavigationBar), findsOneWidget);
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('Tune the override.'), findsOneWidget);
+      await tester.tap(find.text('Counter'));
+      await tester.pumpAndSettle();
+      controller.relapseCooldownUntil = DateTime.now().subtract(
+        const Duration(minutes: 1),
+      );
+      await tester.tap(find.text('OPEN RESET SUPPORT'));
+      await tester.pumpAndSettle();
+      expect(find.text('READY TO REFLECT?'), findsOneWidget);
+      await tester.tap(find.text('CRAVING / URGE'));
+      await tester.pumpAndSettle();
+      expect(find.text('THE COUNTER'), findsOneWidget);
+      expect(controller.relapseCooldownUntil, isNull);
+    },
+  );
 
-    // Simulate an active cooldown through the same transactional path as the UI.
-    final controller = container.read(recoveryProvider);
-    await controller.recordRelapse();
-    await tester.pump();
+  testWidgets(
+    'Startup read failure shows retry and recovers without reinstall',
+    (tester) async {
+      final store = MemoryRecoveryStore()..failRead = true;
+      final controller = RecoveryController(store: store);
+      await controller.load();
+      final container = ProviderContainer(
+        overrides: [recoveryProvider.overrideWith((ref) => controller)],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const NoLeanApp(),
+        ),
+      );
+      expect(find.text('RETRY'), findsOneWidget);
+      expect(find.text('EXPORT PRESERVED DATA'), findsOneWidget);
+      store.failRead = false;
+      await tester.tap(find.text('RETRY'));
+      await tester.pumpAndSettle();
+      expect(find.text('THE COUNTER'), findsOneWidget);
+    },
+  );
 
-    // 1. Verify Cooldown Screen is visible
-    expect(find.text('STREAK LOST.'), findsOneWidget);
-    expect(find.text('SYSTEM LOCKED. READ YOUR REASONS.'), findsOneWidget);
-    expect(find.text('EMERGENCY SOS'), findsOneWidget);
-
-    // 2. Fast forward time to expire cooldown
-    controller.relapseCooldownUntil = DateTime.now().subtract(
-      const Duration(minutes: 1),
-    );
-
-    // Pump to trigger the timer check
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pumpAndSettle();
-
-    // 3. Verify Debrief Screen appears
-    expect(find.text('LOCK LIFTED.'), findsOneWidget);
-    expect(find.text('What led to this relapse?'), findsOneWidget);
-
-    // 4. Click a debrief option
-    await tester.tap(find.text('CRAVING / URGE'));
-    // Pump enough times to let the async clearRelapseCooldown finish
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
-
-    // 5. Verify the app returns to the normal Shell
-    expect(find.text('STREAK LOST.'), findsNothing);
-    expect(find.text('LOCK LIFTED.'), findsNothing);
-    expect(find.text('THE COUNTER'), findsOneWidget);
-  });
+  testWidgets(
+    'Widget cold and warm relapse actions open the dated batch form during cooldown',
+    (tester) async {
+      final pending = <String>['relapse'];
+      const channel = MethodChannel('no_lean/widget_actions');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        if (call.method == 'drainActions') {
+          final actions = List<String>.of(pending);
+          pending.clear();
+          return actions;
+        }
+        return null;
+      });
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          channel,
+          null,
+        ),
+      );
+      final container = await _pumpLoadedApp(tester);
+      addTearDown(container.dispose);
+      await tester.pumpAndSettle();
+      expect(find.text('LOG RELAPSES'), findsOneWidget);
+      await tester.tap(find.text('SAVE 1 EVENT'));
+      await tester.pumpAndSettle();
+      pending.add('relapse');
+      await WidgetActionService.instance.initialize();
+      await tester.pumpAndSettle();
+      expect(find.text('LOG RELAPSES'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('relapse-date-0')));
+      await tester.pumpAndSettle();
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('relapse-time-0')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TimePickerDialog), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('CANCEL'));
+      await tester.pumpAndSettle();
+      expect(
+        container
+            .read(recoveryProvider)
+            .events
+            .where((e) => e.type == RecoveryEventType.relapse),
+        hasLength(1),
+      );
+    },
+  );
 }
 
 Future<void> _pumpUntil(
@@ -121,11 +208,21 @@ Future<void> _pumpUntil(
 }
 
 Future<ProviderContainer> _pumpLoadedApp(WidgetTester tester) async {
-  final container = ProviderContainer();
+  final container = ProviderContainer(
+    overrides: [
+      recoveryProvider.overrideWith(
+        (ref) => RecoveryController(
+          store: MemoryRecoveryStore(),
+          relapseLock: FakeRelapseLock(),
+        )..load(),
+      ),
+    ],
+  );
   await container.read(recoveryProvider).load();
   await tester.pumpWidget(
     UncontrolledProviderScope(container: container, child: const NoLeanApp()),
   );
   await _pumpUntil(tester, find.text('THE COUNTER'));
+  await tester.pumpAndSettle();
   return container;
 }

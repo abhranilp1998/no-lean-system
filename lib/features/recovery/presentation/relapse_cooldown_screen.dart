@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/app_feedback.dart';
+import '../../../core/services/app_notice.dart';
+import 'relapse_log_sheet.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/no_lean_visuals.dart';
 import '../../../core/widgets/glass_card.dart';
@@ -21,6 +23,7 @@ class RelapseCooldownScreen extends ConsumerStatefulWidget {
 class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
   Timer? _timer;
   bool _unlocked = false;
+  bool _savingDebrief = false;
 
   @override
   void initState() {
@@ -49,9 +52,24 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
   }
 
   Future<void> _completeDebrief(String reason) async {
+    if (_savingDebrief) return;
+    _savingDebrief = true;
     AppFeedback.success();
     final recovery = ref.read(recoveryProvider);
-    await recovery.clearRelapseCooldown(reason);
+    try {
+      await recovery.clearRelapseCooldown(reason);
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      if (mounted) {
+        AppNotice.show(
+          context,
+          'Reflection could not be saved. Please try again.',
+          type: AppNoticeType.error,
+        );
+      }
+    } finally {
+      _savingDebrief = false;
+    }
   }
 
   @override
@@ -70,15 +88,14 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
 
     return Scaffold(
       backgroundColor: Colors.black,
+      appBar: AppBar(title: const Text('RESET SUPPORT')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: ListView(
             children: [
-              const Spacer(),
               const Text(
-                'STREAK LOST.',
+                'TAKE A MOMENT.',
                 style: TextStyle(
                   fontFamily: 'NoLeanDisplay',
                   fontSize: 32,
@@ -90,7 +107,7 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'SYSTEM LOCKED. READ YOUR REASONS.',
+                'BREATHE. RECONNECT WITH YOUR REASONS.',
                 style: TextStyle(
                   fontFamily: 'NoLeanMono',
                   fontSize: 12,
@@ -128,26 +145,24 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
                   style: eyebrowStyle.copyWith(color: red),
                 ),
                 const SizedBox(height: 16),
-                Expanded(
-                  flex: 2,
-                  child: ListView.separated(
-                    itemCount: recovery.reasons.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) => GlassCard(
-                      accent: muted,
-                      child: Text(
-                        recovery.reasons[index],
-                        style: const TextStyle(
-                          fontSize: 14,
-                          height: 1.5,
-                          color: Colors.white,
-                        ),
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: recovery.reasons.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
+                  itemBuilder: (context, index) => GlassCard(
+                    accent: muted,
+                    child: Text(
+                      recovery.reasons[index],
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.5,
+                        color: Colors.white,
                       ),
                     ),
                   ),
                 ),
-              ] else
-                const Spacer(flex: 2),
+              ],
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: () {
@@ -166,6 +181,14 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
                 ),
                 child: const Text('EMERGENCY SOS'),
               ),
+              TextButton(
+                onPressed: () => showRelapseLogSheet(context),
+                child: const Text('LOG MORE EVENTS'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('RETURN TO APP'),
+              ),
             ],
           ),
         ),
@@ -183,15 +206,14 @@ class _DebriefView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
+      appBar: AppBar(title: const Text('RESET SUPPORT')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: ListView(
             children: [
               const Text(
-                'LOCK LIFTED.',
+                'READY TO REFLECT?',
                 style: TextStyle(
                   fontFamily: 'NoLeanDisplay',
                   fontSize: 24,
@@ -235,6 +257,10 @@ class _DebriefView extends StatelessWidget {
               _DebriefButton(
                 label: 'OTHER / MIXED',
                 onTap: () => onComplete('other_or_mixed'),
+              ),
+              TextButton(
+                onPressed: () => onComplete(''),
+                child: const Text('SKIP REFLECTION'),
               ),
             ],
           ),

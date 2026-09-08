@@ -30,7 +30,10 @@ class TimelineScreen extends ConsumerWidget {
                   const SizedBox(height: 7),
                   Text(
                     'Immutable ground truth.',
-                    style: displayFont(fontSize: 24, fontWeight: FontWeight.w700),
+                    style: displayFont(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 18),
                 ],
@@ -50,16 +53,13 @@ class TimelineScreen extends ConsumerWidget {
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
               sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final event = events[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: EventTile(event: event),
-                    );
-                  },
-                  childCount: events.length,
-                ),
+                delegate: SliverChildBuilderDelegate((context, index) {
+                  final event = events[index];
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: EventTile(event: event),
+                  );
+                }, childCount: events.length),
               ),
             ),
         ],
