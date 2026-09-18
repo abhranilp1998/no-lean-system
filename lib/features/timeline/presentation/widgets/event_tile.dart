@@ -435,11 +435,14 @@ class _ActionsMenu extends ConsumerWidget {
                   tryBiometrics: false,
                 );
               }
-              if (result == ProtectedActionResult.denied && context.mounted) {
+              if (result != ProtectedActionResult.completed &&
+                  context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
+                  SnackBar(
                     content: Text(
-                      'Authentication failed. History was not changed.',
+                      result == ProtectedActionResult.lockedOut
+                          ? result.failureMessage
+                          : 'Authentication failed. History was not changed.',
                     ),
                     backgroundColor: red,
                   ),

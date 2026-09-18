@@ -33,7 +33,24 @@ const defaultReminderMessages = <String>[
   'PUT THE MONEY DOWN. GET THROUGH THE NEXT TEN MINUTES.',
 ];
 
-enum ProtectedActionResult { completed, authenticationRequired, denied }
+enum ProtectedActionResult {
+  completed,
+  authenticationRequired,
+  denied,
+  lockedOut,
+}
+
+extension ProtectedActionResultMessage on ProtectedActionResult {
+  String get failureMessage => switch (this) {
+    ProtectedActionResult.lockedOut =>
+      'Too many incorrect PIN attempts. PIN entry is paused for 5 minutes.',
+    ProtectedActionResult.denied =>
+      'Authentication failed. Nothing was changed.',
+    ProtectedActionResult.authenticationRequired =>
+      'Authentication is required to continue.',
+    ProtectedActionResult.completed => '',
+  };
+}
 
 enum RecoveryLoadStatus { loading, ready, error, incompatible }
 
@@ -841,8 +858,8 @@ class RecoveryController extends ChangeNotifier {
   }
 
   Future<void> enableRelapseLock(String pin) => _transaction(() async {
-    if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
-      throw ArgumentError.value(pin, 'pin', 'PIN must contain 4–6 digits.');
+    if (!RegExp(r'^\d{4,8}$').hasMatch(pin)) {
+      throw ArgumentError.value(pin, 'pin', 'PIN must contain 4–8 digits.');
     }
     await _relapseLock.savePin(pin);
     requirePinAfterRelapse = true;
@@ -878,9 +895,11 @@ class RecoveryController extends ChangeNotifier {
   }) async {
     if (!requirePinAfterRelapse) return ProtectedActionResult.completed;
     if (pin != null) {
-      return await _relapseLock.verifyPin(pin)
-          ? ProtectedActionResult.completed
-          : ProtectedActionResult.denied;
+      return switch (await _relapseLock.verifyPin(pin)) {
+        PinVerificationResult.verified => ProtectedActionResult.completed,
+        PinVerificationResult.denied => ProtectedActionResult.denied,
+        PinVerificationResult.lockedOut => ProtectedActionResult.lockedOut,
+      };
     }
     if (tryBiometrics) {
       final result = await _relapseLock.authenticateBiometrically(

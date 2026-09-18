@@ -212,8 +212,9 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
         );
       } else {
         setState(
-          () => _error =
-              'Authentication failed. Your history has not been changed.',
+          () => _error = result == ProtectedActionResult.lockedOut
+              ? result.failureMessage
+              : 'Authentication failed. Your history has not been changed.',
         );
       }
     } on RecoverySaveException catch (error) {

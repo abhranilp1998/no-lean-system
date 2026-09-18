@@ -502,7 +502,7 @@ Future<void> showPinSetup(
         context,
         result == ProtectedActionResult.completed
             ? 'RELAPSE LOCK DISABLED.'
-            : 'AUTHENTICATION FAILED // LOCK REMAINS ACTIVE.',
+            : '${result.failureMessage} LOCK REMAINS ACTIVE.',
         type: result == ProtectedActionResult.completed
             ? AppNoticeType.info
             : AppNoticeType.error,
@@ -523,7 +523,7 @@ Future<void> showPinSetup(
       if (context.mounted) {
         AppNotice.show(
           context,
-          'RELAPSE LOCK ARMED // BIOMETRIC + ENCRYPTED PIN.',
+          'RELAPSE LOCK ARMED // BIOMETRIC + HASHED PIN.',
           type: AppNoticeType.success,
         );
       }
@@ -735,7 +735,7 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Biometrics will be attempted first. This encrypted PIN is your fallback.',
+              'Biometrics will be attempted first. Your fallback PIN is salted and hashed locally, never stored as readable text.',
               style: TextStyle(color: muted, fontSize: 12, height: 1.45),
             ),
             const SizedBox(height: 14),
@@ -743,15 +743,15 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
               controller: _pinController,
               obscureText: true,
               keyboardType: TextInputType.number,
-              maxLength: 6,
+              maxLength: 8,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(labelText: '4–6 digit PIN'),
+              decoration: const InputDecoration(labelText: '4–8 digit PIN'),
             ),
             TextField(
               controller: _confirmController,
               obscureText: true,
               keyboardType: TextInputType.number,
-              maxLength: 6,
+              maxLength: 8,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
                 labelText: 'Confirm PIN',
@@ -764,10 +764,12 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
               child: FilledButton(
                 onPressed: () {
                   final pin = _pinController.text;
-                  if (pin.length < 4 || pin != _confirmController.text) {
+                  if (!RegExp(r'^\d{4,8}$').hasMatch(pin) ||
+                      pin != _confirmController.text) {
                     setState(() {
-                      _validationMessage = pin.length < 4
-                          ? 'Use 4–6 digits.'
+                      _validationMessage =
+                          !RegExp(r'^\d{4,8}$').hasMatch(pin)
+                          ? 'Use 4–8 digits.'
                           : 'PIN values do not match.';
                     });
                     return;

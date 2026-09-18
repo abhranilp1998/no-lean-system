@@ -67,7 +67,9 @@ class _EventEditDialogState extends ConsumerState<EventEditDialog> {
         Navigator.pop(context);
       } else {
         setState(
-          () => _error = 'Authentication failed. History was not changed.',
+          () => _error = result == ProtectedActionResult.lockedOut
+              ? result.failureMessage
+              : 'Authentication failed. History was not changed.',
         );
       }
     } on FormatException catch (error) {

@@ -58,7 +58,7 @@ void main() {
     },
   );
 
-  test('relapse lock accepts the encrypted PIN fallback', () async {
+  test('relapse lock accepts the hashed PIN fallback', () async {
     final lock = _FakeRelapseLockGateway();
     final controller = RecoveryController(relapseLock: lock);
     await controller.load();
@@ -76,6 +76,26 @@ void main() {
     expect(controller.streak, 0);
   });
 
+  test(
+    'relapse lock propagates PIN lockout without changing history',
+    () async {
+      final lock = _FakeRelapseLockGateway();
+      final controller = RecoveryController(relapseLock: lock);
+      await controller.load();
+      await controller.enableRelapseLock('24681357');
+      final eventCount = controller.events.length;
+      lock.forcedPinResult = PinVerificationResult.lockedOut;
+
+      final result = await controller.recordRelapse(
+        pin: '24681357',
+        tryBiometrics: false,
+      );
+
+      expect(result, ProtectedActionResult.lockedOut);
+      expect(controller.events, hasLength(eventCount));
+    },
+  );
+
   test('relapse lock accepts a successful biometric challenge', () async {
     final lock = _FakeRelapseLockGateway()
       ..biometricResult = BiometricAuthResult.authenticated;
@@ -92,6 +112,28 @@ void main() {
     expect(lock.biometricRequests, 1);
     expect(controller.streak, 0);
   });
+
+  test(
+    'a saved relapse does not keep later protected actions unlocked',
+    () async {
+      final lock = _FakeRelapseLockGateway();
+      final controller = RecoveryController(relapseLock: lock);
+      await controller.load();
+      await controller.enableRelapseLock('2468');
+
+      expect(
+        await controller.recordRelapse(pin: '2468', tryBiometrics: false),
+        ProtectedActionResult.completed,
+      );
+      final eventCount = controller.events.length;
+
+      expect(
+        await controller.recordRelapse(tryBiometrics: false),
+        ProtectedActionResult.authenticationRequired,
+      );
+      expect(controller.events, hasLength(eventCount));
+    },
+  );
 
   test('disabling the lock also requires authentication', () async {
     final lock = _FakeRelapseLockGateway();
@@ -423,6 +465,7 @@ void main() {
 class _FakeRelapseLockGateway implements RelapseLockGateway {
   String? storedPin;
   BiometricAuthResult biometricResult = BiometricAuthResult.unavailable;
+  PinVerificationResult? forcedPinResult;
   int biometricRequests = 0;
 
   @override
@@ -443,5 +486,9 @@ class _FakeRelapseLockGateway implements RelapseLockGateway {
   Future<void> savePin(String pin) async => storedPin = pin;
 
   @override
-  Future<bool> verifyPin(String pin) async => storedPin == pin;
+  Future<PinVerificationResult> verifyPin(String pin) async =>
+      forcedPinResult ??
+      (storedPin == pin
+          ? PinVerificationResult.verified
+          : PinVerificationResult.denied);
 }

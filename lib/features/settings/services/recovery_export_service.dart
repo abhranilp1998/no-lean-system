@@ -71,7 +71,9 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
         if (context.mounted) {
           AppNotice.show(
             context,
-            'Authentication failed. History was not changed.',
+            result == ProtectedActionResult.lockedOut
+                ? result.failureMessage
+                : 'Authentication failed. History was not changed.',
             type: AppNoticeType.error,
           );
         }

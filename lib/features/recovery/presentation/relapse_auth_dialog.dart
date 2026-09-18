@@ -24,6 +24,7 @@ class _RelapsePinDialog extends StatefulWidget {
 
 class _RelapsePinDialogState extends State<_RelapsePinDialog> {
   final _controller = TextEditingController();
+  String? _error;
 
   @override
   void dispose() {
@@ -39,9 +40,26 @@ class _RelapsePinDialogState extends State<_RelapsePinDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Biometric verification was unavailable or cancelled. Enter your NO LEAN PIN to continue.',
-            style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: magenta.withValues(alpha: 0.08),
+              border: Border.all(color: magenta.withValues(alpha: 0.55)),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.lock_outline, color: magenta, size: 20),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Biometrics did not complete. Enter your local NO LEAN PIN. Five incorrect attempts pause PIN entry for five minutes.',
+                    style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
           TextField(
@@ -49,14 +67,16 @@ class _RelapsePinDialogState extends State<_RelapsePinDialog> {
             autofocus: true,
             obscureText: true,
             keyboardType: TextInputType.number,
-            maxLength: 6,
+            maxLength: 8,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            onSubmitted: (value) {
-              if (value.length >= 4) Navigator.pop(context, value);
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
             },
-            decoration: const InputDecoration(
-              labelText: '4–6 digit PIN',
-              prefixIcon: Icon(Icons.password, color: magenta),
+            onSubmitted: (_) => _submit(),
+            decoration: InputDecoration(
+              labelText: '4–8 digit PIN',
+              errorText: _error,
+              prefixIcon: const Icon(Icons.password, color: magenta),
             ),
           ),
           const SizedBox(height: 8),
@@ -69,10 +89,7 @@ class _RelapsePinDialogState extends State<_RelapsePinDialog> {
               ),
               const SizedBox(width: 8),
               FilledButton(
-                onPressed: () {
-                  if (_controller.text.length < 4) return;
-                  Navigator.pop(context, _controller.text);
-                },
+                onPressed: _submit,
                 style: FilledButton.styleFrom(backgroundColor: magenta),
                 child: Text(widget.actionLabel),
               ),
@@ -81,5 +98,14 @@ class _RelapsePinDialogState extends State<_RelapsePinDialog> {
         ],
       ),
     );
+  }
+
+  void _submit() {
+    final pin = _controller.text;
+    if (!RegExp(r'^\d{4,8}$').hasMatch(pin)) {
+      setState(() => _error = 'Enter 4–8 digits.');
+      return;
+    }
+    Navigator.pop(context, pin);
   }
 }

@@ -67,5 +67,7 @@ class FakeRelapseLock implements RelapseLockGateway {
   }
 
   @override
-  Future<bool> verifyPin(String value) async => pin == value;
+  Future<PinVerificationResult> verifyPin(String value) async => pin == value
+      ? PinVerificationResult.verified
+      : PinVerificationResult.denied;
 }
