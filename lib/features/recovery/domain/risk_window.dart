@@ -4,8 +4,8 @@ class RiskWindow {
       assert(endMinutes >= 0 && endMinutes < minutesPerDay);
 
   const RiskWindow.defaultWindow()
-    : startMinutes = 17 * 60 + 30,
-      endMinutes = 20 * 60;
+    : startMinutes = 17 * 60,
+      endMinutes = 21 * 60;
 
   static const minutesPerDay = 24 * 60;
 

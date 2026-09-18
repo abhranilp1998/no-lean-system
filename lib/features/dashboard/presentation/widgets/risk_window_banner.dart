@@ -3,9 +3,14 @@ import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 
 class RiskWindowBanner extends StatelessWidget {
-  const RiskWindowBanner({required this.windowLabel, super.key});
+  const RiskWindowBanner({
+    required this.windowLabel,
+    required this.lockArmed,
+    super.key,
+  });
 
   final String windowLabel;
+  final bool lockArmed;
 
   @override
   Widget build(BuildContext context) {
@@ -22,7 +27,7 @@ class RiskWindowBanner extends StatelessWidget {
           const SizedBox(width: 9),
           Expanded(
             child: Text(
-              'RISK WINDOW  /  $windowLabel  /  STAY MOVING',
+              'RISK WINDOW / $windowLabel / ${lockArmed ? 'HOLD LOCK ARMED' : 'STAY MOVING'}',
               style: microStyle.copyWith(color: red, letterSpacing: .7),
             ),
           ),

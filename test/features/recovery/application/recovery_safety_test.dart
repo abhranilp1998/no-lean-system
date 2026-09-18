@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/core/utils/formatters.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
+import 'package:no_lean/features/recovery/domain/craving_entry.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
 import 'package:no_lean/features/recovery/domain/relapse_log_entry.dart';
 import 'package:no_lean/features/recovery/services/backup_service.dart';
@@ -400,6 +401,42 @@ void main() {
     expect(c.cleanDays[dateKey(earlier)], isNull);
     expect(c.events.where((e) => e.type == RecoveryEventType.relapse), isEmpty);
   });
+
+  test(
+    'peak-hour lock persists and notification copy uses observed risk data',
+    () async {
+      final store = MemoryRecoveryStore();
+      final now = DateTime(2026, 9, 19, 18, 30);
+      final c = RecoveryController(
+        store: store,
+        relapseLock: FakeRelapseLock(),
+        now: () => now,
+      );
+      await c.load();
+
+      expect(c.isPeakHourLockActive, isTrue);
+      await c.recordCraving(
+        CravingEntry(
+          intensity: 10,
+          trigger: 'After Work',
+          note: 'The commute triggered the usual buying loop.',
+          createdAt: DateTime(2026, 9, 19, 18, 12),
+        ),
+      );
+      expect(c.riskNotificationMessages.join(' '), contains('18:00'));
+      expect(c.riskNotificationMessages.join(' '), contains('AFTER WORK'));
+
+      await c.setSetting('peakHourLock', false);
+      final reloaded = RecoveryController(
+        store: store,
+        relapseLock: FakeRelapseLock(),
+        now: () => now,
+      );
+      await reloaded.load();
+      expect(reloaded.peakHourLock, isFalse);
+      expect(reloaded.isPeakHourLockActive, isFalse);
+    },
+  );
 
   test(
     'file store migrates preferences once, retains copies and reopens latest committed history',

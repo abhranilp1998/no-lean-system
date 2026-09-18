@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
 import 'package:no_lean/features/recovery/domain/event_derived_state.dart';
+import 'package:no_lean/features/recovery/domain/risk_window.dart';
 
 void main() {
   group('Event Derived State Computations', () {
@@ -122,6 +123,41 @@ void main() {
       final rate = computePostSosHoldRate(events, 120);
       expect(rate.total, 2);
       expect(rate.held, 1);
+    });
+
+    test('risk-window evidence uses only real signals inside the window', () {
+      final events = [
+        RecoveryEvent.create(
+          type: RecoveryEventType.craving,
+          timestamp: DateTime(2026, 9, 19, 18, 10),
+          metadata: {'intensity': 9, 'trigger': 'After Work', 'note': ''},
+        ),
+        RecoveryEvent.create(
+          type: RecoveryEventType.relapse,
+          timestamp: DateTime(2026, 9, 20, 18, 40),
+          metadata: {
+            'relapseType': 'fullLean',
+            'note': 'The same pattern repeated after work.',
+            'attemptedSos': false,
+            'contextTags': ['After Work', 'Habit'],
+          },
+        ),
+        RecoveryEvent.create(
+          type: RecoveryEventType.craving,
+          timestamp: DateTime(2026, 9, 19, 12),
+          metadata: {'intensity': 4, 'trigger': 'Boredom', 'note': ''},
+        ),
+      ];
+
+      final evidence = computeRiskWindowEvidence(
+        events,
+        const RiskWindow.defaultWindow(),
+      );
+
+      expect(evidence.signalCount, 2);
+      expect(evidence.peakHour, 18);
+      expect(evidence.dominantTrigger, 'After Work');
+      expect(evidence.dominantTriggerCount, 2);
     });
   });
 }

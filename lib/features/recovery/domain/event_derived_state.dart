@@ -1,5 +1,6 @@
 import '../../../core/utils/formatters.dart';
 import 'recovery_event.dart';
+import 'risk_window.dart';
 
 /// Finds the most recent counter-reset timestamp. A recovery-start event is a
 /// neutral baseline and a relapse is a subsequent reset.
@@ -163,4 +164,75 @@ List<int> computeHighRiskHours(List<RecoveryEvent> events) {
     ..sort((a, b) => b.value.compareTo(a.value));
 
   return sortedEntries.map((e) => e.key).toList();
+}
+
+class RiskWindowEvidence {
+  const RiskWindowEvidence({
+    required this.signalCount,
+    this.peakHour,
+    this.dominantTrigger,
+    this.dominantTriggerCount = 0,
+  });
+
+  final int signalCount;
+  final int? peakHour;
+  final String? dominantTrigger;
+  final int dominantTriggerCount;
+}
+
+/// Summarizes only observed craving/relapse signals inside the configured
+/// local-time window. This is shared by peak-hour UI and notifications so both
+/// make the same evidence-backed claim.
+RiskWindowEvidence computeRiskWindowEvidence(
+  List<RecoveryEvent> events,
+  RiskWindow window,
+) {
+  final signals = events.where((event) {
+    if (event.type != RecoveryEventType.craving &&
+        event.type != RecoveryEventType.relapse) {
+      return false;
+    }
+    return window.contains(event.timestamp.toLocal());
+  }).toList();
+  if (signals.isEmpty) return const RiskWindowEvidence(signalCount: 0);
+
+  final hours = <int, int>{};
+  final triggers = <String, int>{};
+  for (final signal in signals) {
+    final hour = signal.timestamp.toLocal().hour;
+    hours[hour] = (hours[hour] ?? 0) + 1;
+
+    final trigger = signal.metadata['trigger'];
+    if (trigger is String && trigger.trim().isNotEmpty) {
+      final normalized = trigger.trim();
+      triggers[normalized] = (triggers[normalized] ?? 0) + 1;
+    }
+    final contextTags = signal.metadata['contextTags'];
+    if (contextTags is List) {
+      for (final tag in contextTags.whereType<String>()) {
+        final normalized = tag.trim();
+        if (normalized.isNotEmpty) {
+          triggers[normalized] = (triggers[normalized] ?? 0) + 1;
+        }
+      }
+    }
+  }
+
+  final rankedHours = hours.entries.toList()
+    ..sort((left, right) {
+      final byCount = right.value.compareTo(left.value);
+      return byCount != 0 ? byCount : left.key.compareTo(right.key);
+    });
+  final rankedTriggers = triggers.entries.toList()
+    ..sort((left, right) {
+      final byCount = right.value.compareTo(left.value);
+      return byCount != 0 ? byCount : left.key.compareTo(right.key);
+    });
+
+  return RiskWindowEvidence(
+    signalCount: signals.length,
+    peakHour: rankedHours.first.key,
+    dominantTrigger: rankedTriggers.firstOrNull?.key,
+    dominantTriggerCount: rankedTriggers.firstOrNull?.value ?? 0,
+  );
 }

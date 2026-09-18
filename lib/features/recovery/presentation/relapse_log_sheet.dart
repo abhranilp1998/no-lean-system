@@ -12,12 +12,31 @@ import '../application/recovery_controller.dart';
 import '../application/recovery_provider.dart';
 import '../domain/craving_entry.dart';
 import '../domain/relapse_log_entry.dart';
+import 'peak_hour_gate_dialog.dart';
 import 'relapse_auth_dialog.dart';
 
 Future<void> showRelapseLogSheet(
   BuildContext context, {
   String source = 'app',
 }) async {
+  final recovery = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(recoveryProvider);
+  if (recovery.isPeakHourLockActive) {
+    final gateResult = await showPeakHourGateDialog(context, recovery);
+    if (!context.mounted || gateResult == null) return;
+    if (gateResult == PeakHourGateResult.openSos) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const EmergencyScreen(),
+          fullscreenDialog: true,
+        ),
+      );
+      return;
+    }
+  }
   final result = await showModalBottomSheet<_RelapseSheetResult>(
     context: context,
     isScrollControlled: true,

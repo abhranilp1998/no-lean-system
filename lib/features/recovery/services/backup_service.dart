@@ -259,6 +259,7 @@ class BackupService {
       'reduceMotion',
       'highContrast',
       'riskReminders',
+      'peakHourLock',
       'soundscape',
       'hapticFeedback',
     ]) {
@@ -302,6 +303,7 @@ class BackupService {
       'reduceMotion',
       'highContrast',
       'riskReminders',
+      'peakHourLock',
       'soundscape',
       'hapticFeedback',
       'feedbackSound',

@@ -59,6 +59,7 @@ void main() {
               'riskWindow': {'startMinutes': 1020, 'endMinutes': 1200},
               'cooldownMinutes': 20,
               'riskReminders': false,
+              'peakHourLock': true,
               'relapsePin': '1234',
               'trustedContact': {'phone': '5551234567'},
             },
@@ -68,6 +69,7 @@ void main() {
         expect(preview.hasPreferences, isTrue);
         expect(preview.preferences!['dailySpend'], 450);
         expect(preview.preferences!['cooldownMinutes'], 20);
+        expect(preview.preferences!['peakHourLock'], isTrue);
         expect(preview.preferences, isNot(contains('relapsePin')));
         expect(preview.preferences, isNot(contains('trustedContact')));
       },

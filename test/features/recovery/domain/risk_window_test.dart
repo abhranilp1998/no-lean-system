@@ -3,6 +3,13 @@ import 'package:no_lean/features/recovery/domain/risk_window.dart';
 
 void main() {
   group('RiskWindow', () {
+    test('defaults to the 17:00–21:00 peak window', () {
+      const window = RiskWindow.defaultWindow();
+
+      expect(window.label, '17:00—21:00');
+      expect(window.contains(DateTime(2026, 8, 7, 18)), isTrue);
+    });
+
     test('detects times inside a daytime window', () {
       const window = RiskWindow(
         startMinutes: 17 * 60 + 30,

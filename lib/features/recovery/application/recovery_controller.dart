@@ -65,13 +65,16 @@ class RecoveryController extends ChangeNotifier {
   RecoveryController({
     RelapseLockGateway? relapseLock,
     RecoveryStateStore? store,
+    DateTime Function()? now,
   }) : _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
-       _store = store ?? PreferencesRecoveryStateStore();
+       _store = store ?? PreferencesRecoveryStateStore(),
+       _now = now ?? DateTime.now;
 
   static const stateVersion = 7;
 
   final RelapseLockGateway _relapseLock;
   final RecoveryStateStore _store;
+  final DateTime Function() _now;
   Future<void>? _loadFuture;
   Future<void> _writeQueue = Future.value();
   Map<String, dynamic> _extraState = {};
@@ -113,6 +116,7 @@ class RecoveryController extends ChangeNotifier {
   bool reduceMotion = false;
   bool highContrast = false;
   bool riskReminders = false;
+  bool peakHourLock = true;
   bool soundscape = false;
   bool hapticFeedback = true;
   FeedbackSoundEffect feedbackSound = FeedbackSoundEffect.neonPulse;
@@ -357,6 +361,7 @@ class RecoveryController extends ChangeNotifier {
     reduceMotion = flag('reduceMotion', reduceMotion);
     highContrast = flag('highContrast', highContrast);
     riskReminders = flag('riskReminders', riskReminders);
+    peakHourLock = flag('peakHourLock', peakHourLock);
     soundscape = flag('soundscape', soundscape);
     hapticFeedback = flag('hapticFeedback', hapticFeedback);
     // A malformed protection flag must not silently disable authentication.
@@ -409,12 +414,42 @@ class RecoveryController extends ChangeNotifier {
 
   int get streak => cleanDuration.inDays;
   Duration get cleanDuration {
-    final elapsed = DateTime.now().difference(lastDose);
+    final elapsed = _now().difference(lastDose);
     return elapsed.isNegative ? Duration.zero : elapsed;
   }
 
   double get moneySaved => math.max(0, cleanDuration.inHours / 24) * dailySpend;
-  bool get isRiskWindow => riskWindow.contains(DateTime.now());
+  bool get isRiskWindow => riskWindow.contains(_now());
+  bool get isPeakHourLockActive => peakHourLock && isRiskWindow;
+  RiskWindowEvidence get riskWindowEvidence =>
+      computeRiskWindowEvidence(events, riskWindow);
+
+  List<String> get riskNotificationMessages {
+    final evidence = riskWindowEvidence;
+    final messages = <String>[];
+    if (evidence.peakHour case final hour?) {
+      messages.add(
+        'YOUR LOGS FLAG ${hour.toString().padLeft(2, '0')}:00. DO NOT BUY. OPEN SOS BEFORE THE LOOP STARTS.',
+      );
+    }
+    if (evidence.signalCount > 0) {
+      messages.add(
+        '${evidence.signalCount} OF YOUR LOGGED RISK SIGNALS HIT INSIDE ${riskWindow.label}. THIS WINDOW IS DATA, NOT A VIBE.',
+      );
+    }
+    if (evidence.dominantTrigger case final trigger?) {
+      messages.add(
+        '${trigger.toUpperCase()} LEADS YOUR PEAK-HOUR TRIGGER DATA. PLAN FOR IT. DO NOT IMPROVISE.',
+      );
+    }
+    messages.add(
+      '${formatDuration(cleanDuration, compact: true)} CLEAN // ${money(moneySaved)} KEPT. DO NOT HAND IT BACK TONIGHT.',
+    );
+    return [
+      ...messages.take(3),
+      ...reminderMessages,
+    ].take(4).toList(growable: false);
+  }
 
   Map<String, dynamic> _snapshot() => {
     ..._extraState,
@@ -433,6 +468,7 @@ class RecoveryController extends ChangeNotifier {
     'reduceMotion': reduceMotion,
     'highContrast': highContrast,
     'riskReminders': riskReminders,
+    'peakHourLock': peakHourLock,
     'soundscape': soundscape,
     'hapticFeedback': hapticFeedback,
     'feedbackSound': feedbackSound.name,
@@ -475,7 +511,10 @@ class RecoveryController extends ChangeNotifier {
             jsonEncode(before['riskWindow']) !=
                 jsonEncode(next['riskWindow']) ||
             jsonEncode(before['reminderMessages']) !=
-                jsonEncode(next['reminderMessages'])) {
+                jsonEncode(next['reminderMessages']) ||
+            before['dailySpend'] != next['dailySpend'] ||
+            (before['events'] as List).length !=
+                (next['events'] as List).length) {
           unawaited(_syncRiskNotifications());
         }
         unawaited(syncWidget());
@@ -630,6 +669,7 @@ class RecoveryController extends ChangeNotifier {
     'reduceMotion': reduceMotion,
     'highContrast': highContrast,
     'riskReminders': riskReminders,
+    'peakHourLock': peakHourLock,
     'soundscape': soundscape,
     'hapticFeedback': hapticFeedback,
     'feedbackSound': feedbackSound.name,
@@ -964,6 +1004,12 @@ class RecoveryController extends ChangeNotifier {
           changed = true;
         }
         break;
+      case 'peakHourLock':
+        if (peakHourLock != value) {
+          peakHourLock = value as bool;
+          changed = true;
+        }
+        break;
       case 'soundscape':
         if (soundscape != value) {
           soundscape = value as bool;
@@ -1033,7 +1079,7 @@ class RecoveryController extends ChangeNotifier {
     try {
       if (riskReminders) {
         await NotificationService.instance.scheduleRiskWindow(
-          reminderMessages,
+          riskNotificationMessages,
           riskWindow: riskWindow,
         );
       } else {

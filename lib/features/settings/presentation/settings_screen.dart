@@ -154,8 +154,22 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => showCooldownDialog(context, ref),
             ),
             SettingToggle(
+              title: 'Peak-hour lock',
+              subtitle:
+                  'Hold-to-open relapse logging during ${recovery.riskWindow.label}',
+              value: recovery.peakHourLock,
+              color: magenta,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setSetting('peakHourLock', value),
+              ),
+            ),
+            SettingToggle(
               title: 'Risk-window reminders',
-              subtitle: 'Enable ${recovery.riskWindow.label} interrupts',
+              subtitle:
+                  'Strong ${recovery.riskWindow.label} interrupts using your risk data',
               value: recovery.riskReminders,
               color: red,
               onChanged: (value) => saveAction(
@@ -168,7 +182,7 @@ class SettingsScreen extends ConsumerWidget {
             SettingToggle(
               title: 'Relapse lock',
               subtitle: recovery.requirePinAfterRelapse
-                  ? 'Biometric first // encrypted PIN fallback'
+                  ? 'Biometric first // hashed PIN fallback'
                   : 'Authenticate before resetting clean time',
               value: recovery.requirePinAfterRelapse,
               color: magenta,

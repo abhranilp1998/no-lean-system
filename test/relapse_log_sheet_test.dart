@@ -13,8 +13,13 @@ Future<RecoveryController> pumpForm(
   WidgetTester tester,
   MemoryRecoveryStore store, {
   double scale = 1,
+  DateTime? now,
 }) async {
-  final c = RecoveryController(store: store, relapseLock: FakeRelapseLock());
+  final c = RecoveryController(
+    store: store,
+    relapseLock: FakeRelapseLock(),
+    now: () => now ?? DateTime(2026, 9, 19, 12),
+  );
   await c.load();
   final container = ProviderContainer(
     overrides: [recoveryProvider.overrideWith((ref) => c)],
@@ -48,6 +53,30 @@ Future<RecoveryController> pumpForm(
 }
 
 void main() {
+  testWidgets('peak-hour lock rejects taps and requires a deliberate hold', (
+    tester,
+  ) async {
+    await pumpForm(
+      tester,
+      MemoryRecoveryStore(),
+      now: DateTime(2026, 9, 19, 18),
+    );
+
+    expect(find.text('PEAK-HOUR LOCK // ACTIVE'), findsOneWidget);
+    expect(find.byType(RelapseLogSheet), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('peak-hour-hold-to-proceed')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('TAP REJECTED'), findsOneWidget);
+    expect(find.byType(RelapseLogSheet), findsNothing);
+
+    await tester.longPress(
+      find.byKey(const ValueKey('peak-hour-hold-to-proceed')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(RelapseLogSheet), findsOneWidget);
+  });
+
   testWidgets(
     'failed batch keeps the form for retry and never shows saved success',
     (tester) async {
