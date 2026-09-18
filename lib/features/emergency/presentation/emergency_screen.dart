@@ -243,7 +243,8 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
-                        SizedBox.expand(
+                        SizedBox.square(
+                          dimension: 246,
                           child: CircularProgressIndicator(
                             value: _remaining / 60,
                             strokeWidth: 7,
