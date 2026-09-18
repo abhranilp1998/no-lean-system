@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/core/utils/formatters.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
+import 'package:no_lean/features/recovery/domain/relapse_log_entry.dart';
 import 'package:no_lean/features/recovery/services/backup_service.dart';
 import 'package:no_lean/features/recovery/services/recovery_state_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -221,6 +222,72 @@ void main() {
       );
     }
     expect(c.events, hasLength(1));
+  });
+
+  test('rich relapse entries persist additive typed metadata', () async {
+    final store = MemoryRecoveryStore();
+    final c = RecoveryController(store: store);
+    await c.load();
+    final occurredAt = DateTime.now().subtract(const Duration(minutes: 2));
+
+    await c.recordRelapse(
+      entries: [
+        RelapseLogEntry(
+          occurredAt: occurredAt,
+          type: RelapseType.partial,
+          note: 'After work I ignored the exit plan.',
+          attemptedSos: true,
+          quantity: ' two sips ',
+          contextTags: const ['After Work', 'Habit'],
+        ),
+      ],
+      operationId: 'rich-relapse',
+    );
+
+    final relapse = c.events.singleWhere(
+      (event) => event.type == RecoveryEventType.relapse,
+    );
+    expect(relapse.metadata, containsPair('relapseType', 'partial'));
+    expect(relapse.metadata, containsPair('attemptedSos', true));
+    expect(relapse.metadata, containsPair('quantity', 'two sips'));
+    expect(
+      relapse.metadata,
+      containsPair('contextTags', ['After Work', 'Habit']),
+    );
+    expect(
+      relapse.metadata,
+      containsPair('note', 'After work I ignored the exit plan.'),
+    );
+
+    final reopened = RecoveryController(store: store);
+    await reopened.load();
+    expect(reopened.events.any((event) => event.id == relapse.id), isTrue);
+    expect(
+      reopened.events.firstWhere((event) => event.id == relapse.id).metadata,
+      relapse.metadata,
+    );
+  });
+
+  test('rich relapse validation fails before history changes', () async {
+    final c = RecoveryController(store: MemoryRecoveryStore());
+    await c.load();
+    await expectLater(
+      c.recordRelapse(
+        entries: [
+          RelapseLogEntry(
+            occurredAt: DateTime.now(),
+            type: RelapseType.fullLean,
+            note: 'too short',
+            attemptedSos: false,
+          ),
+        ],
+      ),
+      throwsArgumentError,
+    );
+    expect(
+      c.events.where((event) => event.type == RecoveryEventType.relapse),
+      isEmpty,
+    );
   });
 
   test(

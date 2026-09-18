@@ -1,5 +1,7 @@
 import 'package:uuid/uuid.dart';
 
+import 'relapse_log_entry.dart';
+
 enum RecoveryEventType {
   daySummary, // Legacy date-only fact; occurrence count/time were not recorded.
   recoveryStart, // Counter baseline. This is not evidence of a relapse.
@@ -149,6 +151,11 @@ class RecoveryEvent {
         final postSos = result['postSos'];
         final streakLost = result['streakLost'];
         final debrief = result['debrief'];
+        final relapseType = result['relapseType'];
+        final note = result['note'];
+        final attemptedSos = result['attemptedSos'];
+        final quantity = result['quantity'];
+        final contextTags = result['contextTags'];
         if (postSos != null && postSos is! bool) {
           throw const FormatException('postSos must be true or false.');
         }
@@ -158,8 +165,50 @@ class RecoveryEvent {
         if (debrief != null && debrief is! String) {
           throw const FormatException('Relapse debrief must be text.');
         }
+        if (relapseType != null &&
+            RelapseTypeLabel.fromName(relapseType) == null) {
+          throw const FormatException('Relapse type is not supported.');
+        }
+        if (note != null && note is! String) {
+          throw const FormatException('Relapse note must be text.');
+        }
+        if (attemptedSos != null && attemptedSos is! bool) {
+          throw const FormatException('attemptedSos must be true or false.');
+        }
+        if (quantity != null && quantity is! String) {
+          throw const FormatException('Relapse quantity must be text.');
+        }
+        if (contextTags != null &&
+            (contextTags is! List ||
+                contextTags.any((tag) => tag is! String))) {
+          throw const FormatException(
+            'Relapse context tags must be a list of text values.',
+          );
+        }
         if (streakLost is num) result['streakLost'] = streakLost.round();
         if (debrief is String) result['debrief'] = debrief.trim();
+        if (note is String) result['note'] = note.trim();
+        if (quantity is String) {
+          final normalized = quantity.trim();
+          if (normalized.isEmpty) {
+            result.remove('quantity');
+          } else {
+            result['quantity'] = normalized;
+          }
+        }
+        if (contextTags is List) {
+          final normalized = contextTags
+              .cast<String>()
+              .map((tag) => tag.trim())
+              .where((tag) => tag.isNotEmpty)
+              .toSet()
+              .toList(growable: false);
+          if (normalized.isEmpty) {
+            result.remove('contextTags');
+          } else {
+            result['contextTags'] = normalized;
+          }
+        }
       case RecoveryEventType.milestone:
         final days = result['days'];
         if (days != null && (days is! num || days < 0)) {

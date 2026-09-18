@@ -7,6 +7,7 @@ import '../../../../core/widgets/glass_card.dart';
 import '../../../recovery/application/recovery_controller.dart';
 import '../../../recovery/application/recovery_provider.dart';
 import '../../../recovery/domain/recovery_event.dart';
+import '../../../recovery/domain/relapse_log_entry.dart';
 import '../../../recovery/presentation/relapse_auth_dialog.dart';
 import 'event_edit_dialog.dart';
 
@@ -18,6 +19,13 @@ class EventTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final (label, icon, color) = _getEventDetails(event);
+
+    if (event.type == RecoveryEventType.relapse) {
+      return _RelapseEventCard(
+        event: event,
+        formattedDate: _formatDate(event.timestamp),
+      );
+    }
 
     return GlassCard(
       accent: color,
@@ -107,6 +115,191 @@ class EventTile extends ConsumerWidget {
     final day = local.day.toString().padLeft(2, '0');
     final month = local.month.toString().padLeft(2, '0');
     return '$day/$month/${local.year} at $hour:$minute';
+  }
+}
+
+class _RelapseEventCard extends StatelessWidget {
+  const _RelapseEventCard({required this.event, required this.formattedDate});
+
+  final RecoveryEvent event;
+  final String formattedDate;
+
+  @override
+  Widget build(BuildContext context) {
+    final relapseType = RelapseTypeLabel.fromName(
+      event.metadata['relapseType'],
+    );
+    final note = event.metadata['note'] as String?;
+    final quantity = event.metadata['quantity'] as String?;
+    final attemptedSos = event.metadata['attemptedSos'] as bool?;
+    final streakLost = event.metadata['streakLost'];
+    final contextTags = switch (event.metadata['contextTags']) {
+      final List values => values.whereType<String>().toList(),
+      _ => const <String>[],
+    };
+
+    return Semantics(
+      container: true,
+      label: [
+        'Relapse recorded $formattedDate.',
+        if (relapseType != null) 'Type ${relapseType.label}.',
+        if (attemptedSos != null)
+          attemptedSos ? 'SOS was attempted.' : 'SOS was not attempted.',
+        if (contextTags.isNotEmpty)
+          'Context signals: ${contextTags.join(', ')}.',
+        if (note?.isNotEmpty == true) 'Note: $note',
+      ].join(' '),
+      child: Container(
+        decoration: BoxDecoration(
+          color: red.withValues(alpha: .11),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: red.withValues(alpha: .82), width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: red.withValues(alpha: .14),
+              blurRadius: 22,
+              spreadRadius: -5,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(width: 7, color: red),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 8, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: red,
+                                borderRadius: BorderRadius.circular(7),
+                              ),
+                              child: Text(
+                                'RELAPSE',
+                                style: displayFont(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.black,
+                                  letterSpacing: 1.1,
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            ExcludeSemantics(child: _ActionsMenu(event: event)),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          relapseType?.label ?? 'LEGACY RELAPSE RECORD',
+                          style: displayFont(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          formattedDate,
+                          style: const TextStyle(color: muted, fontSize: 11),
+                        ),
+                        if (note?.isNotEmpty == true) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            note!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final tag in contextTags)
+                              _RelapseFact(icon: Icons.bolt, label: tag),
+                            if (attemptedSos != null)
+                              _RelapseFact(
+                                icon: attemptedSos
+                                    ? Icons.sos
+                                    : Icons.sos_outlined,
+                                label: attemptedSos
+                                    ? 'SOS ATTEMPTED'
+                                    : 'NO SOS ATTEMPT',
+                              ),
+                            if (quantity?.isNotEmpty == true)
+                              _RelapseFact(
+                                icon: Icons.straighten,
+                                label: quantity!,
+                              ),
+                            if (streakLost != null)
+                              _RelapseFact(
+                                icon: Icons.timer_off_outlined,
+                                label: '$streakLost DAYS INTERRUPTED',
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RelapseFact extends StatelessWidget {
+  const _RelapseFact({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .3),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: red.withValues(alpha: .35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: red, size: 14),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

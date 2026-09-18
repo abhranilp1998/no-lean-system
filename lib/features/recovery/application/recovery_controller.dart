@@ -13,6 +13,7 @@ import '../services/recovery_state_store.dart';
 import '../domain/effect_intensity.dart';
 import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
+import '../domain/relapse_log_entry.dart';
 import '../domain/risk_window.dart';
 import '../domain/sos_session.dart';
 import '../services/home_widget_service.dart';
@@ -636,10 +637,20 @@ class RecoveryController extends ChangeNotifier {
     String? pin,
     bool tryBiometrics = true,
     List<DateTime>? occurredAt,
+    List<RelapseLogEntry>? entries,
     String? operationId,
     String source = 'app',
   }) {
-    final times = List<DateTime>.of(occurredAt ?? [DateTime.now()])..sort();
+    if (occurredAt != null && entries != null) {
+      throw ArgumentError('Use occurredAt or entries, not both.');
+    }
+    final richEntries = entries == null
+        ? null
+        : (List<RelapseLogEntry>.of(entries)
+            ..sort((a, b) => a.occurredAt.compareTo(b.occurredAt)));
+    final times = richEntries == null
+        ? (List<DateTime>.of(occurredAt ?? [DateTime.now()])..sort())
+        : richEntries.map((entry) => entry.occurredAt).toList();
     final batch = operationId ?? const Uuid().v4();
     return _transaction(() async {
       if (times.isEmpty ||
@@ -648,6 +659,9 @@ class RecoveryController extends ChangeNotifier {
             (at) => at.isBefore(DateTime(2000)) || at.isAfter(DateTime.now()),
           )) {
         throw ArgumentError('Choose 1–50 events, dated between 2000 and now.');
+      }
+      for (final entry in richEntries ?? const <RelapseLogEntry>[]) {
+        entry.validate();
       }
       final authorization = await _authorizeProtectedAction(
         pin: pin,
@@ -676,6 +690,7 @@ class RecoveryController extends ChangeNotifier {
       RecoveryEvent? latest;
       for (var index = 0; index < times.length; index++) {
         final at = times[index];
+        final richEntry = richEntries?[index];
         final resets =
             events
                 .where(
@@ -709,6 +724,7 @@ class RecoveryController extends ChangeNotifier {
             'recordedAt': DateTime.now().toIso8601String(),
             'postSos': postSos,
             'streakLost': lost,
+            if (richEntry != null) ...richEntry.toMetadata(),
           },
         });
         if (events.any((e) => e.id == latest!.id)) {

@@ -1,3 +1,13 @@
+const recoveryTriggerOptions = <String>[
+  'After Work',
+  'Boredom',
+  'Muscle Tension',
+  'Loneliness',
+  'Office Stress',
+  'Habit',
+  'Other',
+];
+
 class CravingEntry {
   CravingEntry({
     required this.intensity,

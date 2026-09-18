@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
+import 'package:no_lean/features/recovery/domain/relapse_log_entry.dart';
 
 void main() {
   group('RecoveryEvent', () {
@@ -82,6 +83,56 @@ void main() {
         () => event.metadata['source'] = 'changed',
         throwsUnsupportedError,
       );
+    });
+
+    test(
+      'richer relapse metadata round-trips while legacy events remain valid',
+      () {
+        final legacy = RecoveryEvent.create(
+          type: RecoveryEventType.relapse,
+          metadata: {'postSos': false, 'streakLost': 4},
+        );
+        expect(
+          RecoveryEvent.fromJson(legacy.toJson()).metadata,
+          legacy.metadata,
+        );
+
+        final rich = RecoveryEvent.create(
+          type: RecoveryEventType.relapse,
+          metadata: {
+            'relapseType': RelapseType.leanPlusAlcohol.name,
+            'note': 'After work with the usual trigger.',
+            'attemptedSos': true,
+            'quantity': ' one cup ',
+            'contextTags': [' After Work ', 'Habit', 'Habit'],
+          },
+        );
+        expect(rich.metadata['relapseType'], 'leanPlusAlcohol');
+        expect(rich.metadata['quantity'], 'one cup');
+        expect(rich.metadata['contextTags'], ['After Work', 'Habit']);
+        expect(RecoveryEvent.fromJson(rich.toJson()).metadata, rich.metadata);
+      },
+    );
+
+    test('rejects malformed richer relapse metadata', () {
+      for (final metadata in <Map<String, dynamic>>[
+        {'relapseType': 'unsupported'},
+        {'note': 12},
+        {'attemptedSos': 'yes'},
+        {'quantity': 2},
+        {'contextTags': 'After Work'},
+        {
+          'contextTags': ['After Work', 2],
+        },
+      ]) {
+        expect(
+          () => RecoveryEvent.create(
+            type: RecoveryEventType.relapse,
+            metadata: metadata,
+          ),
+          throwsFormatException,
+        );
+      }
     });
   });
 }

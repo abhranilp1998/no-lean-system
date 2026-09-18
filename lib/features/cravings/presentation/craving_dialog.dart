@@ -42,16 +42,6 @@ class _CravingDialogState extends State<_CravingDialog> {
   var trigger = 'After Work';
   final note = TextEditingController();
 
-  static const triggers = [
-    'After Work',
-    'Boredom',
-    'Muscle Tension',
-    'Loneliness',
-    'Office Stress',
-    'Habit',
-    'Other',
-  ];
-
   @override
   void dispose() {
     note.dispose();
@@ -85,7 +75,7 @@ class _CravingDialogState extends State<_CravingDialog> {
             Wrap(
               spacing: 7,
               runSpacing: 7,
-              children: triggers
+              children: recoveryTriggerOptions
                   .map(
                     (item) => ChoiceChip(
                       label: Text(item, style: const TextStyle(fontSize: 10)),

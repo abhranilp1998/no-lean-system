@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:no_lean/main.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
+import 'package:no_lean/features/recovery/presentation/relapse_log_sheet.dart';
 import 'package:no_lean/features/recovery/services/widget_action_service.dart';
 import 'package:flutter/services.dart';
 import 'support/recovery_fakes.dart';
@@ -87,11 +88,22 @@ void main() {
       expect(find.text('LOG MORE EVENTS'), findsOneWidget);
       await tester.tap(find.text('LOG MORE EVENTS'));
       await tester.pumpAndSettle();
+      await tester.drag(
+        find.descendant(
+          of: find.byType(RelapseLogSheet),
+          matching: find.byType(ListView),
+        ),
+        const Offset(0, -700),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.text('ADD ANOTHER EVENT'));
       await tester.pump();
       expect(find.byKey(const ValueKey('relapse-date-1')), findsOneWidget);
       expect(find.byKey(const ValueKey('relapse-time-1')), findsOneWidget);
+      await _completeRelapseEntries(tester, 2);
       await tester.tap(find.text('SAVE 2 EVENTS'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('CONFIRM RESET'));
       await tester.pumpAndSettle();
       expect(
         controller.events.where((e) => e.type == RecoveryEventType.relapse),
@@ -165,13 +177,16 @@ void main() {
       final container = await _pumpLoadedApp(tester);
       addTearDown(container.dispose);
       await tester.pumpAndSettle();
-      expect(find.text('LOG RELAPSES'), findsOneWidget);
+      expect(find.text('LOG RELAPSE'), findsOneWidget);
+      await _completeRelapseEntries(tester, 1);
       await tester.tap(find.text('SAVE 1 EVENT'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('CONFIRM RESET'));
       await tester.pumpAndSettle();
       pending.add('relapse');
       await WidgetActionService.instance.initialize();
       await tester.pumpAndSettle();
-      expect(find.text('LOG RELAPSES'), findsOneWidget);
+      expect(find.text('LOG RELAPSE'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('relapse-date-0')));
       await tester.pumpAndSettle();
       expect(find.byType(DatePickerDialog), findsOneWidget);
@@ -179,8 +194,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('relapse-time-0')));
       await tester.pumpAndSettle();
-      expect(find.byType(TimePickerDialog), findsOneWidget);
-      await tester.tap(find.text('Cancel'));
+      expect(find.byKey(const ValueKey('relapse-time-picker')), findsOneWidget);
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('relapse-time-picker')),
+          matching: find.text('CANCEL'),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('CANCEL'));
       await tester.pumpAndSettle();
@@ -193,6 +213,15 @@ void main() {
       );
     },
   );
+}
+
+Future<void> _completeRelapseEntries(WidgetTester tester, int count) async {
+  for (var index = 0; index < count; index++) {
+    final note = find.byKey(ValueKey('relapse-note-$index'));
+    await tester.ensureVisible(note);
+    await tester.enterText(note, 'Recorded context for relapse ${index + 1}.');
+  }
+  await tester.pump();
 }
 
 Future<void> _pumpUntil(
