@@ -11,6 +11,7 @@ import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../settings/presentation/settings_dialogs.dart';
 import '../domain/recovery_insights.dart';
+import '../domain/verified_safety_briefs.dart';
 import 'widgets/actionable_insights_panel.dart';
 import 'widgets/craving_timeline_card.dart';
 import 'widgets/insight_breakdown_card.dart';
@@ -38,6 +39,10 @@ class ProgressScreen extends ConsumerWidget {
       sosSessions: recovery.sosSessions,
       dailySpend: recovery.dailySpend,
       moneySaved: recovery.moneySaved,
+    );
+    final safetyInsights = verifiedSafetyInsights(
+      events: recovery.events,
+      cleanStreakDays: recovery.streak,
     );
 
     void runAction(PatternActionKind action) {
@@ -134,7 +139,7 @@ class ProgressScreen extends ConsumerWidget {
           color: red,
         ),
         const SizedBox(height: 10),
-        const VerifiedRiskBriefs(),
+        VerifiedRiskBriefs(insights: safetyInsights),
         const SizedBox(height: 20),
         const _SectionLabel(
           glyph: '◇',

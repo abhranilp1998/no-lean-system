@@ -35,31 +35,49 @@ class ActionableInsightsPanel extends StatelessWidget {
 }
 
 class VerifiedRiskBriefs extends StatelessWidget {
-  const VerifiedRiskBriefs({super.key});
+  const VerifiedRiskBriefs({required this.insights, super.key});
+
+  final List<VerifiedSafetyInsight> insights;
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      for (var index = 0; index < verifiedSafetyBriefs.length; index++) ...[
-        _SafetyBriefCard(
-          brief: verifiedSafetyBriefs[index],
-          accent: switch (index) {
-            0 => red,
-            1 => magenta,
-            2 => purple,
-            _ => cyan,
-          },
+  Widget build(BuildContext context) {
+    final matched = insights.where((insight) => insight.logMatched).length;
+    return Column(
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            matched == 0
+                ? 'NO SPECIFIC LOG MATCH // BASELINE INTEL REMAINS AVAILABLE'
+                : '$matched OF ${insights.length} BRIEFS MATCH LIVE LOG SIGNALS',
+            style: microStyle.copyWith(
+              color: matched == 0 ? muted : cyan,
+              fontSize: 8.5,
+            ),
+          ),
         ),
-        if (index != verifiedSafetyBriefs.length - 1) const SizedBox(height: 8),
+        const SizedBox(height: 8),
+        for (var index = 0; index < insights.length; index++) ...[
+          _SafetyBriefCard(
+            insight: insights[index],
+            accent: switch (insights[index].brief.kind) {
+              VerifiedSafetyBriefKind.depressantMixing => red,
+              VerifiedSafetyBriefKind.reducedTolerance => magenta,
+              VerifiedSafetyBriefKind.counterfeitPills => purple,
+              VerifiedSafetyBriefKind.overdoseResponse => cyan,
+            },
+          ),
+          if (index != insights.length - 1) const SizedBox(height: 8),
+        ],
+        const SizedBox(height: 8),
+        const Text(
+          'VERIFIED GUIDANCE // GENERAL SAFETY INFORMATION, NOT A DIAGNOSIS',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: muted, fontSize: 8.5, letterSpacing: .45),
+        ),
       ],
-      const SizedBox(height: 8),
-      const Text(
-        'VERIFIED GUIDANCE // GENERAL SAFETY INFORMATION, NOT A DIAGNOSIS',
-        textAlign: TextAlign.center,
-        style: TextStyle(color: muted, fontSize: 8.5, letterSpacing: .45),
-      ),
-    ],
-  );
+    );
+  }
 }
 
 class _PatternActionCard extends StatelessWidget {
@@ -146,9 +164,9 @@ class _PatternActionCard extends StatelessWidget {
 }
 
 class _SafetyBriefCard extends StatefulWidget {
-  const _SafetyBriefCard({required this.brief, required this.accent});
+  const _SafetyBriefCard({required this.insight, required this.accent});
 
-  final VerifiedSafetyBrief brief;
+  final VerifiedSafetyInsight insight;
   final Color accent;
 
   @override
@@ -158,10 +176,12 @@ class _SafetyBriefCard extends StatefulWidget {
 class _SafetyBriefCardState extends State<_SafetyBriefCard> {
   bool _expanded = false;
 
+  VerifiedSafetyBrief get _brief => widget.insight.brief;
+
   Future<void> _openSource() async {
     AppFeedback.tap();
     final opened = await launchUrl(
-      Uri.parse(widget.brief.sourceUrl),
+      Uri.parse(_brief.sourceUrl),
       mode: LaunchMode.externalApplication,
     );
     if (!opened && mounted) {
@@ -203,21 +223,38 @@ class _SafetyBriefCardState extends State<_SafetyBriefCard> {
                     ),
                     const SizedBox(width: 9),
                     Expanded(
-                      child: Text(
-                        widget.brief.title,
-                        style: TextStyle(
-                          color: widget.accent,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: .55,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _brief.title,
+                            style: TextStyle(
+                              color: widget.accent,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: .55,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.insight.logMatched
+                                ? 'LOG MATCH // LIVE'
+                                : 'BASELINE INTEL',
+                            style: microStyle.copyWith(
+                              color: widget.insight.logMatched
+                                  ? widget.accent
+                                  : muted,
+                              fontSize: 7.5,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     Semantics(
                       link: true,
-                      label: 'Open source: ${widget.brief.sourceLabel}',
+                      label: 'Open source: ${_brief.sourceLabel}',
                       child: IconButton(
-                        tooltip: widget.brief.sourceLabel,
+                        tooltip: _brief.sourceLabel,
                         onPressed: _openSource,
                         icon: Icon(
                           Icons.open_in_new_rounded,
@@ -247,12 +284,24 @@ class _SafetyBriefCardState extends State<_SafetyBriefCard> {
                       children: [
                         Divider(color: widget.accent.withValues(alpha: .2)),
                         Text(
-                          widget.brief.summary,
+                          'WHY THIS APPEARED // ${widget.insight.evidence}',
+                          style: TextStyle(
+                            color: widget.insight.logMatched
+                                ? widget.accent
+                                : muted,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _brief.summary,
                           style: const TextStyle(fontSize: 11, height: 1.45),
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'NEXT MOVE // ${widget.brief.nextMove}',
+                          'NEXT MOVE // ${_brief.nextMove}',
                           style: TextStyle(
                             color: widget.accent,
                             fontSize: 10.5,
@@ -262,7 +311,7 @@ class _SafetyBriefCardState extends State<_SafetyBriefCard> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          widget.brief.sourceLabel,
+                          _brief.sourceLabel,
                           style: microStyle.copyWith(fontSize: 8),
                         ),
                       ],
