@@ -78,6 +78,14 @@ class SettingsScreen extends ConsumerWidget {
         SettingsSection(
           title: 'INTERFACE',
           children: [
+            SettingAction(
+              icon: Icons.dashboard_customize_outlined,
+              title: 'Dashboard messages',
+              subtitle:
+                  '${recovery.dashboardNoticeStyle.label} // counter stays first',
+              color: cyan,
+              onTap: () => showDashboardNoticeStyleDialog(context, ref),
+            ),
             SettingToggle(
               title: 'CRT scanlines',
               subtitle: 'Subtle display texture',

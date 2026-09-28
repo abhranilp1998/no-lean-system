@@ -63,6 +63,136 @@ class SosCompletionSummary {
   double get completionRate => started == 0 ? 0 : completed / started;
 }
 
+enum PatternActionKind { logCraving, openSos, editRiskWindow, pledge }
+
+class PatternActionInsight {
+  const PatternActionInsight({
+    required this.title,
+    required this.body,
+    required this.evidence,
+    required this.actionLabel,
+    required this.action,
+  });
+
+  final String title;
+  final String body;
+  final String evidence;
+  final String actionLabel;
+  final PatternActionKind action;
+}
+
+List<PatternActionInsight> patternActionInsights({
+  required Iterable<CravingEntry> cravings,
+  required Iterable<SosSession> sosSessions,
+  required double dailySpend,
+  required double moneySaved,
+}) {
+  final entries = cravings.toList();
+  final sessions = sosSessions.toList();
+  final results = <PatternActionInsight>[];
+
+  final highIntensityByDay = <String, int>{};
+  for (final entry in entries.where((entry) => _intensity(entry) >= 8)) {
+    final key = _dateKey(entry.createdAt);
+    highIntensityByDay[key] = (highIntensityByDay[key] ?? 0) + 1;
+  }
+  if (highIntensityByDay.isNotEmpty) {
+    final strongest = highIntensityByDay.entries.reduce(
+      (a, b) => a.value >= b.value ? a : b,
+    );
+    if (strongest.value >= 2) {
+      results.add(
+        PatternActionInsight(
+          title: 'REPEAT SPIKE DETECTED',
+          body:
+              '${strongest.value} cravings hit 8/10 or higher on one day. Do not wait for the next spike: leave the buying route and run the full override.',
+          evidence:
+              '${strongest.value} HIGH-INTENSITY LOGS // ${strongest.key}',
+          actionLabel: 'OPEN SOS NOW',
+          action: PatternActionKind.openSos,
+        ),
+      );
+    }
+  }
+
+  final triggers = triggerBreakdown(entries);
+  if (triggers.isNotEmpty && triggers.first.count >= 2) {
+    final dominant = triggers.first;
+    results.add(
+      PatternActionInsight(
+        title: '${dominant.label.toUpperCase()} OWNS THE LOOP',
+        body:
+            '${(dominant.ratio * 100).round()}% of your ${entries.length} logged cravings point here. Before the next exposure: change location, remove the payment path, and open SOS before negotiating.',
+        evidence:
+            '${dominant.count} OF ${entries.length} LOGS // AVG ${dominant.averageIntensity.toStringAsFixed(1)}/10',
+        actionLabel: 'PRACTICE SOS',
+        action: PatternActionKind.openSos,
+      ),
+    );
+  }
+
+  final timeBands = timeOfDayBreakdown(entries);
+  if (timeBands.isNotEmpty) {
+    final dominant = timeBands.reduce((a, b) => a.count >= b.count ? a : b);
+    if (dominant.count >= 2) {
+      results.add(
+        PatternActionInsight(
+          title: '${dominant.label} IS THE EXPOSED BAND',
+          body:
+              'Start protection before this band, not inside it. Move the risk window earlier and keep the peak-hour lock armed.',
+          evidence:
+              '${dominant.count} OF ${entries.length} LOGS // ${(dominant.ratio * 100).round()}%',
+          actionLabel: 'TUNE RISK WINDOW',
+          action: PatternActionKind.editRiskWindow,
+        ),
+      );
+    }
+  }
+
+  final sos = sosCompletionSummary(sessions);
+  if (sos.started >= 2 && sos.completionRate < .6) {
+    results.add(
+      PatternActionInsight(
+        title: 'THE OVERRIDE IS BEING CUT SHORT',
+        body:
+            'Only ${sos.completed} of ${sos.started} SOS runs reached the end. Rehearse the full minute while calm so the sequence is familiar under pressure.',
+        evidence: '${(sos.completionRate * 100).round()}% COMPLETION',
+        actionLabel: 'RUN A FULL SOS',
+        action: PatternActionKind.openSos,
+      ),
+    );
+  }
+
+  if (dailySpend > 0 && moneySaved >= dailySpend) {
+    results.add(
+      PatternActionInsight(
+        title: 'MOVE THE MONEY OUT OF RANGE',
+        body:
+            'Your clean time has retained ${moneySaved.toStringAsFixed(0)} in tracked spend. Move today\'s ${dailySpend.toStringAsFixed(0)} away from the usual buying path, then lock the pledge.',
+        evidence:
+            '${moneySaved.toStringAsFixed(0)} RETAINED // ${dailySpend.toStringAsFixed(0)} DAILY',
+        actionLabel: 'LOCK TODAY',
+        action: PatternActionKind.pledge,
+      ),
+    );
+  }
+
+  if (results.isEmpty) {
+    results.add(
+      const PatternActionInsight(
+        title: 'BUILD THE SIGNAL BASELINE',
+        body:
+            'Log the hour, intensity, and real trigger when a craving hits. Three honest signals are more useful than a confident guess.',
+        evidence: 'LESS THAN 3 REPEAT SIGNALS',
+        actionLabel: 'LOG A CRAVING',
+        action: PatternActionKind.logCraving,
+      ),
+    );
+  }
+
+  return List.unmodifiable(results.take(4));
+}
+
 List<InsightBreakdown> triggerBreakdown(Iterable<CravingEntry> entries) {
   final groups = <String, _BreakdownAccumulator>{};
   var total = 0;

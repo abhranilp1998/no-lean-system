@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:no_lean/features/dashboard/domain/dashboard_notice_style.dart';
 import 'package:no_lean/core/utils/formatters.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/domain/craving_entry.dart';
@@ -427,6 +428,10 @@ void main() {
       expect(c.riskNotificationMessages.join(' '), contains('AFTER WORK'));
 
       await c.setSetting('peakHourLock', false);
+      await c.setSetting(
+        'dashboardNoticeStyle',
+        DashboardNoticeStyle.systemInbox,
+      );
       final reloaded = RecoveryController(
         store: store,
         relapseLock: FakeRelapseLock(),
@@ -435,6 +440,7 @@ void main() {
       await reloaded.load();
       expect(reloaded.peakHourLock, isFalse);
       expect(reloaded.isPeakHourLockActive, isFalse);
+      expect(reloaded.dashboardNoticeStyle, DashboardNoticeStyle.systemInbox);
     },
   );
 

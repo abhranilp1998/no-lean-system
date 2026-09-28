@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../../core/services/feedback_preferences.dart';
+import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../domain/effect_intensity.dart';
 import '../domain/legacy_recovery_migration.dart';
 import '../domain/recovery_event.dart';
@@ -268,7 +269,7 @@ class BackupService {
         throw FormatException('$key must be true or false.');
       }
     }
-    for (final key in ['feedbackSound', 'intensity']) {
+    for (final key in ['feedbackSound', 'intensity', 'dashboardNoticeStyle']) {
       final value = input[key];
       if (value != null && value is! String) {
         throw FormatException('$key must be text.');
@@ -285,6 +286,13 @@ class BackupService {
     if (intensity is String &&
         !EffectIntensity.values.any((value) => value.name == intensity)) {
       throw const FormatException('intensity is not supported.');
+    }
+    final dashboardNoticeStyle = input['dashboardNoticeStyle'];
+    if (dashboardNoticeStyle is String &&
+        !DashboardNoticeStyle.values.any(
+          (value) => value.name == dashboardNoticeStyle,
+        )) {
+      throw const FormatException('dashboardNoticeStyle is not supported.');
     }
 
     final reasons = stringList('reasons');
@@ -308,6 +316,7 @@ class BackupService {
       'hapticFeedback',
       'feedbackSound',
       'intensity',
+      'dashboardNoticeStyle',
     ]) {
       if (input.containsKey(key)) preferences[key] = input[key];
     }

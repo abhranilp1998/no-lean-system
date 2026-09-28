@@ -8,10 +8,52 @@ import '../../../core/services/save_action.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
+import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/risk_window.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
+
+Future<void> showDashboardNoticeStyleDialog(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final current = ref.read(recoveryProvider).dashboardNoticeStyle;
+  final selected = await showDialog<DashboardNoticeStyle>(
+    context: context,
+    builder: (dialogContext) => AppDialog(
+      title: 'DASHBOARD MESSAGE MODE',
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'The counter always stays first. Choose how recovery messages wait below it.',
+              style: TextStyle(color: muted, fontSize: 11.5, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            for (final style in DashboardNoticeStyle.values) ...[
+              _NoticeStyleOption(
+                style: style,
+                selected: style == current,
+                onTap: () => Navigator.pop(dialogContext, style),
+              ),
+              if (style != DashboardNoticeStyle.values.last)
+                const SizedBox(height: 8),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
+  if (selected == null || selected == current || !context.mounted) return;
+  await saveAction(
+    context,
+    () =>
+        ref.read(recoveryProvider).setSetting('dashboardNoticeStyle', selected),
+  );
+}
 
 Future<void> showReasonsDialog(BuildContext context, WidgetRef ref) async {
   final updatedReasons = await showDialog<List<String>>(
@@ -767,8 +809,7 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
                   if (!RegExp(r'^\d{4,8}$').hasMatch(pin) ||
                       pin != _confirmController.text) {
                     setState(() {
-                      _validationMessage =
-                          !RegExp(r'^\d{4,8}$').hasMatch(pin)
+                      _validationMessage = !RegExp(r'^\d{4,8}$').hasMatch(pin)
                           ? 'Use 4–8 digits.'
                           : 'PIN values do not match.';
                     });
@@ -780,6 +821,85 @@ class _PinSetupDialogState extends State<_PinSetupDialog> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NoticeStyleOption extends StatelessWidget {
+  const _NoticeStyleOption({
+    required this.style,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final DashboardNoticeStyle style;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (style) {
+      DashboardNoticeStyle.edgeRail => cyan,
+      DashboardNoticeStyle.statusStack => purple,
+      DashboardNoticeStyle.systemInbox => magenta,
+    };
+    final icon = switch (style) {
+      DashboardNoticeStyle.edgeRail => Icons.view_sidebar_outlined,
+      DashboardNoticeStyle.statusStack => Icons.view_stream_outlined,
+      DashboardNoticeStyle.systemInbox => Icons.mark_email_unread_outlined,
+    };
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: selected ? .13 : .035),
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: color.withValues(alpha: selected ? .9 : .25),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: color, size: 21),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      style.label,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      style.description,
+                      style: const TextStyle(
+                        color: muted,
+                        fontSize: 9.5,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                selected ? Icons.radio_button_checked : Icons.radio_button_off,
+                color: selected ? color : muted,
+                size: 18,
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -85,7 +85,12 @@ void main() {
       await controller.recordRelapse();
       await tester.pump();
       expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.text('RESET SUPPORT'), findsOneWidget);
+      await tester.tap(find.text('RESET SUPPORT'));
+      await tester.pumpAndSettle();
       expect(find.text('LOG MORE EVENTS'), findsOneWidget);
+      await tester.ensureVisible(find.text('LOG MORE EVENTS'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('LOG MORE EVENTS'));
       await tester.pumpAndSettle();
       await tester.drag(
@@ -122,6 +127,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('READY TO REFLECT?'), findsOneWidget);
       await tester.tap(find.text('CRAVING / URGE'));
+      await tester.pumpAndSettle();
+      await tester.drag(find.byType(ListView).first, const Offset(0, 1000));
       await tester.pumpAndSettle();
       expect(find.text('THE COUNTER'), findsOneWidget);
       expect(controller.relapseCooldownUntil, isNull);

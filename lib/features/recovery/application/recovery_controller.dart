@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
+import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../domain/craving_entry.dart';
 import '../domain/legacy_recovery_migration.dart';
 import '../services/recovery_state_store.dart';
@@ -122,6 +123,7 @@ class RecoveryController extends ChangeNotifier {
   FeedbackSoundEffect feedbackSound = FeedbackSoundEffect.neonPulse;
   bool requirePinAfterRelapse = false;
   EffectIntensity intensity = EffectIntensity.standard;
+  DashboardNoticeStyle dashboardNoticeStyle = DashboardNoticeStyle.edgeRail;
   bool isLoaded = false;
 
   void _recomputeDerivedState() {
@@ -376,6 +378,10 @@ class RecoveryController extends ChangeNotifier {
       (v) => v.name == map['intensity'],
       orElse: () => intensity,
     );
+    dashboardNoticeStyle = DashboardNoticeStyle.values.firstWhere(
+      (value) => value.name == map['dashboardNoticeStyle'],
+      orElse: () => dashboardNoticeStyle,
+    );
   }
 
   List<RecoveryEvent> _decodeCurrentEvents(Object? value) {
@@ -474,6 +480,7 @@ class RecoveryController extends ChangeNotifier {
     'feedbackSound': feedbackSound.name,
     'requirePinAfterRelapse': requirePinAfterRelapse,
     'intensity': intensity.name,
+    'dashboardNoticeStyle': dashboardNoticeStyle.name,
   };
 
   void _restoreSnapshot(Map<String, dynamic> map) {
@@ -674,6 +681,7 @@ class RecoveryController extends ChangeNotifier {
     'hapticFeedback': hapticFeedback,
     'feedbackSound': feedbackSound.name,
     'intensity': intensity.name,
+    'dashboardNoticeStyle': dashboardNoticeStyle.name,
   };
 
   Future<void> pledge() async {
@@ -1031,6 +1039,12 @@ class RecoveryController extends ChangeNotifier {
       case 'intensity':
         if (intensity != value) {
           intensity = value as EffectIntensity;
+          changed = true;
+        }
+        break;
+      case 'dashboardNoticeStyle':
+        if (dashboardNoticeStyle != value) {
+          dashboardNoticeStyle = value as DashboardNoticeStyle;
           changed = true;
         }
         break;

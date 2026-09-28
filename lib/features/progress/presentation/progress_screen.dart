@@ -5,8 +5,13 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/brand_header.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/status_pill.dart';
+import '../../cravings/presentation/craving_dialog.dart';
+import '../../dashboard/presentation/dashboard_dialogs.dart';
+import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/application/recovery_provider.dart';
+import '../../settings/presentation/settings_dialogs.dart';
 import '../domain/recovery_insights.dart';
+import 'widgets/actionable_insights_panel.dart';
 import 'widgets/craving_timeline_card.dart';
 import 'widgets/insight_breakdown_card.dart';
 import 'widgets/milestone_tracker.dart';
@@ -28,6 +33,31 @@ class ProgressScreen extends ConsumerWidget {
       cleanDays: recovery.cleanDays,
     );
     final sos = sosCompletionSummary(recovery.sosSessions);
+    final actions = patternActionInsights(
+      cravings: recovery.cravings,
+      sosSessions: recovery.sosSessions,
+      dailySpend: recovery.dailySpend,
+      moneySaved: recovery.moneySaved,
+    );
+
+    void runAction(PatternActionKind action) {
+      switch (action) {
+        case PatternActionKind.logCraving:
+          showCravingDialog(context, ref);
+          return;
+        case PatternActionKind.openSos:
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const EmergencyScreen()));
+          return;
+        case PatternActionKind.editRiskWindow:
+          showRiskWindowDialog(context, ref);
+          return;
+        case PatternActionKind.pledge:
+          showPledgeDialog(context, ref);
+          return;
+      }
+    }
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
@@ -71,6 +101,14 @@ class ProgressScreen extends ConsumerWidget {
         const SizedBox(height: 14),
         WeeklySummaryCard(summary: weekly),
         const SizedBox(height: 20),
+        const _SectionLabel(
+          glyph: '>>',
+          label: 'NEXT MOVE // YOUR DATA',
+          color: magenta,
+        ),
+        const SizedBox(height: 10),
+        ActionableInsightsPanel(insights: actions, onAction: runAction),
+        const SizedBox(height: 20),
         _SectionLabel(glyph: '⌁', label: 'PATTERN RECOGNITION', color: magenta),
         const SizedBox(height: 10),
         InsightBreakdownCard(
@@ -89,6 +127,14 @@ class ProgressScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         SosCompletionCard(summary: sos),
+        const SizedBox(height: 20),
+        const _SectionLabel(
+          glyph: '!!',
+          label: 'VERIFIED RISK INTEL',
+          color: red,
+        ),
+        const SizedBox(height: 10),
+        const VerifiedRiskBriefs(),
         const SizedBox(height: 20),
         const _SectionLabel(
           glyph: '◇',

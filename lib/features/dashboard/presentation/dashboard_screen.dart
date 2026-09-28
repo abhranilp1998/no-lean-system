@@ -20,6 +20,7 @@ import '../../recovery/application/recovery_provider.dart';
 import 'dashboard_dialogs.dart';
 import '../../recovery/presentation/relapse_cooldown_screen.dart';
 import 'widgets/animated_counter.dart';
+import 'widgets/dashboard_notice_center.dart';
 import 'widgets/risk_window_banner.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -58,67 +59,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         children: [
           const BrandHeader(),
           const SizedBox(height: 22),
-          if (recovery.welcomeBackSince != null) ...[
-            GlassCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'WELCOME BACK',
-                    style: eyebrowStyle.copyWith(color: cyan),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Your history is still here. Add anything you missed, at your own pace. Unopened days are left unrecorded.',
-                  ),
-                  TextButton.icon(
-                    onPressed: () => showRelapseDialog(context, ref),
-                    icon: const Icon(Icons.playlist_add),
-                    label: const Text('LOG MISSED RELAPSES'),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-          ],
-          if (recovery.relapseCooldownUntil != null) ...[
-            GlassCard(
-              accent: purple,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'TAKE A MOMENT',
-                    style: TextStyle(
-                      color: purple,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Text(
-                    'Your log is saved. Breathing, your reasons, and a short reflection are here when you need them.',
-                  ),
-                  Wrap(
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const RelapseCooldownScreen(),
-                          ),
-                        ),
-                        child: const Text('OPEN RESET SUPPORT'),
-                      ),
-                      TextButton(
-                        onPressed: () => showRelapseDialog(context, ref),
-                        child: const Text('LOG MORE EVENTS'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-          ],
           if (recovery.isRiskWindow)
             RiskWindowBanner(
               windowLabel: recovery.riskWindow.label,
@@ -173,6 +113,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             ),
           ),
           const SizedBox(height: 14),
+          DashboardNoticeCenter(
+            style: recovery.dashboardNoticeStyle,
+            showWelcomeBack: recovery.welcomeBackSince != null,
+            showResetSupport: recovery.relapseCooldownUntil != null,
+            onLogMissedRelapses: () => showRelapseDialog(context, ref),
+            onOpenResetSupport: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RelapseCooldownScreen()),
+            ),
+            onLogMoreEvents: () => showRelapseDialog(context, ref),
+          ),
+          if (recovery.welcomeBackSince != null ||
+              recovery.relapseCooldownUntil != null)
+            const SizedBox(height: 14),
           GlowButton(
             label: 'I WILL NOT BUY LEAN TODAY',
             icon: Icons.lock_outline,

@@ -56,6 +56,36 @@ void main() {
     expect(summary.completionRate, closeTo(2 / 3, .001));
     expect(summary.averageDuration, const Duration(seconds: 45));
   });
+
+  test('action engine prioritizes repeated high-intensity cravings', () {
+    final day = DateTime(2026, 8, 7);
+    final insights = patternActionInsights(
+      cravings: [
+        _craving(day.add(const Duration(hours: 18)), intensity: 9),
+        _craving(day.add(const Duration(hours: 20)), intensity: 8),
+      ],
+      sosSessions: const [],
+      dailySpend: 0,
+      moneySaved: 0,
+    );
+
+    expect(insights.first.title, 'REPEAT SPIKE DETECTED');
+    expect(insights.first.action, PatternActionKind.openSos);
+    expect(insights.first.evidence, contains('2 HIGH-INTENSITY LOGS'));
+  });
+
+  test('action engine avoids confident patterns without repeat evidence', () {
+    final insights = patternActionInsights(
+      cravings: [_craving(DateTime(2026, 8, 7, 18), intensity: 6)],
+      sosSessions: const [],
+      dailySpend: 0,
+      moneySaved: 0,
+    );
+
+    expect(insights, hasLength(1));
+    expect(insights.single.title, 'BUILD THE SIGNAL BASELINE');
+    expect(insights.single.action, PatternActionKind.logCraving);
+  });
 }
 
 CravingEntry _craving(
