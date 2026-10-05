@@ -28,6 +28,26 @@ flutter test
 flutter run
 ```
 
+For browser development, use a stable port so subsequent runs open the same
+browser-local recovery history:
+
+```bash
+flutter run -d chrome --web-port=60905
+```
+
+The web build shares the Flutter screens and recovery logic. History is stored
+locally in IndexedDB, with the previous committed history and migration copies
+retained. Existing browser preference history remains a migration source. JSON
+backups download through the browser and can be imported with file selection.
+
+Browser history belongs to the exact site origin (scheme, host, and port) and
+browser profile; changing the development port does not move it. Clearing site
+data or ending a private browsing session can remove local history, so keep a
+downloaded backup. Android and browser history do not synchronize automatically.
+Production hosting must use HTTPS for secure storage. Android widgets, native
+biometrics, and scheduled local risk reminders still need separate web behavior;
+opening the web build does not imply production feature parity.
+
 The debug APK is produced at `build/app/outputs/flutter-apk/app-debug.apk` after:
 
 ```bash

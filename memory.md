@@ -37,6 +37,13 @@ Read it before changing code.
   storage. Keep the legacy preference, previous commit, and migration snapshots.
   Serialize mutations, roll back memory on failure, and notify only after commit.
   Unknown/corrupt current history opens a recovery screen and must never reset.
+- On web, `createRecoveryStateStore()` selects IndexedDB database
+  `no_lean_recovery`, object store `history`. Keep `current`, `previous`, and
+  preserved migration records; current/previous writes commit atomically. Reject
+  stale-tab writes instead of overwriting newer history. Browser preference
+  history stays a migration source. Do not replace this with native file APIs or
+  an empty in-memory fallback. Preserve the origin and storage namespace when
+  deploying; browser and Android histories do not sync automatically.
 - Legacy day summaries retain date-only facts, not invented timestamps/counts.
   Backup format 3 supports these summaries and imports legacy exports.
 - Multiple relapse rows use one protected, idempotent batch operation with a

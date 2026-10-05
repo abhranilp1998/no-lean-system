@@ -82,9 +82,10 @@ These items should be completed before a store release:
 
 - Add small and large Android widget variants after the 4x2 widget is validated
   across common launchers.
-- Keep web support out of scope until secure-storage, notification, backup, and
-  privacy behavior can reach feature parity rather than shipping a partial
-  recovery experience.
+- Browser development now uses local IndexedDB persistence and browser JSON
+  downloads. Gate a production web release on secure-storage, notification,
+  backup, offline loading, accessibility, and privacy validation. Define explicit
+  browser alternatives for native features before claiming feature parity.
 
 ## UI/UX direction
 

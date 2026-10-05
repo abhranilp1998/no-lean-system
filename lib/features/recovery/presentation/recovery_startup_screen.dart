@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -91,7 +92,9 @@ class RecoveryStartupScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Keep the app installed to preserve its local data. You can retry or save readable copies for recovery.',
+                    kIsWeb
+                        ? 'Do not clear this site\'s browser data. You can retry or save readable copies for recovery.'
+                        : 'Keep the app installed to preserve its local data. You can retry or save readable copies for recovery.',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: muted),
                   ),

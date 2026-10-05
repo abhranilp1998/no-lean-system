@@ -60,7 +60,18 @@ class BackupService {
     final fileName =
         'nolean_backup_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.json';
 
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+    if (kIsWeb) {
+      await FilePicker.saveFile(
+        dialogTitle: 'Save Backup',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+        bytes: Uint8List.fromList(utf8.encode(jsonString)),
+      );
+      return;
+    }
+
+    if (Platform.isAndroid || Platform.isIOS) {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/$fileName');
       try {
