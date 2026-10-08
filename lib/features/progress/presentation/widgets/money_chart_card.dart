@@ -16,6 +16,7 @@ class MoneyChartCard extends StatelessWidget {
     required this.points,
     required this.dailySpend,
     required this.onSetSpend,
+    this.costByType = const {},
     super.key,
   });
 
@@ -23,9 +24,12 @@ class MoneyChartCard extends StatelessWidget {
   final double dailySpend;
   final VoidCallback onSetSpend;
 
+  /// Recorded ₹ per relapse type label (only types with a cost).
+  final Map<String, double> costByType;
+
   @override
   Widget build(BuildContext context) {
-    if (dailySpend <= 0) {
+    if (dailySpend <= 0 && points.isEmpty) {
       return GlassCard(
         key: const ValueKey('money-chart-prompt'),
         accent: toxic,
@@ -57,6 +61,8 @@ class MoneyChartCard extends StatelessWidget {
     final last = points.isEmpty ? null : points.last;
     final saved = last?.saved ?? 0;
     final lost = last?.lost ?? 0;
+    final realLost = last?.realLost ?? 0;
+    final estimatedLost = last?.estimatedLost ?? 0;
     return GlassCard(
       key: const ValueKey('money-chart'),
       accent: toxic,
@@ -103,12 +109,45 @@ class MoneyChartCard extends StatelessWidget {
                 Text('TODAY', style: microStyle.copyWith(color: muted)),
               ],
             ),
+          if (costByType.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text('RECORDED BY TYPE', style: microStyle.copyWith(color: muted)),
+            const SizedBox(height: 4),
+            Wrap(
+              key: const ValueKey('money-by-type'),
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                for (final entry in costByType.entries)
+                  Text(
+                    '${entry.key} ${money(entry.value)}',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 6),
           Text(
-            'ESTIMATE // ${money(dailySpend)} PER DAY, EVERY RELAPSE DAY '
-            'COUNTED AS LOST',
+            key: const ValueKey('money-basis'),
+            realLost > 0
+                ? 'LOST = ${money(realLost)} RECORDED'
+                      '${estimatedLost > 0 ? ' + ${money(estimatedLost)} ESTIMATED AT ${money(dailySpend)}/DAY FOR RELAPSE DAYS WITHOUT A COST' : ''}'
+                : 'ESTIMATE // ${money(dailySpend)} PER DAY, EVERY RELAPSE DAY '
+                      'COUNTED AS LOST',
             style: microStyle.copyWith(color: muted, fontSize: 9),
           ),
+          if (dailySpend <= 0) ...[
+            const SizedBox(height: 8),
+            TextButton(
+              key: const ValueKey('money-set-spend'),
+              onPressed: onSetSpend,
+              child: const Text('SET DAILY SPEND TO TRACK MONEY KEPT'),
+            ),
+          ],
         ],
       ),
     );

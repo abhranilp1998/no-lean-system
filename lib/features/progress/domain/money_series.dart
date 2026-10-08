@@ -7,24 +7,43 @@ class MoneyPoint {
     required this.day,
     required this.saved,
     required this.lost,
+    this.realLost = 0,
   });
 
   final DateTime day;
   final double saved;
+
+  /// Everything lost so far: recorded costs plus estimated relapse days.
   final double lost;
+
+  /// The part of [lost] the user actually recorded as a cost.
+  final double realLost;
+
+  double get estimatedLost => lost - realLost;
 }
 
 /// Cumulative money kept vs. spent, one point per local day from the first
-/// recorded day to today. It is an estimate with one assumption, labelled in
-/// the UI: every relapse day cost one [dailySpend], every other day kept it.
-/// Today counts only the part of the day that has passed. Past spend changes
-/// are not recorded, so the current figure applies to all history.
+/// recorded day to today. A relapse day with recorded costs loses exactly
+/// those costs; a relapse day without one is estimated at [dailySpend]
+/// (labelled in the UI). Every other day keeps [dailySpend]. Today counts
+/// only the part of the day that has passed. Past spend changes are not
+/// recorded, so the current figure applies to all history. With no daily
+/// spend set, recorded costs are still charted.
 List<MoneyPoint> cumulativeMoneySeries({
   required Iterable<RecoveryEvent> events,
   required double dailySpend,
   required DateTime now,
 }) {
-  if (dailySpend <= 0 || !dailySpend.isFinite) return const [];
+  final spend = dailySpend.isFinite && dailySpend > 0 ? dailySpend : 0.0;
+  final realByDay = <String, double>{};
+  for (final event in events) {
+    final cost = event.metadata['cost'];
+    if (event.type == RecoveryEventType.relapse && cost is num) {
+      final key = dateKey(event.timestamp.toLocal());
+      realByDay[key] = (realByDay[key] ?? 0) + cost;
+    }
+  }
+  if (spend == 0 && realByDay.isEmpty) return const [];
   final relapseDays = <String>{};
   DateTime? first;
   for (final event in events) {
@@ -47,21 +66,29 @@ List<MoneyPoint> cumulativeMoneySeries({
   final points = <MoneyPoint>[];
   var saved = 0.0;
   var lost = 0.0;
+  var realLost = 0.0;
   // Calendar stepping (not +24h) so DST-free and DST zones both work.
   for (
     var day = first;
     !day.isAfter(today);
     day = DateTime(day.year, day.month, day.day + 1)
   ) {
-    if (relapseDays.contains(dateKey(day))) {
-      lost += dailySpend;
+    final key = dateKey(day);
+    final real = realByDay[key];
+    if (real != null) {
+      lost += real;
+      realLost += real;
+    } else if (relapseDays.contains(key)) {
+      lost += spend;
     } else if (day == today) {
       final elapsed = now.difference(today).inMinutes / Duration.minutesPerDay;
-      saved += dailySpend * elapsed.clamp(0, 1);
+      saved += spend * elapsed.clamp(0, 1);
     } else {
-      saved += dailySpend;
+      saved += spend;
     }
-    points.add(MoneyPoint(day: day, saved: saved, lost: lost));
+    points.add(
+      MoneyPoint(day: day, saved: saved, lost: lost, realLost: realLost),
+    );
   }
   return points;
 }
