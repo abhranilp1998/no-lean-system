@@ -11,6 +11,8 @@ class InsightBreakdownCard extends StatelessWidget {
     required this.entries,
     required this.accent,
     this.maxVisible,
+    this.totalLabel,
+    this.footnote,
     super.key,
   });
 
@@ -19,6 +21,12 @@ class InsightBreakdownCard extends StatelessWidget {
   final List<InsightBreakdown> entries;
   final Color accent;
   final int? maxVisible;
+
+  /// Overrides the "N LOGS" header (e.g. when one signal has several tags).
+  final String? totalLabel;
+
+  /// Optional evidence line under the rows.
+  final String? footnote;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +52,8 @@ class InsightBreakdownCard extends StatelessWidget {
               Text(title, style: microStyle.copyWith(color: accent)),
               const Spacer(),
               Text(
-                '${entries.fold<int>(0, (sum, entry) => sum + entry.count)} LOGS',
+                totalLabel ??
+                    '${entries.fold<int>(0, (sum, entry) => sum + entry.count)} LOGS',
                 style: microStyle.copyWith(color: muted, fontSize: 8.5),
               ),
             ],
@@ -70,6 +79,13 @@ class InsightBreakdownCard extends StatelessWidget {
               ),
             ],
           ],
+          if (footnote != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              footnote!,
+              style: microStyle.copyWith(color: accent, fontSize: 9),
+            ),
+          ],
         ],
       ),
     );
@@ -87,7 +103,9 @@ class _BreakdownRow extends StatelessWidget {
     final percentage = (entry.ratio * 100).round();
     return Semantics(
       label:
-          '${entry.label}: ${entry.count} logs, $percentage percent, average intensity ${entry.averageIntensity.toStringAsFixed(1)} out of 10',
+          '${entry.label}: ${entry.count} logs, $percentage percent, '
+          '${entry.relapseCount} relapses, average craving intensity '
+          '${entry.averageIntensity.toStringAsFixed(1)} out of 10',
       child: Column(
         children: [
           Row(
@@ -106,7 +124,11 @@ class _BreakdownRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                'AVG ${entry.averageIntensity.toStringAsFixed(1)}',
+                [
+                  if (entry.count > entry.relapseCount)
+                    'AVG ${entry.averageIntensity.toStringAsFixed(1)}',
+                  if (entry.relapseCount > 0) '${entry.relapseCount} REL',
+                ].join(' // '),
                 style: microStyle.copyWith(color: muted, fontSize: 8.5),
               ),
               const SizedBox(width: 9),

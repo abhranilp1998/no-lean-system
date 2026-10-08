@@ -9,6 +9,7 @@ import '../../cravings/presentation/craving_dialog.dart';
 import '../../dashboard/presentation/dashboard_dialogs.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/application/recovery_provider.dart';
+import '../../recovery/domain/recovery_event.dart';
 import '../../settings/presentation/settings_dialogs.dart';
 import '../domain/recovery_insights.dart';
 import '../domain/verified_safety_briefs.dart';
@@ -26,8 +27,16 @@ class ProgressScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final recovery = ref.watch(recoveryProvider);
     final timeline = chronologicalCravingSeries(recovery.cravings);
-    final triggers = triggerBreakdown(recovery.cravings);
-    final timeBands = timeOfDayBreakdown(recovery.cravings);
+    final relapses = recovery.events
+        .where((event) => event.type == RecoveryEventType.relapse)
+        .toList();
+    final signals = riskSignals(
+      cravings: recovery.cravings,
+      relapses: relapses,
+    );
+    final triggers = signalTriggerBreakdown(signals);
+    final timeBands = signalTimeBreakdown(signals);
+    final windowShare = riskWindowShare(signals, recovery.riskWindow);
     final weekly = weeklyRecoverySummary(
       cravings: recovery.cravings,
       sosSessions: recovery.sosSessions,
@@ -39,6 +48,8 @@ class ProgressScreen extends ConsumerWidget {
       sosSessions: recovery.sosSessions,
       dailySpend: recovery.dailySpend,
       moneySaved: recovery.moneySaved,
+      relapses: relapses,
+      riskWindow: recovery.riskWindow,
     );
     final safetyInsights = verifiedSafetyInsights(
       events: recovery.events,
@@ -118,10 +129,12 @@ class ProgressScreen extends ConsumerWidget {
         const SizedBox(height: 10),
         InsightBreakdownCard(
           title: 'TRIGGER SIGNATURES',
-          emptyMessage: 'Log a craving to identify repeat trigger signatures.',
+          emptyMessage:
+              'Log a craving or tag a relapse to identify repeat trigger signatures.',
           entries: triggers,
           accent: magenta,
           maxVisible: 5,
+          totalLabel: '${signals.length} SIGNALS',
         ),
         const SizedBox(height: 12),
         InsightBreakdownCard(
@@ -129,6 +142,13 @@ class ProgressScreen extends ConsumerWidget {
           emptyMessage: 'Time-band exposure will appear after your first log.',
           entries: timeBands,
           accent: cyan,
+          totalLabel: '${signals.length} SIGNALS',
+          footnote: windowShare.total == 0
+              ? null
+              : 'YOUR WINDOW ${recovery.riskWindow.label} // '
+                    '${windowShare.inWindow} OF ${windowShare.total} '
+                    '(${windowShare.percent}%)'
+                    '${windowShare.total < minimumSignalsForPattern ? ' // LOW DATA' : ''}',
         ),
         const SizedBox(height: 12),
         SosCompletionCard(summary: sos),

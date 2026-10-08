@@ -1,5 +1,193 @@
 import '../../recovery/domain/craving_entry.dart';
+import '../../recovery/domain/recovery_event.dart';
+import '../../recovery/domain/risk_window.dart';
 import '../../recovery/domain/sos_session.dart';
+
+/// Patterns stay hidden until there is enough data to be honest about them.
+const minimumSignalsForPattern = 5;
+
+/// A trigger or time band must repeat at least this often to be called out.
+const minimumRepeatsForPattern = 3;
+
+/// One craving or relapse, reduced to what pattern detection needs.
+class RiskSignal {
+  const RiskSignal({
+    required this.at,
+    required this.isRelapse,
+    this.triggers = const [],
+    this.intensity,
+  });
+
+  final DateTime at;
+  final bool isRelapse;
+  final List<String> triggers;
+
+  /// Craving intensity 0–10; null for relapses.
+  final int? intensity;
+}
+
+/// Merges cravings and relapse events into one signal list. Relapse context
+/// tags count as triggers.
+List<RiskSignal> riskSignals({
+  required Iterable<CravingEntry> cravings,
+  Iterable<RecoveryEvent> relapses = const [],
+}) {
+  final signals = <RiskSignal>[
+    for (final entry in cravings)
+      RiskSignal(
+        at: entry.createdAt,
+        isRelapse: false,
+        triggers: [if (entry.trigger.trim().isNotEmpty) entry.trigger.trim()],
+        intensity: _intensity(entry),
+      ),
+  ];
+  for (final event in relapses) {
+    if (event.type != RecoveryEventType.relapse) continue;
+    final tags = event.metadata['contextTags'];
+    signals.add(
+      RiskSignal(
+        at: event.timestamp,
+        isRelapse: true,
+        triggers: tags is List
+            ? tags
+                  .whereType<String>()
+                  .map((tag) => tag.trim())
+                  .where((tag) => tag.isNotEmpty)
+                  .toSet()
+                  .toList()
+            : const [],
+      ),
+    );
+  }
+  return signals;
+}
+
+/// Trigger breakdown across cravings and relapses. Untagged relapses are left
+/// out (no trigger was recorded); untagged cravings count as "Other".
+/// [InsightBreakdown.averageIntensity] averages cravings only.
+List<InsightBreakdown> signalTriggerBreakdown(Iterable<RiskSignal> signals) {
+  final groups = <String, _BreakdownAccumulator>{};
+  var total = 0;
+  for (final signal in signals) {
+    final labels = signal.triggers.isEmpty
+        ? (signal.isRelapse ? const <String>[] : const ['Other'])
+        : signal.triggers;
+    if (labels.isEmpty) continue;
+    total++;
+    for (final label in labels) {
+      final group = groups.putIfAbsent(
+        label.toLowerCase(),
+        () => _BreakdownAccumulator(label),
+      );
+      group.count++;
+      if (signal.isRelapse) {
+        group.relapses++;
+      } else {
+        group
+          ..cravings += 1
+          ..totalIntensity += signal.intensity ?? 0;
+      }
+    }
+  }
+  if (total == 0) return const [];
+  final result = groups.values.map((group) => group.toBreakdown(total)).toList()
+    ..sort(_sortBreakdowns);
+  return List.unmodifiable(result);
+}
+
+/// Fixed time-of-day bands across cravings and relapses.
+List<InsightBreakdown> signalTimeBreakdown(Iterable<RiskSignal> signals) {
+  final groups = {
+    for (final label in _bandLabels) label: _BreakdownAccumulator(label),
+  };
+  var total = 0;
+  for (final signal in signals) {
+    final group = groups[_bandFor(signal.at)]!..count += 1;
+    if (signal.isRelapse) {
+      group.relapses++;
+    } else {
+      group
+        ..cravings += 1
+        ..totalIntensity += signal.intensity ?? 0;
+    }
+    total++;
+  }
+  if (total == 0) return const [];
+  return List.unmodifiable(
+    groups.values.map((group) => group.toBreakdown(total)),
+  );
+}
+
+class RiskWindowShare {
+  const RiskWindowShare({
+    required this.window,
+    required this.total,
+    required this.inWindow,
+    required this.relapsesInWindow,
+  });
+
+  final RiskWindow window;
+  final int total;
+  final int inWindow;
+  final int relapsesInWindow;
+
+  double get ratio => total == 0 ? 0 : inWindow / total;
+  int get percent => (ratio * 100).round();
+}
+
+RiskWindowShare riskWindowShare(
+  Iterable<RiskSignal> signals,
+  RiskWindow window,
+) {
+  var total = 0;
+  var inWindow = 0;
+  var relapses = 0;
+  for (final signal in signals) {
+    total++;
+    if (window.contains(signal.at.toLocal())) {
+      inWindow++;
+      if (signal.isRelapse) relapses++;
+    }
+  }
+  return RiskWindowShare(
+    window: window,
+    total: total,
+    inWindow: inWindow,
+    relapsesInWindow: relapses,
+  );
+}
+
+class RelapseCost {
+  const RelapseCost({required this.relapseDays, required this.dailySpend});
+
+  /// Distinct calendar days with at least one relapse in the period.
+  final int relapseDays;
+  final double dailySpend;
+
+  double get amount => relapseDays * dailySpend;
+}
+
+/// Estimated money lost to relapses over the last [days] days: each relapse
+/// day is priced at the user's tracked daily spend.
+RelapseCost relapseCost({
+  required Iterable<RecoveryEvent> relapses,
+  required double dailySpend,
+  required DateTime now,
+  int days = 30,
+}) {
+  final since = now.subtract(Duration(days: days));
+  final dates = <String>{
+    for (final event in relapses)
+      if (event.type == RecoveryEventType.relapse &&
+          event.timestamp.isAfter(since) &&
+          !event.timestamp.isAfter(now))
+        _dateKey(event.timestamp),
+  };
+  return RelapseCost(
+    relapseDays: dates.length,
+    dailySpend: dailySpend < 0 ? 0 : dailySpend,
+  );
+}
 
 class InsightBreakdown {
   const InsightBreakdown({
@@ -7,12 +195,18 @@ class InsightBreakdown {
     required this.count,
     required this.ratio,
     required this.averageIntensity,
+    this.relapseCount = 0,
   });
 
   final String label;
   final int count;
   final double ratio;
+
+  /// Average craving intensity (relapses carry no intensity).
   final double averageIntensity;
+
+  /// How many of [count] were relapses rather than cravings.
+  final int relapseCount;
 }
 
 class CravingSeriesPoint {
@@ -86,9 +280,18 @@ List<PatternActionInsight> patternActionInsights({
   required Iterable<SosSession> sosSessions,
   required double dailySpend,
   required double moneySaved,
+  Iterable<RecoveryEvent> relapses = const [],
+  RiskWindow riskWindow = const RiskWindow.defaultWindow(),
+  DateTime? now,
 }) {
+  final current = now ?? DateTime.now();
   final entries = cravings.toList();
+  final relapseEvents = relapses
+      .where((event) => event.type == RecoveryEventType.relapse)
+      .toList();
   final sessions = sosSessions.toList();
+  final signals = riskSignals(cravings: entries, relapses: relapseEvents);
+  final enoughData = signals.length >= minimumSignalsForPattern;
   final results = <PatternActionInsight>[];
 
   final highIntensityByDay = <String, int>{};
@@ -115,38 +318,82 @@ List<PatternActionInsight> patternActionInsights({
     }
   }
 
-  final triggers = triggerBreakdown(entries);
-  if (triggers.isNotEmpty && triggers.first.count >= 2) {
-    final dominant = triggers.first;
-    results.add(
-      PatternActionInsight(
-        title: '${dominant.label.toUpperCase()} OWNS THE LOOP',
-        body:
-            '${(dominant.ratio * 100).round()}% of your ${entries.length} logged cravings point here. Before the next exposure: change location, remove the payment path, and open SOS before negotiating.',
-        evidence:
-            '${dominant.count} OF ${entries.length} LOGS // AVG ${dominant.averageIntensity.toStringAsFixed(1)}/10',
-        actionLabel: 'PRACTICE SOS',
-        action: PatternActionKind.openSos,
-      ),
-    );
-  }
-
-  final timeBands = timeOfDayBreakdown(entries);
-  if (timeBands.isNotEmpty) {
-    final dominant = timeBands.reduce((a, b) => a.count >= b.count ? a : b);
-    if (dominant.count >= 2) {
+  if (enoughData) {
+    final triggers = signalTriggerBreakdown(signals);
+    final tagged = signals
+        .where((signal) => signal.triggers.isNotEmpty || !signal.isRelapse)
+        .length;
+    if (triggers.isNotEmpty &&
+        triggers.first.count >= minimumRepeatsForPattern &&
+        tagged >= minimumSignalsForPattern) {
+      final dominant = triggers.first;
+      final relapseLine = dominant.relapseCount == 0
+          ? ''
+          : ' ${_plural(dominant.relapseCount, 'relapse')} came out of it.';
       results.add(
         PatternActionInsight(
-          title: '${dominant.label} IS THE EXPOSED BAND',
+          title: '${dominant.label.toUpperCase()} OWNS THE LOOP',
           body:
-              'Start protection before this band, not inside it. Move the risk window earlier and keep the peak-hour lock armed.',
+              '${(dominant.ratio * 100).round()}% of your $tagged logged signals point here.$relapseLine Before the next exposure: change location, remove the payment path, and open SOS before negotiating.',
           evidence:
-              '${dominant.count} OF ${entries.length} LOGS // ${(dominant.ratio * 100).round()}%',
+              '${dominant.count} OF $tagged SIGNALS // ${dominant.relapseCount} RELAPSE${dominant.relapseCount == 1 ? '' : 'S'}',
+          actionLabel: 'PRACTICE SOS',
+          action: PatternActionKind.openSos,
+        ),
+      );
+    }
+
+    final share = riskWindowShare(signals, riskWindow);
+    final bands = signalTimeBreakdown(signals);
+    final topBand = bands.reduce((a, b) => a.count >= b.count ? a : b);
+    final relapsesNote = share.relapsesInWindow == 0
+        ? ''
+        : ' ${_plural(share.relapsesInWindow, 'relapse')} landed inside it.';
+    if (share.ratio >= .5 && share.inWindow >= minimumRepeatsForPattern) {
+      results.add(
+        PatternActionInsight(
+          title: 'YOUR ${share.window.label} WINDOW IS CONFIRMED',
+          body:
+              '${share.percent}% of your ${share.total} cravings and relapses hit inside it.$relapsesNote Start protection 15 minutes before it opens and keep the window lock armed.',
+          evidence:
+              '${share.inWindow} OF ${share.total} SIGNALS // ${share.percent}% IN WINDOW',
           actionLabel: 'TUNE RISK WINDOW',
           action: PatternActionKind.editRiskWindow,
         ),
       );
+    } else if (topBand.count >= minimumRepeatsForPattern &&
+        topBand.count > share.inWindow) {
+      results.add(
+        PatternActionInsight(
+          title: 'YOUR RISK WINDOW IS MISPLACED',
+          body:
+              'Only ${share.percent}% of your ${share.total} signals fell inside ${share.window.label}, but ${(topBand.ratio * 100).round()}% hit ${topBand.label}. Move the window to where the data is.',
+          evidence:
+              '${topBand.count} OF ${share.total} IN ${topBand.label} // ${share.inWindow} IN WINDOW',
+          actionLabel: 'MOVE RISK WINDOW',
+          action: PatternActionKind.editRiskWindow,
+        ),
+      );
     }
+  }
+
+  final cost = relapseCost(
+    relapses: relapseEvents,
+    dailySpend: dailySpend,
+    now: current,
+  );
+  if (cost.relapseDays > 0 && cost.dailySpend > 0) {
+    results.add(
+      PatternActionInsight(
+        title: 'RELAPSES COST ${cost.amount.toStringAsFixed(0)} THIS MONTH',
+        body:
+            '${_plural(cost.relapseDays, 'relapse day')} in the last 30 days at your tracked ${cost.dailySpend.toStringAsFixed(0)}/day. That is money the clean days kept. Lock today so the next 24 hours add to the other column.',
+        evidence:
+            '${cost.relapseDays} DAY${cost.relapseDays == 1 ? '' : 'S'} × ${cost.dailySpend.toStringAsFixed(0)} // ESTIMATE FROM DAILY SPEND',
+        actionLabel: 'LOCK TODAY',
+        action: PatternActionKind.pledge,
+      ),
+    );
   }
 
   final sos = sosCompletionSummary(sessions);
@@ -155,7 +402,7 @@ List<PatternActionInsight> patternActionInsights({
       PatternActionInsight(
         title: 'THE OVERRIDE IS BEING CUT SHORT',
         body:
-            'Only ${sos.completed} of ${sos.started} SOS runs reached the end. Rehearse the full minute while calm so the sequence is familiar under pressure.',
+            'Only ${sos.completed} of ${sos.started} SOS runs reached the end. Rehearse the full sequence while calm so it is familiar under pressure.',
         evidence: '${(sos.completionRate * 100).round()}% COMPLETION',
         actionLabel: 'RUN A FULL SOS',
         action: PatternActionKind.openSos,
@@ -177,13 +424,25 @@ List<PatternActionInsight> patternActionInsights({
     );
   }
 
-  if (results.isEmpty) {
+  if (!enoughData) {
     results.add(
-      const PatternActionInsight(
+      PatternActionInsight(
         title: 'BUILD THE SIGNAL BASELINE',
         body:
-            'Log the hour, intensity, and real trigger when a craving hits. Three honest signals are more useful than a confident guess.',
-        evidence: 'LESS THAN 3 REPEAT SIGNALS',
+            '${signals.length} of $minimumSignalsForPattern signals logged. Trigger and timing patterns stay hidden until there is enough data to be honest. Log the hour, intensity and real trigger every time.',
+        evidence:
+            '${signals.length}/$minimumSignalsForPattern SIGNALS // PATTERNS LOCKED',
+        actionLabel: 'LOG A CRAVING',
+        action: PatternActionKind.logCraving,
+      ),
+    );
+  } else if (results.isEmpty) {
+    results.add(
+      PatternActionInsight(
+        title: 'NO DOMINANT PATTERN YET',
+        body:
+            '${signals.length} signals logged and none repeats $minimumRepeatsForPattern+ times in one trigger or band. Keep logging the real trigger, not a guess.',
+        evidence: '${signals.length} SIGNALS // NO REPEAT ABOVE THRESHOLD',
         actionLabel: 'LOG A CRAVING',
         action: PatternActionKind.logCraving,
       ),
@@ -192,6 +451,9 @@ List<PatternActionInsight> patternActionInsights({
 
   return List.unmodifiable(results.take(4));
 }
+
+String _plural(int count, String noun) =>
+    '$count $noun${count == 1 ? '' : 's'}';
 
 List<InsightBreakdown> triggerBreakdown(Iterable<CravingEntry> entries) {
   final groups = <String, _BreakdownAccumulator>{};
@@ -375,8 +637,32 @@ class _BreakdownAccumulator {
 
   final String label;
   int count = 0;
+  int cravings = 0;
+  int relapses = 0;
   int totalIntensity = 0;
+
+  InsightBreakdown toBreakdown(int total) => InsightBreakdown(
+    label: label,
+    count: count,
+    ratio: count / total,
+    averageIntensity: cravings == 0 ? 0 : totalIntensity / cravings,
+    relapseCount: relapses,
+  );
 }
+
+const _bandLabels = [
+  'OVERNIGHT / 00-05',
+  'MORNING / 06-11',
+  'AFTERNOON / 12-16',
+  'EVENING / 17-23',
+];
+
+String _bandFor(DateTime at) => switch (at.toLocal().hour) {
+  < 6 => _bandLabels[0],
+  < 12 => _bandLabels[1],
+  < 17 => _bandLabels[2],
+  _ => _bandLabels[3],
+};
 
 int _sortBreakdowns(InsightBreakdown a, InsightBreakdown b) {
   final countComparison = b.count.compareTo(a.count);
