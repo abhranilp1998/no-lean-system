@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/widgets.dart';
 import 'package:native_geofence/native_geofence.dart';
 
+import '../../recovery/domain/notification_policy.dart';
 import '../../recovery/services/notification_service.dart';
 import '../../recovery/services/recovery_state_store.dart';
 import '../domain/background_zone_alert.dart';
@@ -94,5 +95,6 @@ Future<void> zoneGeofenceTriggered(GeofenceCallbackParams params) async {
   await NotificationService.instance.showZoneAlert(
     title: copy.title,
     body: copy.body,
+    prefs: notificationPrefsFromRawState(raw),
   );
 }

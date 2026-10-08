@@ -412,6 +412,95 @@ Future<void> showRiskWindowDialog(BuildContext context, WidgetRef ref) async {
   }
 }
 
+Future<void> showQuietHoursDialog(BuildContext context, WidgetRef ref) async {
+  final prefs = ref.read(recoveryProvider).notificationPrefs;
+  var enabled = prefs.quietHoursEnabled;
+  var startMinutes = prefs.quietHours.startMinutes;
+  var endMinutes = prefs.quietHours.endMinutes;
+
+  final result = await showDialog<(bool, RiskWindow)>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (_, setState) => AppDialog(
+        title: 'QUIET HOURS',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Mutes non-critical notifications such as focus-timer pings. '
+              'Risk-window and danger-zone alerts still come through.',
+              style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+            ),
+            const SizedBox(height: 10),
+            SwitchListTile(
+              key: const ValueKey('quiet-hours-enabled'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Quiet hours on'),
+              value: enabled,
+              onChanged: (value) => setState(() => enabled = value),
+            ),
+            const SizedBox(height: 6),
+            _TimeSelector(
+              label: 'QUIET FROM',
+              minutes: startMinutes,
+              color: purple,
+              onTap: () async {
+                final selected = await _pickTime(dialogContext, startMinutes);
+                if (selected != null) setState(() => startMinutes = selected);
+              },
+            ),
+            const SizedBox(height: 10),
+            _TimeSelector(
+              label: 'QUIET UNTIL',
+              minutes: endMinutes,
+              color: cyan,
+              onTap: () async {
+                final selected = await _pickTime(dialogContext, endMinutes);
+                if (selected != null) setState(() => endMinutes = selected);
+              },
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('quiet-hours-save'),
+                onPressed: startMinutes == endMinutes
+                    ? null
+                    : () => Navigator.pop(dialogContext, (
+                        enabled,
+                        RiskWindow(
+                          startMinutes: startMinutes,
+                          endMinutes: endMinutes,
+                        ),
+                      )),
+                icon: const Icon(Icons.bedtime_outlined),
+                label: const Text('SAVE QUIET HOURS'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  if (result == null || !context.mounted) return;
+  final (on, window) = result;
+  if (!await saveAction(
+    context,
+    () => ref.read(recoveryProvider).setQuietHours(enabled: on, window: window),
+  )) {
+    return;
+  }
+  if (context.mounted) {
+    AppNotice.show(
+      context,
+      on ? 'QUIET HOURS ON // ${window.label}' : 'QUIET HOURS OFF',
+      type: AppNoticeType.success,
+    );
+  }
+}
+
 Future<void> showFeedbackDialog(BuildContext context, WidgetRef ref) async {
   final recovery = ref.read(recoveryProvider);
   var soundEnabled = recovery.soundscape;

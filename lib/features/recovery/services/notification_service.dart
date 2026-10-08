@@ -4,6 +4,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/theme/app_theme.dart';
+import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
 
@@ -15,6 +16,10 @@ class NotificationService {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _initialized = false;
   bool _permissionRequested = false;
+
+  /// Quiet hours and lock-screen privacy. The controller keeps this in sync;
+  /// background isolates pass prefs read from the state file instead.
+  NotificationPrefs prefs = const NotificationPrefs();
 
   final _actionStreamController = StreamController<String>.broadcast();
   Stream<String> get actionStream => _actionStreamController.stream;
@@ -104,14 +109,16 @@ class NotificationService {
         if (!scheduled.isAfter(now)) {
           scheduled = scheduled.add(const Duration(days: 1));
         }
+        // Risk-window alerts are critical: quiet hours never mute them.
+        final text = prefs.textFor(alert.title, alert.body);
         final mode = await scheduleWithExactFallback(
           exactAllowed: exactAllowed,
           schedule: (mode) => _plugin.zonedSchedule(
             alert.id,
-            alert.title,
-            alert.body,
+            text.title,
+            text.body,
             scheduled,
-            _details(alert, riskWindow),
+            _details(alert, riskWindow, text),
             androidScheduleMode: mode,
             matchDateTimeComponents: DateTimeComponents.time,
           ),
@@ -126,6 +133,7 @@ class NotificationService {
   NotificationDetails _details(
     RiskAlert alert,
     RiskWindow riskWindow,
+    NotificationText text,
   ) => NotificationDetails(
     android: AndroidNotificationDetails(
       'risk_window_v2',
@@ -135,44 +143,56 @@ class NotificationService {
       importance: Importance.max,
       priority: Priority.high,
       color: red,
-      colorized: true,
+      colorized: !prefs.hideSensitive,
       enableLights: true,
       ledColor: cyan,
       enableVibration: true,
       playSound: true,
-      // PRIVATE: when the lock screen hides sensitive content, Android
-      // shows only the app name and "Contents hidden". The plugin does not
-      // expose a custom public version, so the ticker stays neutral too.
-      visibility: NotificationVisibility.private,
+      visibility: lockScreenVisibility,
       category: AndroidNotificationCategory.reminder,
-      ticker: 'Scheduled check-in',
-      subText: riskWindow.label,
+      ticker: neutralNotificationText.title,
+      subText: prefs.hideSensitive ? null : riskWindow.label,
       styleInformation: BigTextStyleInformation(
-        alert.body,
-        contentTitle: alert.title,
+        text.body,
+        contentTitle: text.title,
       ),
-      actions: const [
+      actions: [
         AndroidNotificationAction(
           'action_sos',
-          'OPEN SOS',
+          prefs.label('OPEN SOS', 'OPEN'),
           showsUserInterface: true,
           cancelNotification: true,
         ),
-        AndroidNotificationAction(
-          'action_safe',
-          'I\'M SAFE',
-          showsUserInterface: true,
-          cancelNotification: true,
-        ),
+        if (alert.kind == RiskAlertKind.preWindow)
+          AndroidNotificationAction(
+            'action_code',
+            prefs.label('CODE INSTEAD', 'START TASK'),
+            showsUserInterface: true,
+            cancelNotification: true,
+          )
+        else
+          AndroidNotificationAction(
+            'action_safe',
+            prefs.label('I\'M SAFE', 'OK'),
+            showsUserInterface: true,
+            cancelNotification: true,
+          ),
         AndroidNotificationAction(
           'action_crave',
-          'LOG CRAVING',
+          prefs.label('LOG CRAVING', 'LOG'),
           showsUserInterface: true,
           cancelNotification: true,
         ),
       ],
     ),
   );
+
+  /// Every notification is VISIBILITY_PRIVATE: on lock screens set to hide
+  /// sensitive content, Android shows its own neutral public version (app
+  /// name + "Contents hidden"). flutter_local_notifications 19.5 cannot set a
+  /// custom publicVersion, so "hide sensitive content" additionally makes the
+  /// posted title, body and action labels neutral everywhere.
+  static const lockScreenVisibility = NotificationVisibility.private;
 
   bool _launchActionTaken = false;
 
@@ -202,13 +222,17 @@ class NotificationService {
   Future<void> showZoneAlert({
     required String title,
     required String body,
+    NotificationPrefs? prefs,
   }) async {
+    // Zone alerts are critical: quiet hours never mute them.
+    final policy = prefs ?? this.prefs;
+    final text = policy.textFor(title, body);
     try {
       await _initialize(requestPermission: false);
       await _plugin.show(
         zoneAlertId,
-        title,
-        body,
+        text.title,
+        text.body,
         NotificationDetails(
           android: AndroidNotificationDetails(
             'danger_zone_v1',
@@ -218,33 +242,33 @@ class NotificationService {
             importance: Importance.max,
             priority: Priority.max,
             color: red,
-            colorized: true,
+            colorized: !policy.hideSensitive,
             enableVibration: true,
             playSound: true,
             fullScreenIntent: true,
-            visibility: NotificationVisibility.private,
+            visibility: lockScreenVisibility,
             category: AndroidNotificationCategory.reminder,
-            ticker: 'Location check-in',
+            ticker: neutralNotificationText.title,
             styleInformation: BigTextStyleInformation(
-              body,
-              contentTitle: title,
+              text.body,
+              contentTitle: text.title,
             ),
-            actions: const [
+            actions: [
               AndroidNotificationAction(
                 'action_sos',
-                'OPEN SOS',
+                policy.label('OPEN SOS', 'OPEN'),
                 showsUserInterface: true,
                 cancelNotification: true,
               ),
               AndroidNotificationAction(
                 'action_crave',
-                'LOG CRAVING',
+                policy.label('LOG CRAVING', 'LOG'),
                 showsUserInterface: true,
                 cancelNotification: true,
               ),
               AndroidNotificationAction(
                 'action_zone_exit',
-                'I\'M LEAVING',
+                policy.label('I\'M LEAVING', 'DISMISS'),
                 cancelNotification: true,
               ),
             ],
@@ -253,6 +277,62 @@ class NotificationService {
       );
     } catch (_) {
       // A missing notification must never break location handling.
+    }
+  }
+
+  static const codeTimerId = 700;
+
+  /// Non-critical: tells the user a Code Instead block ended while the app
+  /// was in the background. Skipped entirely when it would land in quiet
+  /// hours. Returns whether it was scheduled.
+  Future<bool> scheduleCodeTimer({
+    required DateTime endsAt,
+    required String task,
+  }) async {
+    if (!prefs.allows(NotificationKind.codeTimer, endsAt)) {
+      await cancelCodeTimer();
+      return false;
+    }
+    final text = prefs.textFor(
+      'CODE BLOCK DONE',
+      'Time is up on: $task Log how it went, or start another block.',
+    );
+    try {
+      await _initialize(requestPermission: true);
+      final when = tz.TZDateTime.from(endsAt, tz.local);
+      await scheduleWithExactFallback(
+        exactAllowed: await exactAlarmsAllowed(),
+        schedule: (mode) => _plugin.zonedSchedule(
+          codeTimerId,
+          text.title,
+          text.body,
+          when,
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              'code_timer_v1',
+              'NO LEAN focus timer',
+              channelDescription: 'Tells you when a Code Instead block ends',
+              importance: Importance.defaultImportance,
+              priority: Priority.defaultPriority,
+              visibility: lockScreenVisibility,
+              category: AndroidNotificationCategory.reminder,
+              ticker: neutralNotificationText.title,
+            ),
+          ),
+          androidScheduleMode: mode,
+        ),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> cancelCodeTimer() async {
+    try {
+      await _plugin.cancel(codeTimerId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
     }
   }
 

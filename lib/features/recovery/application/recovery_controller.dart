@@ -15,6 +15,7 @@ import '../domain/effect_intensity.dart';
 import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
 import '../domain/relapse_log_entry.dart';
+import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
 import '../domain/sos_session.dart';
@@ -147,6 +148,9 @@ class RecoveryController extends ChangeNotifier {
 
   /// Online OSM street tiles on the zone map. Off = grid only, no requests.
   bool streetTiles = true;
+
+  /// Quiet hours and lock-screen privacy for notifications.
+  NotificationPrefs notificationPrefs = const NotificationPrefs();
 
   /// OS geofencing while the app is closed (opt-in, needs background location).
   bool backgroundGeofencing = false;
@@ -408,6 +412,12 @@ class RecoveryController extends ChangeNotifier {
         : appLockPending;
     zoneMonitoring = flag('zoneMonitoring', zoneMonitoring);
     streetTiles = flag('streetTiles', streetTiles);
+    if (map.containsKey('quietHoursEnabled') ||
+        map.containsKey('quietHours') ||
+        map.containsKey('hideSensitiveNotifications')) {
+      notificationPrefs = NotificationPrefs.fromState(map);
+    }
+    NotificationService.instance.prefs = notificationPrefs;
     backgroundGeofencing = flag('backgroundGeofencing', backgroundGeofencing);
     feedbackSound = FeedbackSoundEffect.values.firstWhere(
       (v) => v.name == map['feedbackSound'],
@@ -513,6 +523,7 @@ class RecoveryController extends ChangeNotifier {
     'zones': zones.map((zone) => zone.toJson()).toList(),
     'zoneMonitoring': zoneMonitoring,
     'streetTiles': streetTiles,
+    ...notificationPrefs.toJson(),
     'backgroundGeofencing': backgroundGeofencing,
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
@@ -556,6 +567,8 @@ class RecoveryController extends ChangeNotifier {
             jsonEncode(before['reminderMessages']) !=
                 jsonEncode(next['reminderMessages']) ||
             before['dailySpend'] != next['dailySpend'] ||
+            before['hideSensitiveNotifications'] !=
+                next['hideSensitiveNotifications'] ||
             (before['events'] as List).length !=
                 (next['events'] as List).length) {
           unawaited(_syncRiskNotifications());
@@ -713,6 +726,9 @@ class RecoveryController extends ChangeNotifier {
           ..remove('zones')
           ..remove('zoneMonitoring')
           ..remove('streetTiles')
+          ..remove('quietHoursEnabled')
+          ..remove('quietHours')
+          ..remove('hideSensitiveNotifications')
           ..remove('backgroundGeofencing')
           ..remove('pin'),
       );
@@ -1040,6 +1056,33 @@ class RecoveryController extends ChangeNotifier {
   Future<void> setBackgroundGeofencing(bool enabled) => _transaction(() async {
     backgroundGeofencing = enabled;
   });
+
+  /// Quiet hours mute non-critical notifications only; risk-window and
+  /// danger-zone alerts always come through.
+  Future<void> setQuietHours({required bool enabled, RiskWindow? window}) =>
+      _transaction(() async {
+        final next = window ?? notificationPrefs.quietHours;
+        if (next.startMinutes == next.endMinutes) {
+          throw ArgumentError('Quiet hours need a start and end that differ.');
+        }
+        notificationPrefs = NotificationPrefs(
+          quietHoursEnabled: enabled,
+          quietHours: next,
+          hideSensitive: notificationPrefs.hideSensitive,
+        );
+        NotificationService.instance.prefs = notificationPrefs;
+      });
+
+  /// Lock-screen privacy; never needs authentication.
+  Future<void> setHideSensitiveNotifications(bool hide) =>
+      _transaction(() async {
+        notificationPrefs = NotificationPrefs(
+          quietHoursEnabled: notificationPrefs.quietHoursEnabled,
+          quietHours: notificationPrefs.quietHours,
+          hideSensitive: hide,
+        );
+        NotificationService.instance.prefs = notificationPrefs;
+      });
 
   /// Network privacy choice; never needs authentication.
   Future<void> setStreetTiles(bool enabled) => _transaction(() async {

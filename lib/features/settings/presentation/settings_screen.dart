@@ -165,6 +165,16 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => showRiskWindowDialog(context, ref),
             ),
             SettingAction(
+              key: const ValueKey('settings-quiet-hours'),
+              icon: Icons.bedtime_outlined,
+              title: 'Quiet hours',
+              subtitle: recovery.notificationPrefs.quietHoursEnabled
+                  ? '${recovery.notificationPrefs.quietHours.label} // risk + zone alerts still on'
+                  : 'Off // mute non-critical notifications overnight',
+              color: purple,
+              onTap: () => showQuietHoursDialog(context, ref),
+            ),
+            SettingAction(
               icon: Icons.dangerous_outlined,
               title: 'Danger zones',
               subtitle:
@@ -257,6 +267,21 @@ class SettingsScreen extends ConsumerWidget {
               onChanged: (value) => saveAction(
                 context,
                 () => ref.read(recoveryProvider).setStreetTiles(value),
+              ),
+            ),
+            SettingToggle(
+              key: const ValueKey('settings-hide-sensitive'),
+              title: 'Hide sensitive content',
+              subtitle: recovery.notificationPrefs.hideSensitive
+                  ? 'Notifications read "Reminder" // no recovery wording'
+                  : 'Notifications show full text // lock screen still redacted',
+              value: recovery.notificationPrefs.hideSensitive,
+              color: cyan,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setHideSensitiveNotifications(value),
               ),
             ),
           ],
