@@ -174,6 +174,68 @@ class NotificationService {
     ),
   );
 
+  static const zoneAlertId = 600;
+
+  /// Loud danger-zone notification. Requests a full-screen intent; Android
+  /// only honours it where the app may use full-screen intents (and shows a
+  /// heads-up notification otherwise). "I'M LEAVING" dismisses in one tap.
+  Future<void> showZoneAlert({
+    required String title,
+    required String body,
+  }) async {
+    try {
+      await _initialize(requestPermission: false);
+      await _plugin.show(
+        zoneAlertId,
+        title,
+        body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'danger_zone_v1',
+            'NO LEAN danger zones',
+            channelDescription:
+                'Interrupts when you enter a place you marked as a danger zone',
+            importance: Importance.max,
+            priority: Priority.max,
+            color: red,
+            colorized: true,
+            enableVibration: true,
+            playSound: true,
+            fullScreenIntent: true,
+            visibility: NotificationVisibility.private,
+            category: AndroidNotificationCategory.reminder,
+            ticker: 'Location check-in',
+            styleInformation: BigTextStyleInformation(
+              body,
+              contentTitle: title,
+            ),
+            actions: const [
+              AndroidNotificationAction(
+                'action_sos',
+                'OPEN SOS',
+                showsUserInterface: true,
+                cancelNotification: true,
+              ),
+              AndroidNotificationAction(
+                'action_crave',
+                'LOG CRAVING',
+                showsUserInterface: true,
+                cancelNotification: true,
+              ),
+              AndroidNotificationAction(
+                'action_zone_exit',
+                'I\'M LEAVING',
+                cancelNotification: true,
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (_) {
+      // A missing notification must never break location handling.
+    }
+  }
+
   Future<void> cancelRiskWindow() async {
     try {
       // Cancellation does not require permission and Android can service it

@@ -22,6 +22,11 @@ import '../features/recovery/services/notification_service.dart';
 import '../features/recovery/services/widget_action_service.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/timeline/presentation/timeline_screen.dart';
+import '../features/zones/application/zone_monitor.dart';
+import '../features/zones/domain/danger_zone.dart';
+import '../features/zones/domain/zone_alert_copy.dart';
+import '../features/zones/presentation/zone_alert_screen.dart';
+import '../features/zones/services/location_service.dart';
 
 class Shell extends ConsumerStatefulWidget {
   const Shell({super.key});
@@ -41,6 +46,12 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   AppLockReason? _lastLockReason;
   bool _deferredRelapse = false;
   Timer? _lockTicker;
+  late final ZoneMonitor _zoneMonitor = ZoneMonitor(
+    location: ref.read(locationServiceProvider),
+    onEnter: _onZoneEntered,
+  );
+  bool _appResumed = true;
+  bool _zoneAlertOpen = false;
 
   @override
   void initState() {
@@ -58,13 +69,52 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       if (!mounted) return;
       unawaited(ref.read(recoveryProvider).markOpened());
       unawaited(WidgetActionService.instance.initialize());
+      _syncZoneMonitor();
     });
+  }
+
+  void _syncZoneMonitor() {
+    if (!mounted) return;
+    final recovery = ref.read(recoveryProvider);
+    unawaited(
+      _zoneMonitor.setActive(
+        _appResumed && recovery.isLoaded && recovery.zoneMonitoring,
+        recovery.zones,
+      ),
+    );
+  }
+
+  Future<void> _onZoneEntered(DangerZone zone) async {
+    if (!mounted || _zoneAlertOpen) return;
+    _zoneAlertOpen = true;
+    try {
+      final recovery = ref.read(recoveryProvider);
+      AppFeedback.tap(strength: AppFeedbackStrength.strong);
+      final choice = await ZoneAlertScreen.show(
+        context,
+        buildZoneAlertCopy(
+          zone: zone,
+          now: DateTime.now(),
+          cleanSince: recovery.lastDose,
+          riskWindow: recovery.riskWindow,
+        ),
+      );
+      if (!mounted) return;
+      if (choice == ZoneAlertChoice.sos) {
+        await _openSos();
+      } else if (choice == ZoneAlertChoice.craving) {
+        await showCravingDialog(context, ref);
+      }
+    } finally {
+      _zoneAlertOpen = false;
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _lockTicker?.cancel();
+    unawaited(_zoneMonitor.stop());
     _notificationActionSubscription?.cancel();
     _widgetActionSubscription?.cancel();
     super.dispose();
@@ -75,9 +125,13 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _lockSession.onBackgrounded(DateTime.now());
+      _appResumed = false;
+      _syncZoneMonitor();
     }
     if (state == AppLifecycleState.resumed) {
       _lockSession.onResumed(DateTime.now());
+      _appResumed = true;
+      _syncZoneMonitor();
       if (mounted) setState(() {});
       unawaited(ref.read(recoveryProvider).markOpened());
       unawaited(WidgetActionService.instance.initialize());
@@ -217,6 +271,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     final visuals = NoLeanVisuals.of(context);
     final lockReason = _resolveLock();
     _lastLockReason = lockReason;
+    ref.listen(recoveryProvider, (_, _) => _syncZoneMonitor());
 
     return Scaffold(
       body: Stack(
