@@ -16,6 +16,7 @@ import '../../../core/widgets/status_pill.dart';
 import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../settings/services/trusted_contact_service.dart';
+import '../domain/sos_flow.dart';
 
 class EmergencyScreen extends ConsumerStatefulWidget {
   const EmergencyScreen({super.key});
@@ -30,9 +31,9 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
   late final RecoveryController _recovery;
   late final String _sessionId;
   late final Future<void> _startFuture;
+  final _flow = SosFlow();
   bool _startSaved = false;
-  int _remaining = 60;
-  bool _finished = false;
+  int _ticks = 0;
   String? _selectedDebrief;
   DateTime? _completedAt;
   TrustedContact? _trustedContact;
@@ -47,18 +48,13 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
     unawaited(_loadTrustedContact());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      if (_remaining <= 1) {
-        _timer?.cancel();
-        setState(() {
-          _remaining = 0;
-          _finished = true;
-          _completedAt = DateTime.now();
-        });
-        AppFeedback.success();
-        unawaited(_recordCompletion());
-      } else {
-        setState(() => _remaining--);
-      }
+      setState(() {
+        _ticks++;
+        if (_flow.tick()) {
+          _timer?.cancel();
+          AppFeedback.success();
+        }
+      });
     });
   }
 
@@ -71,6 +67,18 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
     super.dispose();
   }
 
+  void _completeGroundingStep() {
+    AppFeedback.selection();
+    setState(_flow.completeGroundingStep);
+  }
+
+  void _finishReasons() {
+    if (!_flow.finishReasons()) return;
+    AppFeedback.success();
+    setState(() => _completedAt = DateTime.now());
+    unawaited(_recordCompletion());
+  }
+
   Future<void> _saveStart() async {
     try {
       await _recovery.startSosSession(id: _sessionId, startedAt: _startedAt);
@@ -79,7 +87,7 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
       if (mounted) {
         AppNotice.show(
           context,
-          'SOS is available, but this session could not be saved. Keep breathing; you can retry when it finishes.',
+          'SOS is available, but this session could not be saved. Keep going; you can retry when it finishes.',
           type: AppNoticeType.error,
         );
       }
@@ -148,26 +156,49 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
     }
   }
 
+  Widget _stageBody(RecoveryController recovery) => switch (_flow.stage) {
+    SosStage.breathe => _BreatheStage(flow: _flow),
+    SosStage.ground => _GroundStage(
+      flow: _flow,
+      onDone: _completeGroundingStep,
+    ),
+    SosStage.reasons => _ReasonsStage(
+      reasons: recovery.reasons,
+      streak: recovery.streak,
+      moneySaved: recovery.moneySaved,
+      onDone: _finishReasons,
+    ),
+    SosStage.pledge => _PledgeStage(
+      selectedDebrief: _selectedDebrief,
+      onDebrief: (value) => setState(() => _selectedDebrief = value),
+      onPledge: () async {
+        if (!await _recordCompletion(debrief: _selectedDebrief)) return;
+        if (!mounted) return;
+        if (!await saveAction(
+          context,
+          () => ref.read(recoveryProvider).pledge(),
+        )) {
+          return;
+        }
+        if (mounted) Navigator.pop(context);
+      },
+    ),
+  };
+
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
     final visuals = NoLeanVisuals.of(context);
-    final phase = _remaining > 45
-        ? 'BREATHE IN'
-        : _remaining > 30
-        ? 'HOLD THE LINE'
-        : _remaining > 15
-        ? 'BREATHE OUT'
-        : 'LET THE WAVE PASS';
+    final canExit = _flow.canExit;
     return PopScope(
-      canPop: _remaining <= 45,
+      canPop: canExit,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: const Text(
-                'Breathe for at least 15 seconds before leaving.',
-                style: TextStyle(color: Colors.white, fontSize: 12),
+              content: Text(
+                'Breathe for ${_flow.minSecondsBeforeExit} seconds before leaving.',
+                style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
               backgroundColor: red.withValues(alpha: .8),
               duration: const Duration(seconds: 2),
@@ -176,6 +207,7 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
         }
       },
       child: Scaffold(
+        key: const ValueKey('sos-screen'),
         backgroundColor: Colors.black,
         body: SafeArea(
           child: Stack(
@@ -183,7 +215,7 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
               Positioned.fill(
                 child: CustomPaint(
                   painter: _SosPainter(
-                    _remaining,
+                    _ticks,
                     effectScale: visuals.effectScale,
                     reduceMotion: visuals.reduceMotion,
                   ),
@@ -194,30 +226,24 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
                 children: [
                   Row(
                     children: [
-                      IconButton(
-                        onPressed: () {},
-                        icon: const Icon(
-                          Icons.close,
-                          color: Colors.transparent,
-                        ),
-                      ),
+                      const SizedBox(width: 48),
                       const Spacer(),
                       const StatusPill(label: 'SYSTEM OVERRIDE', color: red),
                       const Spacer(),
                       IconButton(
-                        onPressed: _remaining <= 45
+                        key: const ValueKey('sos-close'),
+                        tooltip: canExit ? 'Leave SOS' : null,
+                        onPressed: canExit
                             ? () => Navigator.pop(context)
                             : null,
                         icon: Icon(
                           Icons.close,
-                          color: _remaining <= 45
-                              ? red
-                              : red.withValues(alpha: .3),
+                          color: canExit ? red : red.withValues(alpha: .3),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 14),
                   Text(
                     'SOS MODE',
                     textAlign: TextAlign.center,
@@ -237,105 +263,32 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
                       letterSpacing: 1,
                     ),
                   ),
-                  const SizedBox(height: 36),
-                  SizedBox(
-                    height: 246,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox.square(
-                          dimension: 246,
-                          child: CircularProgressIndicator(
-                            value: _remaining / 60,
-                            strokeWidth: 7,
-                            color: red,
-                            backgroundColor: red.withValues(alpha: .12),
-                          ),
-                        ),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              '$_remaining',
-                              style: displayFont(
-                                fontSize: 70,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Text(
-                              'SECONDS',
-                              style: microStyle.copyWith(color: red),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
+                  const SizedBox(height: 20),
+                  _StageProgress(flow: _flow),
                   const SizedBox(height: 22),
                   Text(
-                    phase,
+                    'STEP ${_flow.stage.index + 1}/${SosStage.values.length} // ${_flow.stage.headline}',
+                    key: const ValueKey('sos-stage-title'),
                     textAlign: TextAlign.center,
                     style: displayFont(
                       fontSize: 15,
                       color: red,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: 1.4,
+                      letterSpacing: 1.2,
                     ),
                   ),
-                  const SizedBox(height: 30),
-                  GlassCard(
-                    accent: red,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'WHY YOU ARE DONE WITH THIS',
-                          style: microStyle.copyWith(color: red),
-                        ),
-                        const SizedBox(height: 12),
-                        if (recovery.reasons.isEmpty)
-                          const Text(
-                            'No reasons saved yet. Add them in Settings before the next risk window.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: muted,
-                              height: 1.35,
-                            ),
-                          )
-                        else
-                          ...recovery.reasons.map(
-                            (reason) => Padding(
-                              padding: const EdgeInsets.only(bottom: 9),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '—',
-                                    style: TextStyle(
-                                      color: red,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      reason,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        height: 1.35,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
+                  const SizedBox(height: 18),
+                  AnimatedSwitcher(
+                    duration: visuals.reduceMotion
+                        ? Duration.zero
+                        : const Duration(milliseconds: 220),
+                    child: KeyedSubtree(
+                      key: ValueKey(_flow.stage),
+                      child: _stageBody(recovery),
                     ),
                   ),
-                  const SizedBox(height: 22),
                   if (_trustedContact != null) ...[
+                    const SizedBox(height: 22),
                     OutlinedButton.icon(
                       onPressed: _callTrustedContact,
                       icon: const Icon(Icons.phone),
@@ -349,75 +302,6 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
                         side: const BorderSide(color: cyan),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                  ],
-                  if (!_finished)
-                    const Text(
-                      'The urge peaks, then drops. Give it the minute it is asking for.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: muted, fontSize: 11, height: 1.4),
-                    ),
-                  if (_finished) ...[
-                    const Text(
-                      'You stayed for the wave. How are you feeling?',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: toxic,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _DebriefButton(
-                          label: 'BETTER',
-                          icon: Icons.arrow_downward,
-                          selected: _selectedDebrief == 'down',
-                          onTap: () =>
-                              setState(() => _selectedDebrief = 'down'),
-                        ),
-                        const SizedBox(width: 8),
-                        _DebriefButton(
-                          label: 'SAME',
-                          icon: Icons.compare_arrows,
-                          selected: _selectedDebrief == 'same',
-                          onTap: () =>
-                              setState(() => _selectedDebrief = 'same'),
-                        ),
-                        const SizedBox(width: 8),
-                        _DebriefButton(
-                          label: 'WORSE',
-                          icon: Icons.arrow_upward,
-                          selected: _selectedDebrief == 'worse',
-                          onTap: () =>
-                              setState(() => _selectedDebrief = 'worse'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    GlowButton(
-                      label: 'I WILL NOT BUY LEAN TODAY',
-                      icon: Icons.lock_outline,
-                      color: toxic,
-                      onTap: () async {
-                        if (!await _recordCompletion(
-                          debrief: _selectedDebrief,
-                        )) {
-                          return;
-                        }
-                        if (!context.mounted) return;
-                        if (!await saveAction(
-                          context,
-                          () => ref.read(recoveryProvider).pledge(),
-                        )) {
-                          return;
-                        }
-                        if (context.mounted) Navigator.pop(context);
-                      },
-                    ),
                   ],
                 ],
               ),
@@ -429,14 +313,356 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
   }
 }
 
+class _StageProgress extends StatelessWidget {
+  const _StageProgress({required this.flow});
+
+  final SosFlow flow;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label:
+          'SOS step ${flow.stage.index + 1} of ${SosStage.values.length}, ${flow.stage.label}',
+      child: Column(
+        key: const ValueKey('sos-progress'),
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: flow.progress,
+              minHeight: 5,
+              color: red,
+              backgroundColor: red.withValues(alpha: .14),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (final stage in SosStage.values)
+                Expanded(
+                  child: Text(
+                    '${stage.index + 1} ${stage.label}',
+                    textAlign: TextAlign.center,
+                    style: microStyle.copyWith(
+                      fontSize: 8.5,
+                      color: stage == flow.stage
+                          ? red
+                          : stage.index < flow.stage.index
+                          ? toxic
+                          : muted,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BreatheStage extends StatelessWidget {
+  const _BreatheStage({required this.flow});
+
+  final SosFlow flow;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        SizedBox(
+          height: 220,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox.square(
+                dimension: 220,
+                child: CircularProgressIndicator(
+                  value: flow.remaining / flow.breathSeconds,
+                  strokeWidth: 7,
+                  color: red,
+                  backgroundColor: red.withValues(alpha: .12),
+                ),
+              ),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '${flow.remaining}',
+                    key: const ValueKey('sos-seconds'),
+                    style: displayFont(
+                      fontSize: 64,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text('SECONDS', style: microStyle.copyWith(color: red)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        Text(
+          flow.breathPhase,
+          textAlign: TextAlign.center,
+          style: displayFont(
+            fontSize: 18,
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.4,
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Four seconds in, four hold, four out, four hold. The urge peaks, then drops. Give it the full minute.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: muted, fontSize: 11.5, height: 1.45),
+        ),
+      ],
+    );
+  }
+}
+
+class _GroundStage extends StatelessWidget {
+  const _GroundStage({required this.flow, required this.onDone});
+
+  final SosFlow flow;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final step = flow.groundingStep;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (var i = 0; i < groundingSteps.length; i++)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: i < flow.groundIndex
+                      ? toxic.withValues(alpha: .2)
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: i == flow.groundIndex
+                        ? red
+                        : i < flow.groundIndex
+                        ? toxic
+                        : muted,
+                  ),
+                ),
+                child: Text(
+                  '${groundingSteps[i].count}',
+                  style: displayFont(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        GlassCard(
+          accent: red,
+          child: Column(
+            children: [
+              Text(
+                '${step.count} // ${step.sense}',
+                key: const ValueKey('sos-ground-sense'),
+                style: displayFont(
+                  fontSize: 30,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                step.prompt,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, height: 1.45),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        GlowButton(
+          key: const ValueKey('sos-ground-next'),
+          label: 'DONE // ${step.count} ${step.sense}',
+          icon: Icons.check,
+          color: red,
+          onTap: onDone,
+        ),
+      ],
+    );
+  }
+}
+
+class _ReasonsStage extends StatelessWidget {
+  const _ReasonsStage({
+    required this.reasons,
+    required this.streak,
+    required this.moneySaved,
+    required this.onDone,
+  });
+
+  final List<String> reasons;
+  final int streak;
+  final double moneySaved;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GlassCard(
+          accent: red,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'WHY YOU ARE DONE WITH THIS',
+                style: microStyle.copyWith(color: red),
+              ),
+              const SizedBox(height: 12),
+              if (reasons.isEmpty)
+                const Text(
+                  'No reasons saved yet. Say one out loud now, then add it in Settings before the next risk window.',
+                  style: TextStyle(fontSize: 12, color: muted, height: 1.35),
+                )
+              else
+                for (final reason in reasons)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 9),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '—',
+                          style: TextStyle(
+                            color: red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            reason,
+                            style: const TextStyle(fontSize: 13, height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'ON THE LINE // $streak DAY${streak == 1 ? '' : 'S'} CLEAN'
+          '${moneySaved > 0 ? ' // ${moneySaved.toStringAsFixed(0)} KEPT' : ''}',
+          key: const ValueKey('sos-on-the-line'),
+          textAlign: TextAlign.center,
+          style: microStyle.copyWith(color: toxic),
+        ),
+        const SizedBox(height: 18),
+        GlowButton(
+          key: const ValueKey('sos-reasons-next'),
+          label: 'I READ THEM',
+          icon: Icons.arrow_forward,
+          color: red,
+          onTap: onDone,
+        ),
+      ],
+    );
+  }
+}
+
+class _PledgeStage extends StatelessWidget {
+  const _PledgeStage({
+    required this.selectedDebrief,
+    required this.onDebrief,
+    required this.onPledge,
+  });
+
+  final String? selectedDebrief;
+  final ValueChanged<String> onDebrief;
+  final Future<void> Function() onPledge;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'You rode it out. Check in, then lock today.',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: toxic,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            height: 1.4,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _DebriefButton(
+              label: 'BETTER',
+              icon: Icons.arrow_downward,
+              selected: selectedDebrief == 'down',
+              onTap: () => onDebrief('down'),
+            ),
+            const SizedBox(width: 8),
+            _DebriefButton(
+              label: 'SAME',
+              icon: Icons.compare_arrows,
+              selected: selectedDebrief == 'same',
+              onTap: () => onDebrief('same'),
+            ),
+            const SizedBox(width: 8),
+            _DebriefButton(
+              label: 'WORSE',
+              icon: Icons.arrow_upward,
+              selected: selectedDebrief == 'worse',
+              onTap: () => onDebrief('worse'),
+            ),
+          ],
+        ),
+        if (selectedDebrief == 'worse' || selectedDebrief == 'same') ...[
+          const SizedBox(height: 12),
+          const Text(
+            'Still there? Stay put and run it again, or call someone before you move.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: muted, fontSize: 11.5, height: 1.4),
+          ),
+        ],
+        const SizedBox(height: 22),
+        GlowButton(
+          key: const ValueKey('sos-pledge'),
+          label: 'I WILL NOT BUY LEAN TODAY',
+          icon: Icons.lock_outline,
+          color: toxic,
+          onTap: onPledge,
+        ),
+      ],
+    );
+  }
+}
+
 class _SosPainter extends CustomPainter {
   _SosPainter(
-    this.remaining, {
+    this.ticks, {
     required this.effectScale,
     required this.reduceMotion,
   });
 
-  final int remaining;
+  final int ticks;
   final double effectScale;
   final bool reduceMotion;
 
@@ -444,7 +670,7 @@ class _SosPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final pulse = reduceMotion
         ? .065 * effectScale
-        : (.06 + (remaining % 2) * .03) * effectScale;
+        : (.06 + (ticks % 2) * .03) * effectScale;
     final paint = Paint()
       ..color = red.withValues(alpha: pulse)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 80);
@@ -459,7 +685,7 @@ class _SosPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SosPainter oldDelegate) =>
-      oldDelegate.remaining != remaining ||
+      oldDelegate.ticks != ticks ||
       oldDelegate.effectScale != effectScale ||
       oldDelegate.reduceMotion != reduceMotion;
 }
