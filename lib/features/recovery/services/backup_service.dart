@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../core/services/feedback_preferences.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
+import '../application/recovery_controller.dart';
 import '../domain/effect_intensity.dart';
 import '../domain/legacy_recovery_migration.dart';
 import '../domain/recovery_event.dart';
@@ -147,7 +148,8 @@ class BackupService {
       var map = Map<String, dynamic>.from(decoded);
       if (!map.containsKey('version') && map['stateVersion'] is int) {
         final stateVersion = map['stateVersion'] as int;
-        if (stateVersion < 2 || stateVersion > 9) {
+        if (stateVersion < 2 ||
+            stateVersion > RecoveryController.stateVersion) {
           throw FormatException(
             'Unsupported recovery state version: $stateVersion',
           );

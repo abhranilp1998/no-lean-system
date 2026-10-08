@@ -160,7 +160,7 @@ class SettingsScreen extends ConsumerWidget {
               icon: Icons.dangerous_outlined,
               title: 'Danger zones',
               subtitle:
-                  '${recovery.zones.length} marked // offline map${recovery.zoneMonitoring || recovery.backgroundGeofencing ? ' // alerts on' : ''}',
+                  '${recovery.zones.length} marked // ${recovery.streetTiles ? 'street map' : 'grid map'}${recovery.zoneMonitoring || recovery.backgroundGeofencing ? ' // alerts on' : ''}',
               color: red,
               onTap: () => Navigator.of(
                 context,
@@ -232,6 +232,24 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: 'Run a real fingerprint / face authentication',
               color: cyan,
               onTap: () => verifyBiometricAuthentication(context),
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: 'PRIVACY',
+          children: [
+            SettingToggle(
+              key: const ValueKey('settings-street-tiles'),
+              title: 'Street map tiles',
+              subtitle: recovery.streetTiles
+                  ? 'OpenStreetMap tiles on the zone map // cached once viewed'
+                  : 'Off // grid map only, no network requests',
+              value: recovery.streetTiles,
+              color: cyan,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).setStreetTiles(value),
+              ),
             ),
           ],
         ),

@@ -53,7 +53,7 @@ void main() {
     expect(controller.zoneMonitoring, isFalse);
     expect(controller.backgroundGeofencing, isFalse);
     final saved = jsonDecode(store.value!) as Map;
-    expect(saved['stateVersion'], 9);
+    expect(saved['stateVersion'], RecoveryController.stateVersion);
     expect(saved['zones'], isEmpty);
     expect(store.copies.single, contains('"stateVersion":8'));
   });

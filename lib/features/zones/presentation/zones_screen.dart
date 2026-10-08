@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/services/app_notice.dart';
+import '../../../core/services/save_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../../core/widgets/status_pill.dart';
@@ -240,10 +241,15 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
-    final tiles = ref.watch(mapTileProviderProvider).valueOrNull;
+    // With street tiles off the provider is never created: no network at all.
+    final tiles = recovery.streetTiles
+        ? ref.watch(mapTileProviderProvider).valueOrNull
+        : null;
     final zones = recovery.zones;
     final me = _me;
-    final mapMode = tiles == null
+    final mapMode = !recovery.streetTiles
+        ? MapMode.tilesOff
+        : tiles == null
         ? MapMode.grid
         : _tilesFailing
         ? MapMode.fallback
@@ -267,7 +273,7 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Long-press the map to drop a pin, or stand there and tap PIN HERE. Street tiles come from OpenStreetMap and are cached on this device once viewed. With no network the grid takes over: zones, pins and alerts never need internet, and your zones never leave the phone.',
+              'Long-press the map to drop a pin, or stand there and tap PIN HERE. Street tiles come from OpenStreetMap and are cached on this device once viewed; turn them off with the globe button for no network requests. With no network the grid takes over: zones, pins and alerts never need internet, and your zones never leave the phone.',
               style: TextStyle(color: muted, fontSize: 11.5, height: 1.45),
             ),
             const SizedBox(height: 12),
@@ -385,6 +391,23 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
                               icon: Icons.remove,
                               tooltip: 'Zoom out',
                               onPressed: () => _zoomBy(-1),
+                            ),
+                            const SizedBox(height: 6),
+                            MapControlButton(
+                              key: const ValueKey('map-tiles-toggle'),
+                              icon: recovery.streetTiles
+                                  ? Icons.public
+                                  : Icons.public_off,
+                              tooltip: recovery.streetTiles
+                                  ? 'Turn street tiles off'
+                                  : 'Turn street tiles on',
+                              color: recovery.streetTiles ? cyan : toxic,
+                              onPressed: () => saveAction(
+                                context,
+                                () => ref
+                                    .read(recoveryProvider)
+                                    .setStreetTiles(!recovery.streetTiles),
+                              ),
                             ),
                             const SizedBox(height: 6),
                             MapControlButton(

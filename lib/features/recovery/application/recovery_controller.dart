@@ -77,9 +77,10 @@ class RecoveryController extends ChangeNotifier {
        _geofences = geofences ?? const NoopGeofenceGateway();
 
   /// v8 adds `riskWindowLock` and `appLockPending`; v9 adds `zones`,
-  /// `zoneMonitoring` and `backgroundGeofencing`. Older states need no
+  /// `zoneMonitoring` and `backgroundGeofencing`; v10 adds the privacy and
+  /// notification preferences (`streetTiles`, ...). Older states need no
   /// transformation: missing keys take the safe defaults below.
-  static const stateVersion = 9;
+  static const stateVersion = 10;
 
   final RelapseLockGateway _relapseLock;
   final RecoveryStateStore _store;
@@ -143,6 +144,9 @@ class RecoveryController extends ChangeNotifier {
 
   /// In-app distance checks while NO LEAN is open (opt-in).
   bool zoneMonitoring = false;
+
+  /// Online OSM street tiles on the zone map. Off = grid only, no requests.
+  bool streetTiles = true;
 
   /// OS geofencing while the app is closed (opt-in, needs background location).
   bool backgroundGeofencing = false;
@@ -403,6 +407,7 @@ class RecoveryController extends ChangeNotifier {
         ? map['appLockPending'] != false
         : appLockPending;
     zoneMonitoring = flag('zoneMonitoring', zoneMonitoring);
+    streetTiles = flag('streetTiles', streetTiles);
     backgroundGeofencing = flag('backgroundGeofencing', backgroundGeofencing);
     feedbackSound = FeedbackSoundEffect.values.firstWhere(
       (v) => v.name == map['feedbackSound'],
@@ -507,6 +512,7 @@ class RecoveryController extends ChangeNotifier {
     'appLockPending': appLockPending,
     'zones': zones.map((zone) => zone.toJson()).toList(),
     'zoneMonitoring': zoneMonitoring,
+    'streetTiles': streetTiles,
     'backgroundGeofencing': backgroundGeofencing,
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
@@ -706,6 +712,7 @@ class RecoveryController extends ChangeNotifier {
           ..remove('appLockPending')
           ..remove('zones')
           ..remove('zoneMonitoring')
+          ..remove('streetTiles')
           ..remove('backgroundGeofencing')
           ..remove('pin'),
       );
@@ -1032,6 +1039,11 @@ class RecoveryController extends ChangeNotifier {
 
   Future<void> setBackgroundGeofencing(bool enabled) => _transaction(() async {
     backgroundGeofencing = enabled;
+  });
+
+  /// Network privacy choice; never needs authentication.
+  Future<void> setStreetTiles(bool enabled) => _transaction(() async {
+    streetTiles = enabled;
   });
 
   Future<void> _syncGeofences() async {

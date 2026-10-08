@@ -242,6 +242,64 @@ void main() {
     expect(zone.radiusMeters, 500);
     expect(find.text('CORNER'), findsOneWidget); // pin label on the map
   });
+
+  testWidgets('street tiles switch: off means grid only and no tile source', (
+    tester,
+  ) async {
+    var providerReads = 0;
+    final location = FakeLocationService(fix: here);
+    final container = ProviderContainer(
+      overrides: [
+        recoveryProvider.overrideWith(
+          (ref) => RecoveryController(
+            store: MemoryRecoveryStore(),
+            relapseLock: FakeRelapseLock(),
+          ),
+        ),
+        locationServiceProvider.overrideWithValue(location),
+        mapTileProviderProvider.overrideWith((ref) async {
+          providerReads++;
+          return _MemoryTiles(_transparentPng);
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    final recovery = container.read(recoveryProvider);
+    await recovery.load();
+    await recovery.setStreetTiles(false);
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.6;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          theme: buildNoLeanTheme(),
+          home: const ZonesScreen(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(providerReads, 0);
+    expect(find.byType(TileLayer), findsNothing);
+    expect(find.text('TILES OFF // NO NETWORK'), findsOneWidget);
+    expect(find.byKey(const ValueKey('osm-attribution')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('map-tiles-toggle')));
+    await tester.pump();
+    await tester.pump();
+    expect(recovery.streetTiles, isTrue);
+    expect(providerReads, 1);
+    expect(find.byType(TileLayer), findsOneWidget);
+    expect(find.text('OSM // LIVE + CACHE'), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('map-tiles-toggle')));
+    await tester.pump();
+    await tester.pump();
+    expect(recovery.streetTiles, isFalse);
+    expect(find.byType(TileLayer), findsNothing);
+  });
 }
 
 final _transparentPng = base64Decode(

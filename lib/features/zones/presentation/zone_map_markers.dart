@@ -8,7 +8,7 @@ import '../../../core/theme/no_lean_visuals.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../domain/danger_zone.dart';
 
-enum MapMode { street, fallback, grid }
+enum MapMode { street, fallback, grid, tilesOff }
 
 /// Glow ring + core circle for one zone.
 List<CircleMarker> zoneCircles(LatLng point, double radiusMeters) => [
@@ -41,6 +41,7 @@ class MapStatusChip extends StatelessWidget {
       MapMode.street => ('OSM // LIVE + CACHE', cyan, Icons.public),
       MapMode.fallback => ('NO SIGNAL // GRID FALLBACK', toxic, Icons.grid_on),
       MapMode.grid => ('OFFLINE GRID', toxic, Icons.grid_on),
+      MapMode.tilesOff => ('TILES OFF // NO NETWORK', toxic, Icons.public_off),
     };
     return DecoratedBox(
       key: const ValueKey('map-status'),
