@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/core/theme/app_theme.dart';
@@ -8,6 +11,7 @@ import 'package:no_lean/features/recovery/application/recovery_provider.dart';
 import 'package:no_lean/features/zones/domain/zone_presence.dart';
 import 'package:no_lean/features/zones/presentation/zones_screen.dart';
 import 'package:no_lean/features/zones/services/location_service.dart';
+import 'package:no_lean/features/zones/services/map_tiles.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../support/fake_location.dart';
@@ -31,8 +35,9 @@ void main() {
   );
 
   Future<(ProviderContainer, FakeLocationService)> pumpZones(
-    WidgetTester tester,
-  ) async {
+    WidgetTester tester, {
+    TileProvider? tiles,
+  }) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 2.6;
     addTearDown(tester.view.reset);
@@ -46,6 +51,7 @@ void main() {
           ),
         ),
         locationServiceProvider.overrideWithValue(location),
+        mapTileProviderProvider.overrideWith((ref) async => tiles),
       ],
     );
     addTearDown(container.dispose);
@@ -67,7 +73,7 @@ void main() {
     tester,
   ) async {
     final (container, _) = await pumpZones(tester);
-    expect(find.text('OFFLINE MAP // NO TILES'), findsOneWidget);
+    expect(find.text('OFFLINE GRID'), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('zones-pin-here')));
     await tester.pumpAndSettle();
@@ -83,7 +89,7 @@ void main() {
     expect(zones.single.name, 'Corner pharmacy');
     expect(zones.single.latitude, closeTo(here.latitude, 1e-9));
     expect(find.text('Corner pharmacy'), findsOneWidget);
-    expect(find.textContaining('0 m away'), findsOneWidget);
+    expect(find.textContaining('you are inside'), findsOneWidget);
   });
 
   testWidgets('long-press on the offline map opens the zone editor', (
@@ -177,4 +183,77 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(recoveryProvider).backgroundGeofencing, isFalse);
   });
+
+  testWidgets('no tile provider: offline grid only, no attribution', (
+    tester,
+  ) async {
+    await pumpZones(tester);
+    await tester.pump();
+    expect(find.byType(TileLayer), findsNothing);
+    expect(find.text('OFFLINE GRID'), findsOneWidget);
+    expect(find.byKey(const ValueKey('osm-attribution')), findsNothing);
+  });
+
+  testWidgets('street tiles: OSM layer, identified client, visible credit', (
+    tester,
+  ) async {
+    await pumpZones(tester, tiles: _MemoryTiles(_transparentPng));
+    await tester.pump();
+    final layer = tester.widget<TileLayer>(find.byType(TileLayer));
+    expect(layer.urlTemplate, osmTileUrl);
+    expect(layer.urlTemplate, startsWith('https://tile.openstreetmap.org/'));
+    expect(
+      layer.tileProvider.headers['User-Agent'],
+      contains(mapUserAgentPackage),
+    );
+    expect(find.text('© OpenStreetMap contributors'), findsOneWidget);
+    expect(find.text('OSM // LIVE + CACHE'), findsOneWidget);
+  });
+
+  testWidgets('failing tiles fall back to the grid; pins still work', (
+    tester,
+  ) async {
+    final (container, _) = await pumpZones(
+      tester,
+      tiles: _MemoryTiles(Uint8List.fromList([1, 2, 3, 4])),
+    );
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 300)),
+    );
+    await tester.pump();
+    expect(find.text('NO SIGNAL // GRID FALLBACK'), findsOneWidget);
+    // Attribution stays while the street layer is configured.
+    expect(find.text('© OpenStreetMap contributors'), findsOneWidget);
+
+    await tester.longPress(find.byKey(const ValueKey('zones-map')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('zone-name')), 'Corner');
+    await tester.tap(find.byKey(const ValueKey('zone-radius-500')));
+    await tester.pump();
+    expect(
+      tester.widget<Text>(find.byKey(const ValueKey('zone-radius-value'))).data,
+      '500 M',
+    );
+    await tester.tap(find.byKey(const ValueKey('zone-save')));
+    await tester.pumpAndSettle();
+    final zone = container.read(recoveryProvider).zones.single;
+    expect(zone.name, 'Corner');
+    expect(zone.radiusMeters, 500);
+    expect(find.text('CORNER'), findsOneWidget); // pin label on the map
+  });
+}
+
+final _transparentPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+);
+
+class _MemoryTiles extends TileProvider {
+  _MemoryTiles(this.bytes);
+
+  final Uint8List bytes;
+
+  @override
+  ImageProvider getImage(TileCoordinates coordinates, TileLayer options) =>
+      MemoryImage(bytes);
 }

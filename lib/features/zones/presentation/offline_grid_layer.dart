@@ -7,16 +7,34 @@ import 'package:latlong2/latlong.dart';
 import '../../../core/theme/app_theme.dart';
 import '../domain/danger_zone.dart';
 
-/// Fully offline map background: a dark coordinate grid with a metric scale
-/// bar. No tiles are fetched, so the map works with no network at all.
+/// Offline map layer: a dark coordinate grid with a metric scale bar. Drawn
+/// under the street tiles as the no-network fallback, and again faintly on top
+/// (no background) so the HUD grid and scale bar stay visible over tiles.
 class OfflineGridLayer extends StatelessWidget {
-  const OfflineGridLayer({super.key});
+  const OfflineGridLayer({
+    this.background = true,
+    this.showScaleBar = true,
+    this.lineOpacity = 1,
+    super.key,
+  });
+
+  final bool background;
+  final bool showScaleBar;
+  final double lineOpacity;
 
   @override
   Widget build(BuildContext context) {
     final camera = MapCamera.of(context);
     return IgnorePointer(
-      child: CustomPaint(size: Size.infinite, painter: _GridPainter(camera)),
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _GridPainter(
+          camera,
+          background: background,
+          showScaleBar: showScaleBar,
+          lineOpacity: lineOpacity,
+        ),
+      ),
     );
   }
 }
@@ -45,13 +63,23 @@ double niceScaleMeters(double meters) {
 }
 
 class _GridPainter extends CustomPainter {
-  _GridPainter(this.camera);
+  _GridPainter(
+    this.camera, {
+    required this.background,
+    required this.showScaleBar,
+    required this.lineOpacity,
+  });
 
   final MapCamera camera;
+  final bool background;
+  final bool showScaleBar;
+  final double lineOpacity;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = ink);
+    if (background) {
+      canvas.drawRect(Offset.zero & size, Paint()..color = ink);
+    }
     final center = camera.center;
     final probe = camera.latLngToScreenOffset(
       LatLng(math.min(center.latitude + 0.001, 89.9), center.longitude),
@@ -62,11 +90,25 @@ class _GridPainter extends CustomPainter {
     final step = gridStepDegrees(pixelsPerDegree);
     final bounds = camera.visibleBounds;
 
+    if (lineOpacity > 0) {
+      _paintLines(canvas, size, step, bounds, center);
+    }
+    if (!showScaleBar) return;
+    _paintScaleBar(canvas, size);
+  }
+
+  void _paintLines(
+    Canvas canvas,
+    Size size,
+    double step,
+    LatLngBounds bounds,
+    LatLng center,
+  ) {
     final minor = Paint()
-      ..color = cyan.withValues(alpha: .08)
+      ..color = cyan.withValues(alpha: .08 * lineOpacity)
       ..strokeWidth = 1;
     final major = Paint()
-      ..color = cyan.withValues(alpha: .2)
+      ..color = cyan.withValues(alpha: .2 * lineOpacity)
       ..strokeWidth = 1;
 
     var lines = 0;
@@ -98,7 +140,9 @@ class _GridPainter extends CustomPainter {
         isMajor ? major : minor,
       );
     }
+  }
 
+  void _paintScaleBar(Canvas canvas, Size size) {
     // Scale bar in the bottom-left corner.
     final left = camera.screenOffsetToLatLng(Offset(12, size.height - 18));
     final right = camera.screenOffsetToLatLng(Offset(132, size.height - 18));
@@ -120,17 +164,7 @@ class _GridPainter extends CustomPainter {
           right.latitude,
           right.longitude,
         );
-    final bar = Paint()
-      ..color = toxic
-      ..strokeWidth = 2;
     final y = size.height - 14;
-    canvas.drawLine(Offset(12, y), Offset(12 + barPixels, y), bar);
-    canvas.drawLine(Offset(12, y - 4), Offset(12, y + 4), bar);
-    canvas.drawLine(
-      Offset(12 + barPixels, y - 4),
-      Offset(12 + barPixels, y + 4),
-      bar,
-    );
     final label = meters >= 1000
         ? '${(meters / 1000).toStringAsFixed(meters % 1000 == 0 ? 0 : 1)} km'
         : '${meters.toStringAsFixed(0)} m';
@@ -141,9 +175,34 @@ class _GridPainter extends CustomPainter {
       ),
       textDirection: TextDirection.ltr,
     )..layout();
+    // Dark plate keeps the scale readable over street tiles.
+    canvas.drawRRect(
+      RRect.fromLTRBR(
+        6,
+        y - 22,
+        18 + math.max(barPixels, text.width),
+        y + 8,
+        const Radius.circular(6),
+      ),
+      Paint()..color = ink.withValues(alpha: .72),
+    );
+    final bar = Paint()
+      ..color = toxic
+      ..strokeWidth = 2;
+    canvas.drawLine(Offset(12, y), Offset(12 + barPixels, y), bar);
+    canvas.drawLine(Offset(12, y - 4), Offset(12, y + 4), bar);
+    canvas.drawLine(
+      Offset(12 + barPixels, y - 4),
+      Offset(12 + barPixels, y + 4),
+      bar,
+    );
     text.paint(canvas, Offset(12, y - 18));
   }
 
   @override
-  bool shouldRepaint(_GridPainter oldDelegate) => oldDelegate.camera != camera;
+  bool shouldRepaint(_GridPainter oldDelegate) =>
+      oldDelegate.camera != camera ||
+      oldDelegate.background != background ||
+      oldDelegate.showScaleBar != showScaleBar ||
+      oldDelegate.lineOpacity != lineOpacity;
 }

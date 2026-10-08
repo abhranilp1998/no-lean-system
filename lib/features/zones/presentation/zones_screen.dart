@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/services/app_notice.dart';
 import '../../../core/theme/app_theme.dart';
@@ -13,7 +14,10 @@ import '../../recovery/presentation/relapse_auth_dialog.dart';
 import '../domain/danger_zone.dart';
 import '../domain/zone_presence.dart';
 import '../services/location_service.dart';
+import '../services/map_tiles.dart';
+import 'map_style.dart';
 import 'offline_grid_layer.dart';
+import 'zone_map_markers.dart';
 import 'zone_editor_dialog.dart';
 import 'zone_monitoring_panel.dart';
 
@@ -28,6 +32,60 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
   final _map = MapController();
   LocationFix? _me;
   bool _locating = false;
+  bool _tilesFailing = false;
+  bool _tilesOkScheduled = false;
+
+  void _onTileError(TileImage tile, Object error, StackTrace? stackTrace) {
+    if (!_tilesFailing && mounted) setState(() => _tilesFailing = true);
+  }
+
+  Widget _tileBuilder(BuildContext context, Widget tile, TileImage image) {
+    if (_tilesFailing &&
+        !_tilesOkScheduled &&
+        image.loadFinishedAt != null &&
+        !image.loadError) {
+      _tilesOkScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _tilesOkScheduled = false;
+        if (mounted) setState(() => _tilesFailing = false);
+      });
+    }
+    return neonTileBuilder(context, tile, image);
+  }
+
+  void _zoomBy(double delta) {
+    final camera = _map.camera;
+    _map.move(camera.center, (camera.zoom + delta).clamp(3, 19).toDouble());
+  }
+
+  void _fitZones() {
+    final zones = ref.read(recoveryProvider).zones;
+    if (zones.isEmpty) return;
+    if (zones.length == 1) {
+      _map.move(LatLng(zones.single.latitude, zones.single.longitude), 15);
+      return;
+    }
+    _map.fitCamera(
+      CameraFit.coordinates(
+        coordinates: [
+          for (final zone in zones) LatLng(zone.latitude, zone.longitude),
+        ],
+        padding: const EdgeInsets.all(48),
+        maxZoom: 16,
+      ),
+    );
+  }
+
+  Future<void> _openOsmCopyright() async {
+    try {
+      await launchUrl(
+        Uri.parse(osmCopyrightUrl),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {
+      // Attribution stays visible even if no browser is available.
+    }
+  }
 
   LatLng get _initialCenter {
     final zones = ref.read(recoveryProvider).zones;
@@ -182,8 +240,14 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
+    final tiles = ref.watch(mapTileProviderProvider).valueOrNull;
     final zones = recovery.zones;
     final me = _me;
+    final mapMode = tiles == null
+        ? MapMode.grid
+        : _tilesFailing
+        ? MapMode.fallback
+        : MapMode.street;
 
     return Scaffold(
       appBar: AppBar(
@@ -197,100 +261,167 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(18, 10, 18, 30),
           children: [
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: StatusPill(label: 'OFFLINE MAP // NO TILES', color: cyan),
+            Text(
+              'MARK THE PLACES WHERE BUYING HAPPENS',
+              style: eyebrowStyle.copyWith(color: red),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             const Text(
-              'No map data is downloaded. Tap LOCATE ME to centre the grid on your position, then long-press to drop a pin. Pins are relative to where you are, so mark places while you stand near them or place them by distance using the scale bar.',
+              'Long-press the map to drop a pin, or stand there and tap PIN HERE. Street tiles come from OpenStreetMap and are cached on this device once viewed. With no network the grid takes over: zones, pins and alerts never need internet, and your zones never leave the phone.',
               style: TextStyle(color: muted, fontSize: 11.5, height: 1.45),
             ),
             const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: SizedBox(
-                height: 320,
-                child: FlutterMap(
-                  key: const ValueKey('zones-map'),
-                  mapController: _map,
-                  options: MapOptions(
-                    initialCenter: _initialCenter,
-                    initialZoom: zones.isEmpty ? 3 : 15,
-                    backgroundColor: ink,
-                    onLongPress: (_, point) =>
-                        _createAt(point.latitude, point.longitude),
-                  ),
-                  children: [
-                    const OfflineGridLayer(),
-                    CircleLayer(
-                      circles: [
-                        for (final zone in zones)
-                          CircleMarker(
-                            point: LatLng(zone.latitude, zone.longitude),
-                            radius: zone.radiusMeters,
-                            useRadiusInMeter: true,
-                            color: red.withValues(alpha: .16),
-                            borderColor: red,
-                            borderStrokeWidth: 2,
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: cyan.withValues(alpha: .35)),
+                boxShadow: [
+                  BoxShadow(color: cyan.withValues(alpha: .14), blurRadius: 22),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(17),
+                child: SizedBox(
+                  height: 360,
+                  child: Stack(
+                    children: [
+                      FlutterMap(
+                        key: const ValueKey('zones-map'),
+                        mapController: _map,
+                        options: MapOptions(
+                          initialCenter: _initialCenter,
+                          initialZoom: zones.isEmpty ? 3 : 15,
+                          minZoom: 3,
+                          maxZoom: 19,
+                          backgroundColor: ink,
+                          onLongPress: (_, point) =>
+                              _createAt(point.latitude, point.longitude),
+                        ),
+                        children: [
+                          const OfflineGridLayer(showScaleBar: false),
+                          if (tiles != null)
+                            TileLayer(
+                              key: const ValueKey('osm-tiles'),
+                              urlTemplate: osmTileUrl,
+                              userAgentPackageName: mapUserAgentPackage,
+                              maxNativeZoom: osmMaxNativeZoom,
+                              tileProvider: tiles,
+                              tileBuilder: _tileBuilder,
+                              errorTileCallback: _onTileError,
+                              evictErrorTileStrategy: EvictErrorTileStrategy
+                                  .notVisibleRespectMargin,
+                            ),
+                          if (tiles != null)
+                            const OfflineGridLayer(
+                              background: false,
+                              showScaleBar: false,
+                              lineOpacity: .45,
+                            ),
+                          CircleLayer(
+                            circles: [
+                              for (final zone in zones)
+                                ...zoneCircles(
+                                  LatLng(zone.latitude, zone.longitude),
+                                  zone.radiusMeters,
+                                ),
+                              if (me != null)
+                                CircleMarker(
+                                  point: LatLng(me.latitude, me.longitude),
+                                  radius: me.accuracyMeters,
+                                  useRadiusInMeter: true,
+                                  color: cyan.withValues(alpha: .1),
+                                  borderColor: cyan.withValues(alpha: .5),
+                                  borderStrokeWidth: 1,
+                                ),
+                            ],
                           ),
-                        if (me != null)
-                          CircleMarker(
-                            point: LatLng(me.latitude, me.longitude),
-                            radius: me.accuracyMeters,
-                            useRadiusInMeter: true,
-                            color: cyan.withValues(alpha: .1),
-                            borderColor: cyan.withValues(alpha: .5),
-                            borderStrokeWidth: 1,
+                          MarkerLayer(
+                            markers: [
+                              for (final zone in zones)
+                                Marker(
+                                  point: LatLng(zone.latitude, zone.longitude),
+                                  width: ZonePinMarker.width,
+                                  height: ZonePinMarker.height,
+                                  alignment: ZonePinMarker.alignment,
+                                  child: ZonePinMarker(label: zone.name),
+                                ),
+                              if (me != null)
+                                Marker(
+                                  point: LatLng(me.latitude, me.longitude),
+                                  width: 28,
+                                  height: 28,
+                                  child: const MyLocationMarker(),
+                                ),
+                            ],
                           ),
-                      ],
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        for (final zone in zones)
-                          Marker(
-                            point: LatLng(zone.latitude, zone.longitude),
-                            width: 30,
-                            height: 30,
-                            child: const Icon(
-                              Icons.dangerous,
+                          const OfflineGridLayer(
+                            background: false,
+                            lineOpacity: 0,
+                          ),
+                          if (tiles != null)
+                            OsmAttribution(onTap: _openOsmCopyright),
+                        ],
+                      ),
+                      const Positioned.fill(child: MapHudFrame()),
+                      Positioned(
+                        left: 12,
+                        top: 12,
+                        child: MapStatusChip(mode: mapMode),
+                      ),
+                      Positioned(
+                        right: 10,
+                        top: 10,
+                        child: Column(
+                          children: [
+                            MapControlButton(
+                              key: const ValueKey('map-zoom-in'),
+                              icon: Icons.add,
+                              tooltip: 'Zoom in',
+                              onPressed: () => _zoomBy(1),
+                            ),
+                            const SizedBox(height: 6),
+                            MapControlButton(
+                              key: const ValueKey('map-zoom-out'),
+                              icon: Icons.remove,
+                              tooltip: 'Zoom out',
+                              onPressed: () => _zoomBy(-1),
+                            ),
+                            const SizedBox(height: 6),
+                            MapControlButton(
+                              key: const ValueKey('map-fit-zones'),
+                              icon: Icons.center_focus_strong,
+                              tooltip: 'Show all zones',
                               color: red,
-                              size: 26,
+                              onPressed: zones.isEmpty ? null : _fitZones,
                             ),
-                          ),
-                        if (me != null)
-                          Marker(
-                            point: LatLng(me.latitude, me.longitude),
-                            width: 22,
-                            height: 22,
-                            child: const Icon(
-                              Icons.my_location,
-                              color: cyan,
-                              size: 20,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
+                  child: HudActionButton(
                     key: const ValueKey('zones-locate'),
+                    label: _locating ? 'LOCATING…' : 'LOCATE ME',
+                    icon: Icons.my_location,
+                    color: cyan,
                     onPressed: _locating ? null : _locate,
-                    icon: const Icon(Icons.my_location, color: cyan),
-                    label: Text(_locating ? 'LOCATING…' : 'LOCATE ME'),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: FilledButton.icon(
+                  child: HudActionButton(
                     key: const ValueKey('zones-pin-here'),
-                    style: FilledButton.styleFrom(backgroundColor: magenta),
+                    label: 'PIN HERE',
+                    icon: Icons.add_location_alt,
+                    color: magenta,
+                    filled: true,
                     onPressed: _locating
                         ? null
                         : () async {
@@ -299,18 +430,22 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
                               await _createAt(fix.latitude, fix.longitude);
                             }
                           },
-                    icon: const Icon(Icons.add_location_alt),
-                    label: const Text('PIN HERE'),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            Text(
-              'YOUR ZONES // ${zones.length}/${DangerZone.maxZones}',
-              style: eyebrowStyle.copyWith(color: red),
+            const SizedBox(height: 22),
+            Row(
+              children: [
+                Text('YOUR ZONES', style: eyebrowStyle.copyWith(color: red)),
+                const Spacer(),
+                StatusPill(
+                  label: '${zones.length}/${DangerZone.maxZones} ARMED',
+                  color: zones.isEmpty ? muted : red,
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             if (zones.isEmpty)
               const GlassCard(
                 accent: muted,
@@ -322,29 +457,17 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
             for (final zone in zones)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: GlassCard(
-                  accent: red,
-                  padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
-                  child: ListTile(
-                    key: ValueKey('zone-${zone.id}'),
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.dangerous, color: red),
-                    title: Text(zone.name),
-                    subtitle: Text(
-                      '${zone.radiusMeters.round()} m // '
-                      '${me == null ? 'distance unknown' : '${zone.distanceTo(me.latitude, me.longitude).round()} m away'}',
-                      style: const TextStyle(color: muted, fontSize: 11),
-                    ),
-                    onTap: () {
-                      _map.move(LatLng(zone.latitude, zone.longitude), 15);
-                      _edit(zone);
-                    },
-                    trailing: IconButton(
-                      tooltip: 'Delete ${zone.name}',
-                      icon: const Icon(Icons.delete_outline, color: muted),
-                      onPressed: () => _delete(zone),
-                    ),
-                  ),
+                child: ZoneListCard(
+                  key: ValueKey('zone-${zone.id}'),
+                  zone: zone,
+                  distanceMeters: me == null
+                      ? null
+                      : zone.distanceTo(me.latitude, me.longitude),
+                  onTap: () {
+                    _map.move(LatLng(zone.latitude, zone.longitude), 15);
+                    _edit(zone);
+                  },
+                  onDelete: () => _delete(zone),
                 ),
               ),
             const SizedBox(height: 16),
