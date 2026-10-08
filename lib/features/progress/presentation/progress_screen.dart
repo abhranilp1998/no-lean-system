@@ -12,12 +12,14 @@ import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/recovery_event.dart';
 import '../../settings/presentation/settings_dialogs.dart';
+import '../domain/money_series.dart';
 import '../domain/recovery_insights.dart';
 import '../domain/verified_safety_briefs.dart';
 import 'widgets/actionable_insights_panel.dart';
 import 'widgets/craving_timeline_card.dart';
 import 'widgets/insight_breakdown_card.dart';
 import 'widgets/milestone_tracker.dart';
+import 'widgets/money_chart_card.dart';
 import 'widgets/progress_heat_map.dart';
 import 'widgets/recovery_summary_cards.dart';
 
@@ -111,6 +113,16 @@ class ProgressScreen extends ConsumerWidget {
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 14),
+        MoneyChartCard(
+          points: cumulativeMoneySeries(
+            events: recovery.events,
+            dailySpend: recovery.dailySpend,
+            now: DateTime.now(),
+          ),
+          dailySpend: recovery.dailySpend,
+          onSetSpend: () => showSpendDialog(context, ref),
         ),
         const SizedBox(height: 14),
         CravingTimelineCard(points: timeline),

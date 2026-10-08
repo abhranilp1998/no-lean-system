@@ -1,3 +1,4 @@
+import '../../settings/presentation/settings_dialogs.dart';
 import '../../code_instead/presentation/code_instead_screen.dart';
 import '../../../core/layout/tab_layout.dart';
 import 'dart:async';
@@ -155,12 +156,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: StatCard(
-                  label: 'MONEY SAVED',
-                  value: money(recovery.moneySaved),
-                  detail: 'At ${money(recovery.dailySpend)} / day',
-                  color: toxic,
-                ),
+                child: recovery.dailySpend > 0
+                    ? StatCard(
+                        label: 'MONEY SAVED',
+                        value: money(recovery.moneySaved),
+                        detail: 'At ${money(recovery.dailySpend)} / day',
+                        color: toxic,
+                      )
+                    // ₹0 is "not set", not "saved nothing": ask for it.
+                    : InkWell(
+                        key: const ValueKey('dashboard-set-spend'),
+                        borderRadius: BorderRadius.circular(18),
+                        onTap: () => showSpendDialog(context, ref),
+                        child: const StatCard(
+                          label: 'MONEY SAVED',
+                          value: 'SET ₹',
+                          detail: 'Tap to set daily spend',
+                          color: toxic,
+                        ),
+                      ),
               ),
             ],
           ),
