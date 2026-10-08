@@ -12,6 +12,8 @@ import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/recovery_event.dart';
 import '../../settings/presentation/settings_dialogs.dart';
+import '../../../core/services/save_action.dart';
+import '../domain/dose_insights.dart';
 import '../domain/money_series.dart';
 import '../domain/recovery_insights.dart';
 import '../domain/verified_safety_briefs.dart';
@@ -22,6 +24,7 @@ import 'widgets/milestone_tracker.dart';
 import 'widgets/money_chart_card.dart';
 import 'widgets/progress_heat_map.dart';
 import 'widgets/recovery_summary_cards.dart';
+import 'widgets/relapse_type_card.dart';
 
 class ProgressScreen extends ConsumerWidget {
   const ProgressScreen({super.key});
@@ -46,14 +49,29 @@ class ProgressScreen extends ConsumerWidget {
       cleanDays: recovery.cleanDays,
     );
     final sos = sosCompletionSummary(recovery.sosSessions);
-    final actions = patternActionInsights(
-      cravings: recovery.cravings,
-      sosSessions: recovery.sosSessions,
-      dailySpend: recovery.dailySpend,
-      moneySaved: recovery.moneySaved,
-      relapses: relapses,
-      riskWindow: recovery.riskWindow,
-    );
+    List<PatternActionInsight> insightsFor(Map<String, String> dismissed) =>
+        patternActionInsights(
+          cravings: recovery.cravings,
+          sosSessions: recovery.sosSessions,
+          dailySpend: recovery.dailySpend,
+          moneySaved: recovery.moneySaved,
+          relapses: relapses,
+          riskWindow: recovery.riskWindow,
+          events: recovery.events,
+          dismissed: dismissed,
+        );
+    final actions = insightsFor(recovery.dismissedInsights);
+    // Dismissals that still match their evidence (hidden right now).
+    final hidden = recovery.dismissedInsights.isEmpty
+        ? 0
+        : insightsFor(
+            const {},
+          ).where((i) => i.isDismissedBy(recovery.dismissedInsights)).length;
+    final typeStats = relapseTypeStats(relapses);
+    final costByType = {
+      for (final stats in typeStats)
+        if (stats.costedCount > 0) stats.label: stats.realCost,
+    };
     final safetyInsights = verifiedSafetyInsights(
       events: recovery.events,
       cleanStreakDays: recovery.streak,
@@ -94,12 +112,12 @@ class ProgressScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'CLEAN DAYS / LAST 30',
-                style: microStyle.copyWith(color: purple),
+              Text('LAST 30 DAYS', style: microStyle.copyWith(color: purple)),
+              const SizedBox(height: 10),
+              HeatMapPanel(
+                cleanDays: recovery.cleanDays,
+                events: recovery.events,
               ),
-              const SizedBox(height: 18),
-              ProgressHeatMap(cleanDays: recovery.cleanDays),
               const SizedBox(height: 14),
               Row(
                 children: [
@@ -123,6 +141,7 @@ class ProgressScreen extends ConsumerWidget {
           ),
           dailySpend: recovery.dailySpend,
           onSetSpend: () => showSpendDialog(context, ref),
+          costByType: costByType,
         ),
         const SizedBox(height: 14),
         CravingTimelineCard(points: timeline),
@@ -135,7 +154,23 @@ class ProgressScreen extends ConsumerWidget {
           color: magenta,
         ),
         const SizedBox(height: 10),
-        ActionableInsightsPanel(insights: actions, onAction: runAction),
+        ActionableInsightsPanel(
+          insights: actions,
+          onAction: runAction,
+          onDismiss: (insight) => saveAction(
+            context,
+            () => ref
+                .read(recoveryProvider)
+                .dismissInsight(insight.id, insight.evidenceKey),
+          ),
+          dismissedCount: hidden,
+          onRestore: () => saveAction(
+            context,
+            () => ref.read(recoveryProvider).restoreDismissedInsights(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        RelapseTypeCard(stats: typeStats),
         const SizedBox(height: 20),
         _SectionLabel(glyph: '⌁', label: 'PATTERN RECOGNITION', color: magenta),
         const SizedBox(height: 10),
