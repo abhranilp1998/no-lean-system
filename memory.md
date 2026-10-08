@@ -31,11 +31,12 @@ Read it before changing code.
 
 ## Recovery and security rules
 
-- Persisted recovery JSON is currently state version 10 (v8 added
+- Persisted recovery JSON is currently state version 11 (v8 added
   `riskWindowLock` and `appLockPending`; v9 added `zones`, `zoneMonitoring`
   and `backgroundGeofencing`; v10 added `streetTiles`, `widgetPrivacy`,
   `quietHoursEnabled`, `quietHours`, `hideSensitiveNotifications` and the
-  `codeSession` event type; older states load with safe defaults). Any schema change must
+  `codeSession` event type; v11 added `zoneHistory` and the `zoneEntry`
+  event type; older states load with safe defaults). Any schema change must
   increment the version and provide a non-destructive migration in
   `RecoveryController.load()`.
 - Production history is stored in `recovery/current.json` in application support
@@ -45,13 +46,20 @@ Read it before changing code.
 - Legacy day summaries retain date-only facts, not invented timestamps/counts.
   Backup format 3 supports these summaries and imports legacy exports.
   Backup format 4 adds danger zones (merged by ID on import); format ≤3 still
-  imports with no zones. Format 5 adds `codeSession` events; a new event type
-  always needs a format bump so older apps refuse the file as a whole.
+  imports with no zones. Format 5 adds `codeSession` events; format 6 adds
+  `zoneEntry` events. A new event type always needs a format bump so older
+  apps refuse the file as a whole.
 - CSV export (`events_csv.dart`) is a read-only copy of every event, oldest
   first: BOM + CRLF, RFC 4180 quoting, ISO-8601 timestamps with offset, and a
   formula guard (`= + - @` tab/CR get a leading `'`). Unmapped metadata goes in
-  the `details` JSON column. JSON stays the only restorable backup. Zone
-  entries are never recorded (no location history), so CSV has no zone rows.
+  the `details` JSON column. JSON stays the only restorable backup. The
+  `zone` column (after `details`) carries the zone name of `zoneEntry` rows.
+- Milestones (3/7/14/30/60/90/180/365 days, `domain/milestones.dart`) are
+  recorded automatically by `syncMilestones()`, stamped at lastDose + N days,
+  with `source: 'auto'`; they cannot be deleted from the timeline. The shell
+  calls it after load, on resume and on the lock ticker (never inside
+  `load()`, which must stay write-free) and celebrates the highest new one
+  once, never over the app lock. The celebration honours reduce motion.
 - Multiple relapse rows use one protected, idempotent batch operation with a
   separate chosen occurrence time per event. Cooldown support never hides tabs,
   logging, SOS or settings; retain the original cooldown owner on later logs.
@@ -107,11 +115,20 @@ Read it before changing code.
   app is resumed, monitoring is on and zones exist. Background alerts use
   `native_geofence` (enter-only, ids `nolean_zone_<id>`), are opt-in behind the
   disclosure screen, and the isolate callback reads only the local state file.
+- Zone history (P3, opt-in, default OFF, no auth to change or clear, never
+  switched on by import): each entry is a `zoneEntry` event with zoneId,
+  zoneName, time and source only; coordinate keys are stripped even from
+  crafted events. Same-zone reports within 15 min merge (in-app monitor and
+  geofence both fire). The background isolate never writes the state file;
+  it appends to `recovery/zone_entries.jsonl` and the app imports that inbox
+  on open/resume (drain → commit → acknowledge; discarded if history is off).
 - Zone alerts are firm and factual and always offer one-tap exit ("I'M
   LEAVING"/close); never block leaving the alert.
 - Insight patterns need ≥5 cravings+relapses and ≥3 repeats before being
   shown; relapse context tags count as triggers. Money lost is an estimate
-  (relapse days × daily spend) and must be labelled as one.
+  (relapse days × daily spend) and must be labelled as one. The cumulative
+  kept/lost chart (`money_series.dart`) applies today's daily spend to all
+  history; at ₹0 the chart and dashboard prompt the user to set it instead.
 - SOS is staged (breathe → 5-4-3-2-1 → reasons → re-pledge). Leaving is held
   only for the first 15 s of breathing; completion is recorded at the pledge.
 
@@ -150,7 +167,8 @@ Read it before changing code.
   (`NoLeanWidgetSize`: 2x1 small, 4x2 original, 4x3 large); each layout must
   contain exactly the ids its size flags promise, because RemoteViews fails the
   whole widget on a missing id. `test/android/widget_resources_test.dart`
-  enforces this, since no Android build runs in the agent box. The 4x2
+  enforces this. The agent box now has an Android SDK and emulator
+  (`source /workspace/tools/android_env.sh`, AVD `nolean35`). The 4x2
   receiver owns the shared boundary alarm and refreshes every size.
 - Code Instead: tasks rotate by history (`nextCodeTask`), never by the clock;
   catalogue ids are stable, append-only. Blocks are logged as `codeSession`
