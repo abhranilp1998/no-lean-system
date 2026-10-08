@@ -11,6 +11,7 @@ import '../../../core/services/feedback_preferences.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../application/recovery_controller.dart';
 import '../domain/effect_intensity.dart';
+import '../domain/events_csv.dart';
 import '../domain/legacy_recovery_migration.dart';
 import '../domain/recovery_event.dart';
 import '../../zones/domain/danger_zone.dart';
@@ -77,18 +78,43 @@ class BackupService {
         'Backup is larger than the 5 MB safety limit.',
       );
     }
-    final fileName =
-        'nolean_backup_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.json';
+    await _shareText(
+      jsonString,
+      fileName: 'nolean_backup_${_stamp()}.json',
+      mimeType: 'application/json',
+      extension: 'json',
+      shareText: 'NO LEAN recovery backup',
+    );
+  }
 
+  /// Shares every event as CSV (a readable copy; JSON stays the restorable
+  /// backup format).
+  Future<void> exportEventsCsv(List<RecoveryEvent> events) => _shareText(
+    buildEventsCsv(events),
+    fileName: 'nolean_history_${_stamp()}.csv',
+    mimeType: 'text/csv',
+    extension: 'csv',
+    shareText: 'NO LEAN history (CSV)',
+  );
+
+  String _stamp() => DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+
+  Future<void> _shareText(
+    String content, {
+    required String fileName,
+    required String mimeType,
+    required String extension,
+    required String shareText,
+  }) async {
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
       final dir = await getTemporaryDirectory();
       final file = File('${dir.path}/$fileName');
       try {
-        await file.writeAsString(jsonString, flush: true);
+        await file.writeAsString(content, flush: true);
         await SharePlus.instance.share(
           ShareParams(
-            files: [XFile(file.path, mimeType: 'application/json')],
-            text: 'NO LEAN recovery backup',
+            files: [XFile(file.path, mimeType: mimeType)],
+            text: shareText,
           ),
         );
       } finally {
@@ -96,13 +122,13 @@ class BackupService {
       }
     } else {
       final path = await FilePicker.saveFile(
-        dialogTitle: 'Save Backup',
+        dialogTitle: 'Save export',
         fileName: fileName,
         type: FileType.custom,
-        allowedExtensions: ['json'],
+        allowedExtensions: [extension],
       );
       if (path != null) {
-        await File(path).writeAsString(jsonString, flush: true);
+        await File(path).writeAsString(content, flush: true);
       }
     }
   }

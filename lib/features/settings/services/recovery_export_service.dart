@@ -36,6 +36,30 @@ Future<void> exportRecoveryData(
   }
 }
 
+Future<void> exportRecoveryCsv(
+  BuildContext context,
+  RecoveryController recovery,
+) async {
+  try {
+    await BackupService().exportEventsCsv(recovery.events);
+    if (context.mounted) {
+      AppNotice.show(
+        context,
+        'CSV READY // ${recovery.events.length} EVENTS. NOTES ARE INCLUDED: SHARE WITH CARE.',
+        type: AppNoticeType.success,
+      );
+    }
+  } catch (_) {
+    if (context.mounted) {
+      AppNotice.show(
+        context,
+        'CSV EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
+        type: AppNoticeType.error,
+      );
+    }
+  }
+}
+
 Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
   try {
     final service = BackupService();

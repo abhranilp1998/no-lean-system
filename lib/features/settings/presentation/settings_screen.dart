@@ -68,6 +68,14 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => exportRecoveryData(context, recovery),
             ),
             SettingAction(
+              key: const ValueKey('settings-export-csv'),
+              icon: Icons.table_view_outlined,
+              title: 'Export history (CSV)',
+              subtitle: 'Every event, spreadsheet-ready // read-only copy',
+              color: toxic,
+              onTap: () => exportRecoveryCsv(context, recovery),
+            ),
+            SettingAction(
               icon: Icons.download_outlined,
               title: 'Import backup',
               subtitle: 'Merge events from file',
