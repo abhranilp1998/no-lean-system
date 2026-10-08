@@ -31,9 +31,11 @@ Read it before changing code.
 
 ## Recovery and security rules
 
-- Persisted recovery JSON is currently state version 9 (v8 added
+- Persisted recovery JSON is currently state version 10 (v8 added
   `riskWindowLock` and `appLockPending`; v9 added `zones`, `zoneMonitoring`
-  and `backgroundGeofencing`; older states load with safe defaults). Any schema change must
+  and `backgroundGeofencing`; v10 added `streetTiles`, `widgetPrivacy`,
+  `quietHoursEnabled`, `quietHours`, `hideSensitiveNotifications` and the
+  `codeSession` event type; older states load with safe defaults). Any schema change must
   increment the version and provide a non-destructive migration in
   `RecoveryController.load()`.
 - Production history is stored in `recovery/current.json` in application support
@@ -43,7 +45,13 @@ Read it before changing code.
 - Legacy day summaries retain date-only facts, not invented timestamps/counts.
   Backup format 3 supports these summaries and imports legacy exports.
   Backup format 4 adds danger zones (merged by ID on import); format ≤3 still
-  imports with no zones.
+  imports with no zones. Format 5 adds `codeSession` events; a new event type
+  always needs a format bump so older apps refuse the file as a whole.
+- CSV export (`events_csv.dart`) is a read-only copy of every event, oldest
+  first: BOM + CRLF, RFC 4180 quoting, ISO-8601 timestamps with offset, and a
+  formula guard (`= + - @` tab/CR get a leading `'`). Unmapped metadata goes in
+  the `details` JSON column. JSON stays the only restorable backup. Zone
+  entries are never recorded (no location history), so CSV has no zone rows.
 - Multiple relapse rows use one protected, idempotent batch operation with a
   separate chosen occurrence time per event. Cooldown support never hides tabs,
   logging, SOS or settings; retain the original cooldown owner on later logs.
@@ -61,6 +69,24 @@ Read it before changing code.
   another timer-reset path that bypasses its biometric/PIN authorization.
 - Disabling the relapse lock must remain authenticated.
 - Exports deliberately exclude the secure PIN and biometric material.
+
+## Privacy and notifications
+
+- Privacy settings (`streetTiles`, `widgetPrivacy`,
+  `hideSensitiveNotifications`, quiet hours) never need auth and are never
+  changed by an import. A malformed privacy flag stays private.
+- Street tiles off = the tile provider is never built: grid only, zero network.
+- Quiet hours (user decision, Oct 2026) mute non-critical notifications only.
+  Risk-window and danger-zone alerts are critical and always come through.
+  Classify every new notification in `NotificationKind`.
+- Every notification is VISIBILITY_PRIVATE so the lock screen shows Android's
+  neutral public version. flutter_local_notifications 19.5 cannot set a custom
+  `publicVersion`; "hide sensitive content" instead makes the posted title,
+  body and action labels neutral (`NotificationPrefs.textFor`/`label`). The
+  background geofence isolate reads prefs from the state file and fails
+  private if it is unreadable.
+- Widget privacy sends no counter, streak, risk or pledge state over the
+  channel, and native code removes the stored last-dose time.
 
 ## Danger zones and location
 
@@ -93,7 +119,14 @@ Read it before changing code.
 
 - Use `AppNotice.show(...)` for user-facing transient messages. Do not create
   ad-hoc SnackBars with unverified foreground/background contrast.
-- Use `AppDialog` for app-styled modal content.
+- Use `AppDialog` for app-styled modal content. Dialogs with text fields wrap
+  their body in `KeyboardSafeScroll` and give fields
+  `KeyboardSafeScroll.fieldScrollPadding` so the primary button stays
+  reachable with the keyboard open.
+- Shell tabs (Dashboard, Cravings, Progress, Timeline, Settings) scroll in
+  `TabListView` (`core/layout/tab_layout.dart`): shared gutters, one bottom
+  clearance, drag-to-dismiss keyboard. The shell owns the only Scaffold and
+  SafeArea; tabs never add their own.
 - Use `AppFeedback` for haptic/sound feedback. Shared controls already emit
   interaction feedback, so avoid adding a second haptic for the same tap.
 - Tap sound, vibration, and sound profile are independent persisted settings.
@@ -108,11 +141,22 @@ Read it before changing code.
 ## Android bridge contract
 
 - Channel: `no_lean/widget`, method: `update`.
-- Widget actions `sos`, `craving`, `relapse` use request codes 10, 11, 12; root
-  remains 0. Queue native actions until the loaded shell drains them. Remove
+- Widget actions `sos`, `craving`, `relapse`, `code` use request codes 10, 11,
+  12, 13; root remains 0. Queue native actions until the loaded shell drains them. Remove
   consumed intent extras so recreation does not replay a completed action.
 - Required source of truth: `lastDoseEpochMillis` as a positive integer.
 - `cleanTime` and `streak` remain compatibility fallback strings.
+- Payload also carries `privacy`. One provider class renders three sizes
+  (`NoLeanWidgetSize`: 2x1 small, 4x2 original, 4x3 large); each layout must
+  contain exactly the ids its size flags promise, because RemoteViews fails the
+  whole widget on a missing id. `test/android/widget_resources_test.dart`
+  enforces this, since no Android build runs in the agent box. The 4x2
+  receiver owns the shared boundary alarm and refreshes every size.
+- Code Instead: tasks rotate by history (`nextCodeTask`), never by the clock;
+  catalogue ids are stable, append-only. Blocks are logged as `codeSession`
+  when time is up, the task is done, or the user stops after ≥1 minute.
+  Notification action `action_code` (pre-window risk alert) and widget action
+  `code` open the timer, which opens over the app lock like SOS.
 - The native widget uses a launcher-side Chronometer for live seconds. Do not
   replace it with a per-second Dart timer or alarm.
 - `MainActivity` must remain a `FlutterFragmentActivity` for `local_auth`.
