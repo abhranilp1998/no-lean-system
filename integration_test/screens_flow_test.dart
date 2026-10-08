@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:no_lean/features/progress/presentation/progress_screen.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/application/recovery_provider.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
@@ -120,6 +121,14 @@ void main() {
     await binding.convertFlutterSurfaceToImage();
     await _waitFor(tester, find.text('THE COUNTER'));
     await _settle(tester, 16); // let the celebration settle
+    // Seeded history crosses 7 days clean: the milestone celebrates once.
+    final dismiss = find.byKey(const ValueKey('milestone-dismiss'));
+    if (dismiss.evaluate().isNotEmpty) {
+      await binding.takeScreenshot('01_milestone_celebration');
+      await tester.tap(dismiss);
+      await _settle(tester, 8);
+    }
+    expect(dismiss, findsNothing);
     await binding.takeScreenshot('01_dashboard');
 
     await tester.tap(find.text('Progress'));
@@ -127,7 +136,7 @@ void main() {
     final chart = find.byKey(const ValueKey('money-chart'));
     final progressList = find
         .descendant(
-          of: find.byType(Scaffold),
+          of: find.byType(ProgressScreen),
           matching: find.byType(Scrollable),
         )
         .first;
