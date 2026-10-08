@@ -11,8 +11,9 @@ Read it before changing code.
 - Accessibility settings refine that identity; they must not replace it with a
   generic Material look. High contrast keeps the neon palette. Reduce motion
   removes animation without flattening the visual hierarchy.
-- Keep the app offline-first. Recovery history must remain usable without an
-  account, network connection, or remote service.
+- Keep the app offline-first with an optional online map. Recovery history,
+  zones, pins and alerts must remain usable without an account, network
+  connection, or remote service; the only network use is OSM street tiles.
 - Never seed fake recovery activity. Default reasons/reminders are
   configuration; cravings, clean days, relapses, and SOS sessions are user data.
 
@@ -63,9 +64,15 @@ Read it before changing code.
 
 ## Danger zones and location
 
-- Maps are fully offline (user decision, Oct 2026): `flutter_map` with no
-  TileLayer (grid canvas + scale bar), no tile servers, no geocoding/address
-  search. Do not add network map sources.
+- Map is offline-first with an optional online street layer (user decision,
+  Oct 2026): standard OSM tiles (`tile.openstreetmap.org`, no key/paid
+  provider) restyled by `neonTileMatrix`, over the offline grid + scale bar,
+  which must always stay underneath as the no-network fallback.
+- OSM tile policy is mandatory: `userAgentPackageName` = app id, visible
+  "© OpenStreetMap contributors" whenever tiles show, flutter_map built-in
+  cache (app support dir, 150 MB). Never prefetch or bulk-download tiles, and
+  no geocoding/address search. Tile requests are the only data that leaves the
+  device; zones never do.
 - Zones: 100–2000 m radius, max 20, name ≤ 40. Deleting or shrinking a zone is
   protected by the relapse lock; adding, growing, and toggling monitoring are
   not. Location toggles never require auth, so the user can always switch
