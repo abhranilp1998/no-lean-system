@@ -518,6 +518,44 @@ Future<void> showFeedbackDialog(BuildContext context, WidgetRef ref) async {
   }
 }
 
+Future<void> setRiskWindowLock(
+  BuildContext context,
+  WidgetRef ref,
+  bool enabled,
+) async {
+  try {
+    final recovery = ref.read(recoveryProvider);
+    var result = await recovery.setRiskWindowLock(enabled);
+    if (result == ProtectedActionResult.authenticationRequired &&
+        context.mounted) {
+      final pin = await showRelapsePinDialog(
+        context,
+        actionLabel: 'TURN OFF WINDOW LOCK',
+      );
+      if (pin == null) return;
+      result = await recovery.setRiskWindowLock(
+        enabled,
+        pin: pin,
+        tryBiometrics: false,
+      );
+    }
+    if (!context.mounted) return;
+    AppNotice.show(
+      context,
+      result == ProtectedActionResult.completed
+          ? 'RISK-WINDOW LOCK ${enabled ? 'ON' : 'OFF'}.'
+          : '${result.failureMessage} WINDOW LOCK UNCHANGED.',
+      type: result == ProtectedActionResult.completed
+          ? AppNoticeType.info
+          : AppNoticeType.error,
+    );
+  } on RecoverySaveException catch (error) {
+    if (context.mounted) {
+      AppNotice.show(context, error.toString(), type: AppNoticeType.error);
+    }
+  }
+}
+
 Future<void> showPinSetup(
   BuildContext context,
   WidgetRef ref,

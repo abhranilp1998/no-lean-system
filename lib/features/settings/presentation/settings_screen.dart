@@ -196,6 +196,15 @@ class SettingsScreen extends ConsumerWidget {
               color: magenta,
               onChanged: (value) => showPinSetup(context, ref, value),
             ),
+            if (recovery.requirePinAfterRelapse)
+              SettingToggle(
+                title: 'Risk-window lock',
+                subtitle:
+                    'PIN / biometric wall during ${recovery.riskWindow.label} // SOS stays open',
+                value: recovery.riskWindowLock,
+                color: magenta,
+                onChanged: (value) => setRiskWindowLock(context, ref, value),
+              ),
             SettingAction(
               icon: Icons.fingerprint,
               title: 'Verify biometrics',

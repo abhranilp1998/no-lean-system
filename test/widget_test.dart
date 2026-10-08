@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:no_lean/main.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
+import 'package:no_lean/features/recovery/domain/risk_window.dart';
 import 'package:no_lean/features/recovery/presentation/relapse_log_sheet.dart';
 import 'package:no_lean/features/recovery/services/widget_action_service.dart';
 import 'package:flutter/services.dart';
@@ -254,7 +255,18 @@ Future<ProviderContainer> _pumpLoadedApp(WidgetTester tester) async {
       ),
     ],
   );
-  await container.read(recoveryProvider).load();
+  final controller = container.read(recoveryProvider);
+  await controller.load();
+  // Keep these flows independent of the wall-clock hour: move the risk window
+  // away from "now" so the peak-hour gate and window lock stay out of scope.
+  final real = DateTime.now();
+  final minute = real.hour * 60 + real.minute;
+  await controller.updateRiskWindow(
+    RiskWindow(
+      startMinutes: (minute + 180) % RiskWindow.minutesPerDay,
+      endMinutes: (minute + 240) % RiskWindow.minutesPerDay,
+    ),
+  );
   await tester.pumpWidget(
     UncontrolledProviderScope(container: container, child: const NoLeanApp()),
   );

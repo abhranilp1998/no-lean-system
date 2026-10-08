@@ -13,7 +13,9 @@ import '../features/dashboard/presentation/dashboard_screen.dart';
 import '../features/emergency/presentation/emergency_screen.dart';
 import '../features/progress/presentation/progress_screen.dart';
 import '../features/recovery/application/recovery_provider.dart';
+import '../features/recovery/domain/app_lock_session.dart';
 import '../features/recovery/domain/recovery_event.dart';
+import '../features/recovery/presentation/app_lock_screen.dart';
 import '../features/recovery/presentation/relapse_log_sheet.dart';
 import '../core/services/app_notice.dart';
 import '../features/recovery/services/notification_service.dart';
@@ -35,6 +37,10 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   int _selectedTab = 0;
   StreamSubscription<String>? _notificationActionSubscription;
   StreamSubscription<String>? _widgetActionSubscription;
+  final _lockSession = AppLockSession();
+  AppLockReason? _lastLockReason;
+  bool _deferredRelapse = false;
+  Timer? _lockTicker;
 
   @override
   void initState() {
@@ -44,6 +50,10 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         .listen(_handleNotificationAction);
     _widgetActionSubscription = WidgetActionService.instance.actionStream
         .listen(_handleWidgetAction);
+    // Re-evaluate the risk-window wall while the app stays in the foreground.
+    _lockTicker = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted && _resolveLock() != _lastLockReason) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(ref.read(recoveryProvider).markOpened());
@@ -54,6 +64,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _lockTicker?.cancel();
     _notificationActionSubscription?.cancel();
     _widgetActionSubscription?.cancel();
     super.dispose();
@@ -61,9 +72,48 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _lockSession.onBackgrounded(DateTime.now());
+    }
     if (state == AppLifecycleState.resumed) {
+      _lockSession.onResumed(DateTime.now());
+      if (mounted) setState(() {});
       unawaited(ref.read(recoveryProvider).markOpened());
       unawaited(WidgetActionService.instance.initialize());
+    }
+  }
+
+  AppLockReason? _resolveLock() {
+    final recovery = ref.read(recoveryProvider);
+    if (!recovery.isLoaded) return null;
+    return _lockSession.resolve(
+      relockPending: recovery.relockPending,
+      riskWindowWallArmed: recovery.riskWindowWallArmed,
+      inRiskWindow: recovery.isRiskWindow,
+    );
+  }
+
+  void _handleUnlocked() {
+    _lockSession.onUnlocked();
+    setState(() {});
+    if (_deferredRelapse) {
+      _deferredRelapse = false;
+      _pendingActions.add('relapse');
+      unawaited(_drainActions());
+    }
+  }
+
+  Future<void> _openSos() async {
+    if (_sosOpen) return;
+    _sosOpen = true;
+    try {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const EmergencyScreen()),
+      );
+    } finally {
+      _sosOpen = false;
     }
   }
 
@@ -100,6 +150,15 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
           setState(() => _selectedTab = 1);
           await showCravingDialog(context, ref);
         } else if (action == 'relapse') {
+          if (_resolveLock() != null) {
+            // Logging stays reachable: it opens right after unlocking.
+            _deferredRelapse = true;
+            AppNotice.show(
+              context,
+              'Unlock to open relapse logging. SOS and craving logging stay open.',
+            );
+            continue;
+          }
           await showRelapseLogSheet(context, source: 'widget');
         }
       }
@@ -156,6 +215,8 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
     final visuals = NoLeanVisuals.of(context);
+    final lockReason = _resolveLock();
+    _lastLockReason = lockReason;
 
     return Scaffold(
       body: Stack(
@@ -181,65 +242,89 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
                     ],
                   ),
                 Expanded(
-                  child: IndexedStack(index: _selectedTab, children: _pages),
+                  child: Stack(
+                    children: [
+                      // Tabs keep their state behind the wall but are removed
+                      // from hit testing and semantics while locked.
+                      Visibility(
+                        visible: lockReason == null,
+                        maintainState: true,
+                        child: IndexedStack(
+                          index: _selectedTab,
+                          children: _pages,
+                        ),
+                      ),
+                      if (lockReason case final reason?)
+                        AppLockScreen(
+                          reason: reason,
+                          onUnlocked: _handleUnlocked,
+                          onOpenSos: () => unawaited(_openSos()),
+                          onLogCraving: () => showCravingDialog(context, ref),
+                        ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
         ],
       ),
-      bottomNavigationBar: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: cyan.withValues(
-                alpha: visuals.accentOpacity(visuals.highContrast ? .5 : .16),
+      bottomNavigationBar: lockReason != null
+          ? null
+          : DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: cyan.withValues(
+                      alpha: visuals.accentOpacity(
+                        visuals.highContrast ? .5 : .16,
+                      ),
+                    ),
+                  ),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: cyan.withValues(alpha: visuals.glowOpacity(.08)),
+                    blurRadius: 18 * visuals.glowRadiusScale,
+                  ),
+                ],
+              ),
+              child: NavigationBar(
+                selectedIndex: _selectedTab,
+                onDestinationSelected: (value) {
+                  if (value == _selectedTab) return;
+                  AppFeedback.selection();
+                  setState(() => _selectedTab = value);
+                },
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.timer_outlined),
+                    selectedIcon: Icon(Icons.timer, color: cyan),
+                    label: 'Counter',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.bolt_outlined),
+                    selectedIcon: Icon(Icons.bolt, color: cyan),
+                    label: 'Cravings',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.insights_outlined),
+                    selectedIcon: Icon(Icons.insights, color: cyan),
+                    label: 'Progress',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.history_outlined),
+                    selectedIcon: Icon(Icons.history, color: cyan),
+                    label: 'Timeline',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.tune_outlined),
+                    selectedIcon: Icon(Icons.tune, color: cyan),
+                    label: 'Settings',
+                  ),
+                ],
               ),
             ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: cyan.withValues(alpha: visuals.glowOpacity(.08)),
-              blurRadius: 18 * visuals.glowRadiusScale,
-            ),
-          ],
-        ),
-        child: NavigationBar(
-          selectedIndex: _selectedTab,
-          onDestinationSelected: (value) {
-            if (value == _selectedTab) return;
-            AppFeedback.selection();
-            setState(() => _selectedTab = value);
-          },
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.timer_outlined),
-              selectedIcon: Icon(Icons.timer, color: cyan),
-              label: 'Counter',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.bolt_outlined),
-              selectedIcon: Icon(Icons.bolt, color: cyan),
-              label: 'Cravings',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.insights_outlined),
-              selectedIcon: Icon(Icons.insights, color: cyan),
-              label: 'Progress',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.history_outlined),
-              selectedIcon: Icon(Icons.history, color: cyan),
-              label: 'Timeline',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.tune_outlined),
-              selectedIcon: Icon(Icons.tune, color: cyan),
-              label: 'Settings',
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
