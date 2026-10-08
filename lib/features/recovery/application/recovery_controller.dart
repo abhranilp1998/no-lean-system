@@ -15,6 +15,7 @@ import '../domain/effect_intensity.dart';
 import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
 import '../domain/relapse_log_entry.dart';
+import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
 import '../domain/sos_session.dart';
 import '../services/home_widget_service.dart';
@@ -450,32 +451,16 @@ class RecoveryController extends ChangeNotifier {
   RiskWindowEvidence get riskWindowEvidence =>
       computeRiskWindowEvidence(events, riskWindow);
 
-  List<String> get riskNotificationMessages {
-    final evidence = riskWindowEvidence;
-    final messages = <String>[];
-    if (evidence.peakHour case final hour?) {
-      messages.add(
-        'YOUR LOGS FLAG ${hour.toString().padLeft(2, '0')}:00. DO NOT BUY. OPEN SOS BEFORE THE LOOP STARTS.',
-      );
-    }
-    if (evidence.signalCount > 0) {
-      messages.add(
-        '${evidence.signalCount} OF YOUR LOGGED RISK SIGNALS HIT INSIDE ${riskWindow.label}. THIS WINDOW IS DATA, NOT A VIBE.',
-      );
-    }
-    if (evidence.dominantTrigger case final trigger?) {
-      messages.add(
-        '${trigger.toUpperCase()} LEADS YOUR PEAK-HOUR TRIGGER DATA. PLAN FOR IT. DO NOT IMPROVISE.',
-      );
-    }
-    messages.add(
-      '${formatDuration(cleanDuration, compact: true)} CLEAN // ${money(moneySaved)} KEPT. DO NOT HAND IT BACK TONIGHT.',
-    );
-    return [
-      ...messages.take(3),
-      ...reminderMessages,
-    ].take(4).toList(growable: false);
-  }
+  /// Daily risk-window alerts built only from the user's own logged data.
+  List<RiskAlert> get riskAlertPlan => buildRiskAlertPlan(
+    window: riskWindow,
+    facts: computeRiskAlertFacts(
+      events: events,
+      window: riskWindow,
+      cleanSince: lastDose,
+    ),
+    userMessages: reminderMessages,
+  );
 
   Map<String, dynamic> _snapshot() => {
     ..._extraState,
@@ -1160,11 +1145,14 @@ class RecoveryController extends ChangeNotifier {
     }
   });
 
+  /// Reschedules alerts, e.g. after the user grants exact alarms.
+  Future<void> resyncRiskNotifications() => _syncRiskNotifications();
+
   Future<void> _syncRiskNotifications() async {
     try {
       if (riskReminders) {
         await NotificationService.instance.scheduleRiskWindow(
-          riskNotificationMessages,
+          riskAlertPlan,
           riskWindow: riskWindow,
         );
       } else {

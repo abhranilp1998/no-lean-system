@@ -11,6 +11,7 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
+import '../../recovery/services/notification_service.dart';
 import '../../recovery/domain/risk_window.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
 
@@ -516,6 +517,22 @@ Future<void> showFeedbackDialog(BuildContext context, WidgetRef ref) async {
       type: AppNoticeType.success,
     );
   }
+}
+
+Future<void> requestExactAlertTiming(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final allowed = await NotificationService.instance.requestExactAlarms();
+  await ref.read(recoveryProvider).resyncRiskNotifications();
+  if (!context.mounted) return;
+  AppNotice.show(
+    context,
+    allowed
+        ? 'EXACT TIMING ON. Alerts are rescheduled to fire on the minute.'
+        : 'EXACT TIMING OFF. Alerts still fire, but Android may delay them.',
+    type: allowed ? AppNoticeType.success : AppNoticeType.info,
+  );
 }
 
 Future<void> setRiskWindowLock(

@@ -424,8 +424,9 @@ void main() {
           createdAt: DateTime(2026, 9, 19, 18, 12),
         ),
       );
-      expect(c.riskNotificationMessages.join(' '), contains('18:00'));
-      expect(c.riskNotificationMessages.join(' '), contains('AFTER WORK'));
+      final copy = c.riskAlertPlan.map((a) => a.body).join(' ');
+      expect(copy, contains('18:00'));
+      expect(copy, contains('AFTER WORK'));
 
       await c.setSetting('peakHourLock', false);
       await c.setSetting(

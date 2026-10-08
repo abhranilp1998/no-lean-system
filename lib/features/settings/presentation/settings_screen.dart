@@ -150,7 +150,8 @@ class SettingsScreen extends ConsumerWidget {
             SettingAction(
               icon: Icons.schedule,
               title: 'Risk window',
-              subtitle: '${recovery.riskWindow.label} // 4 interrupts',
+              subtitle:
+                  '${recovery.riskWindow.label} // 15-min warning + 4 interrupts',
               color: purple,
               onTap: () => showRiskWindowDialog(context, ref),
             ),
@@ -187,6 +188,15 @@ class SettingsScreen extends ConsumerWidget {
                     .setSetting('riskReminders', value),
               ),
             ),
+            if (recovery.riskReminders)
+              SettingAction(
+                icon: Icons.alarm_on,
+                title: 'Exact alert timing',
+                subtitle:
+                    'Allow exact alarms so alerts land on time; otherwise Android may delay them',
+                color: red,
+                onTap: () => requestExactAlertTiming(context, ref),
+              ),
             SettingToggle(
               title: 'Relapse lock',
               subtitle: recovery.requirePinAfterRelapse
