@@ -4,48 +4,43 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/features/recovery/services/relapse_lock_service.dart';
 
 void main() {
-  test('new PINs are salted and hashed instead of stored as readable text', () async {
-    final storage = _MemoryLockStorage();
-    final service = _service(storage);
+  test(
+    'new PINs are salted and hashed instead of stored as readable text',
+    () async {
+      final storage = _MemoryLockStorage();
+      final service = _service(storage);
 
-    await service.savePin('24681357');
+      await service.savePin('24681357');
 
-    final stored = storage.values['relapse_lock_pin'];
-    expect(stored, startsWith(r'pbkdf2-sha256$v1$'));
-    expect(stored, isNot(contains('24681357')));
-    expect(
-      await service.verifyPin('00000000'),
-      PinVerificationResult.denied,
-    );
-    expect(
-      await service.verifyPin('24681357'),
-      PinVerificationResult.verified,
-    );
-  });
+      final stored = storage.values['relapse_lock_pin'];
+      expect(stored, startsWith(r'pbkdf2-sha256$v1$'));
+      expect(stored, isNot(contains('24681357')));
+      expect(await service.verifyPin('00000000'), PinVerificationResult.denied);
+      expect(
+        await service.verifyPin('24681357'),
+        PinVerificationResult.verified,
+      );
+    },
+  );
 
-  test('an existing readable PIN migrates after successful verification', () async {
-    final storage = _MemoryLockStorage()
-      ..values['relapse_lock_pin'] = '2468';
-    final service = _service(storage);
+  test(
+    'an existing readable PIN migrates after successful verification',
+    () async {
+      final storage = _MemoryLockStorage()..values['relapse_lock_pin'] = '2468';
+      final service = _service(storage);
 
-    expect(
-      await service.verifyPin('2468'),
-      PinVerificationResult.verified,
-    );
-    expect(
-      storage.values['relapse_lock_pin'],
-      startsWith(r'pbkdf2-sha256$v1$'),
-    );
-  });
+      expect(await service.verifyPin('2468'), PinVerificationResult.verified);
+      expect(
+        storage.values['relapse_lock_pin'],
+        startsWith(r'pbkdf2-sha256$v1$'),
+      );
+    },
+  );
 
   test('repeated failures persist a temporary lockout', () async {
     var now = DateTime(2026, 9, 19, 12);
     final storage = _MemoryLockStorage();
-    final service = _service(
-      storage,
-      now: () => now,
-      maximumFailedAttempts: 3,
-    );
+    final service = _service(storage, now: () => now, maximumFailedAttempts: 3);
     await service.savePin('2468');
 
     expect(await service.verifyPin('1111'), PinVerificationResult.denied);
