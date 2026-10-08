@@ -69,6 +69,11 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       if (!mounted) return;
       unawaited(ref.read(recoveryProvider).markOpened());
       unawaited(WidgetActionService.instance.initialize());
+      unawaited(
+        NotificationService.instance.takeLaunchAction().then((actionId) {
+          if (actionId != null) _handleNotificationAction(actionId);
+        }),
+      );
       _syncZoneMonitor();
     });
   }

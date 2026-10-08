@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../settings/presentation/widgets/settings_controls.dart';
 import '../services/location_service.dart';
+import 'background_geofence_disclosure.dart';
 
 /// Opt-in location controls. Turning either switch off is always one tap.
 class ZoneMonitoringPanel extends ConsumerWidget {
@@ -53,6 +54,19 @@ class ZoneMonitoringPanel extends ConsumerWidget {
           value: recovery.zoneMonitoring,
           color: magenta,
           onChanged: (value) => _setInApp(context, ref, value),
+        ),
+        const SizedBox(height: 8),
+        SettingToggle(
+          key: const ValueKey('background-geofence-toggle'),
+          title: 'Alert when the app is closed',
+          subtitle: recovery.backgroundGeofencing
+              ? 'On // Android geofencing, no continuous GPS'
+              : 'Opt-in // needs "Allow all the time" location',
+          value: recovery.backgroundGeofencing,
+          color: red,
+          onChanged: (value) => value
+              ? BackgroundGeofenceDisclosure.open(context)
+              : recovery.setBackgroundGeofencing(false),
         ),
       ],
     );

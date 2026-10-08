@@ -109,7 +109,8 @@ void main() {
   ) async {
     final (container, location) = await pumpZones(tester);
     final toggle = find.byKey(const ValueKey('zone-monitoring-toggle'));
-    await tester.scrollUntilVisible(toggle, 200);
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
 
     location.current = LocationAccess.denied;
     await tester.tap(toggle);
@@ -129,5 +130,51 @@ void main() {
     await tester.tap(toggle);
     await tester.pumpAndSettle();
     expect(container.read(recoveryProvider).zoneMonitoring, isFalse);
+  });
+
+  testWidgets('background alerts: disclosure first, permission, one-tap off', (
+    tester,
+  ) async {
+    final (container, location) = await pumpZones(tester);
+    final toggle = find.byKey(const ValueKey('background-geofence-toggle'));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    // Nothing is requested before the user reads the disclosure.
+    expect(find.byKey(const ValueKey('geofence-disclosure')), findsOneWidget);
+    expect(find.textContaining('Nothing is uploaded'), findsOneWidget);
+    expect(container.read(recoveryProvider).backgroundGeofencing, isFalse);
+
+    // "While in use" only: stays off and offers system settings.
+    location.onRequestBackground = LocationAccess.whileInUse;
+    await tester.ensureVisible(find.byKey(const ValueKey('geofence-allow')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('geofence-allow')));
+    await tester.pumpAndSettle();
+    expect(container.read(recoveryProvider).backgroundGeofencing, isFalse);
+    await tester.ensureVisible(find.byKey(const ValueKey('geofence-settings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('geofence-settings')));
+    expect(location.settingsOpened, 1);
+
+    location.onRequestBackground = LocationAccess.always;
+    await tester.ensureVisible(find.byKey(const ValueKey('geofence-allow')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('geofence-allow')));
+    await tester.pumpAndSettle();
+    expect(container.read(recoveryProvider).backgroundGeofencing, isTrue);
+    expect(find.byKey(const ValueKey('geofence-disclosure')), findsNothing);
+
+    ScaffoldMessenger.of(
+      tester.element(find.byType(ZonesScreen)),
+    ).removeCurrentSnackBar();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(container.read(recoveryProvider).backgroundGeofencing, isFalse);
   });
 }

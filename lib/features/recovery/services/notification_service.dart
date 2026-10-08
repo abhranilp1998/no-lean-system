@@ -174,6 +174,26 @@ class NotificationService {
     ),
   );
 
+  bool _launchActionTaken = false;
+
+  /// The action button that cold-started the app, if any. Android does not
+  /// deliver it through the response callback when the process was dead
+  /// (e.g. OPEN SOS on a background danger-zone alert). Returned once.
+  Future<String?> takeLaunchAction() async {
+    if (_launchActionTaken) return null;
+    _launchActionTaken = true;
+    try {
+      await _initialize(requestPermission: false);
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp ?? false) {
+        return details?.notificationResponse?.actionId;
+      }
+    } catch (_) {
+      // No launch details on this platform.
+    }
+    return null;
+  }
+
   static const zoneAlertId = 600;
 
   /// Loud danger-zone notification. Requests a full-screen intent; Android
