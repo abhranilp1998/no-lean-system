@@ -105,6 +105,14 @@ class EventTile extends ConsumerWidget {
         return ('MILESTONE', Icons.emoji_events, Colors.amber);
       case RecoveryEventType.settingsChange:
         return ('SETTING CHANGED', Icons.tune, Colors.white54);
+      case RecoveryEventType.codeSession:
+        return (
+          event.metadata['completed'] == true
+              ? 'CODE BLOCK DONE'
+              : 'CODE BLOCK STOPPED',
+          Icons.code,
+          purple,
+        );
     }
   }
 
@@ -320,6 +328,8 @@ class _MetadataView extends StatelessWidget {
               'startId',
               'date',
               'clean',
+              'taskId',
+              'plannedSeconds',
             }.contains(e.key),
           )
           .map((e) {

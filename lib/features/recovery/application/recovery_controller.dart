@@ -614,6 +614,19 @@ class RecoveryController extends ChangeNotifier {
     _sortAndRecompute();
   });
 
+  /// Records a finished or stopped Code Instead block. Validation lives in
+  /// [RecoveryEvent.validateMetadata]; the UI decides what is worth keeping.
+  Future<void> recordCodeSession({
+    required Map<String, Object> metadata,
+    required DateTime at,
+  }) => appendEvent(
+    RecoveryEvent.create(
+      type: RecoveryEventType.codeSession,
+      timestamp: at,
+      metadata: metadata,
+    ),
+  );
+
   Future<void> clearRelapseCooldown(String reason) => _transaction(() async {
     if (relapseCooldownUntil == null && relapseCooldownEventId == null) return;
     relapseCooldownUntil = null;

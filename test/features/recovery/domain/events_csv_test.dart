@@ -133,6 +133,12 @@ void main() {
     Map<String, dynamic> metaFor(RecoveryEventType type) => switch (type) {
       RecoveryEventType.daySummary => {'date': '2026-10-01', 'clean': true},
       RecoveryEventType.craving => {'intensity': 5, 'trigger': 'Boredom'},
+      RecoveryEventType.codeSession => {
+        'taskId': 'word-count',
+        'plannedSeconds': 600,
+        'durationSeconds': 600,
+        'completed': true,
+      },
       _ => {},
     };
     final events = [

@@ -39,8 +39,9 @@ class BackupPreview {
 }
 
 class BackupService {
-  /// Format 4 adds `zones`. Formats 1–3 still import.
-  static const int currentBackupVersion = 4;
+  /// Format 4 adds `zones`; format 5 adds `codeSession` events. Older formats
+  /// still import; older apps refuse format 5 instead of failing per event.
+  static const int currentBackupVersion = 5;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 

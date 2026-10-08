@@ -7,6 +7,7 @@ import '../core/services/app_feedback.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/no_lean_visuals.dart';
 import '../core/widgets/animated_background.dart';
+import '../features/code_instead/presentation/code_instead_screen.dart';
 import '../features/cravings/presentation/cravings_screen.dart';
 import '../features/cravings/presentation/craving_dialog.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
@@ -38,6 +39,7 @@ class Shell extends ConsumerStatefulWidget {
 class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   bool _handlingAction = false;
   bool _sosOpen = false;
+  bool _codeOpen = false;
   final _pendingActions = <String>[];
   int _selectedTab = 0;
   StreamSubscription<String>? _notificationActionSubscription;
@@ -176,6 +178,19 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     }
   }
 
+  /// A coping tool like SOS: it opens over the lock screen too, and repeated
+  /// taps never stack a second timer.
+  void _openCodeInstead(String source) {
+    if (!mounted || _codeOpen) return;
+    _codeOpen = true;
+    unawaited(
+      CodeInsteadScreen.open(
+        context,
+        source: source,
+      ).whenComplete(() => _codeOpen = false),
+    );
+  }
+
   void _handleWidgetAction(String action) {
     if (!mounted) return;
     if (action == 'sos') {
@@ -185,6 +200,10 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         context,
         MaterialPageRoute(builder: (_) => const EmergencyScreen()),
       ).whenComplete(() => _sosOpen = false);
+      return;
+    }
+    if (action == 'code') {
+      _openCodeInstead('widget');
       return;
     }
     // Repeated taps while the same sheet is open do not stack duplicate forms.
@@ -232,6 +251,8 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       _handleWidgetAction('sos');
     } else if (actionId == 'action_crave') {
       _handleWidgetAction('craving');
+    } else if (actionId == 'action_code') {
+      _openCodeInstead('notification');
     } else if (actionId == 'action_safe') {
       unawaited(_checkIn());
     }

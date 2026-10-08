@@ -13,6 +13,7 @@ enum RecoveryEventType {
   cleanCheckIn, // "I'm safe" from notification action
   milestone, // Auto-generated when streak hits a milestone — metadata: {days}
   settingsChange, // Settings mutation — metadata: {field, from, to}
+  codeSession, // Code Instead block — metadata: {taskId, task, plannedSeconds, durationSeconds, completed, source}
 }
 
 /// An immutable append-only event representing state changes in the recovery journey.
@@ -215,6 +216,36 @@ class RecoveryEvent {
           throw const FormatException('Milestone days must be non-negative.');
         }
         if (days is num) result['days'] = days.round();
+      case RecoveryEventType.codeSession:
+        final taskId = result['taskId'];
+        final task = result['task'];
+        final planned = result['plannedSeconds'];
+        final duration = result['durationSeconds'];
+        final completed = result['completed'];
+        if (taskId is! String || taskId.trim().isEmpty) {
+          throw const FormatException('Code session task ID is required.');
+        }
+        if (task != null && task is! String) {
+          throw const FormatException('Code session task must be text.');
+        }
+        if (planned is! num || planned <= 0) {
+          throw const FormatException(
+            'Code session planned length must be positive.',
+          );
+        }
+        if (duration is! num || duration < 0) {
+          throw const FormatException(
+            'Code session duration must be non-negative.',
+          );
+        }
+        if (completed is! bool) {
+          throw const FormatException(
+            'Code session completed must be true or false.',
+          );
+        }
+        result['taskId'] = taskId.trim();
+        result['plannedSeconds'] = planned.round();
+        result['durationSeconds'] = duration.round();
       case RecoveryEventType.recoveryStart:
       case RecoveryEventType.pledge:
       case RecoveryEventType.sosStart:

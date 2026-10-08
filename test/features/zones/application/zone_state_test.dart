@@ -156,7 +156,7 @@ void main() {
     expect(geofences.clears, clearsBefore + 1);
   });
 
-  test('backup format 4 round-trips zones and merges by ID', () async {
+  test('backups since format 4 round-trip zones and merge by ID', () async {
     final (controller, _, _) = await loaded();
     final zone = await controller.addZone(
       name: 'Bar',
@@ -169,7 +169,8 @@ void main() {
       preferences: controller.portablePreferences,
       zones: controller.zones,
     );
-    expect(payload['version'], 4);
+    expect(payload['version'], BackupService.currentBackupVersion);
+    expect(payload['version'], greaterThanOrEqualTo(4));
     final preview = service.validateBackupJson(jsonEncode(payload));
     expect(preview.zones.single.id, zone.id);
 

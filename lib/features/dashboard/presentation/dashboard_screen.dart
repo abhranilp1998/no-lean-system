@@ -1,3 +1,4 @@
+import '../../code_instead/presentation/code_instead_screen.dart';
 import '../../../core/layout/tab_layout.dart';
 import 'dart:async';
 
@@ -226,7 +227,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             title: 'CODE INSTEAD',
             subtitle: 'A small task beats a big spiral',
             color: purple,
-            onTap: () => showCodeChallenge(context),
+            onTap: () => CodeInsteadScreen.open(context, source: 'dashboard'),
           ),
           const SizedBox(height: 22),
           SectionHeader(

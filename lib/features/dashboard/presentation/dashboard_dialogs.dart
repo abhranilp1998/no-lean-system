@@ -6,7 +6,6 @@ import '../../../core/services/save_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/glow_button.dart';
-import '../../../core/widgets/status_pill.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/presentation/relapse_log_sheet.dart';
 
@@ -114,37 +113,3 @@ Future<void> showCheckInDialog(BuildContext context, WidgetRef ref) async {
 
 Future<void> showRelapseDialog(BuildContext context, WidgetRef ref) =>
     showRelapseLogSheet(context);
-
-Future<void> showCodeChallenge(BuildContext context) async {
-  const challenges = [
-    'Write a function that reverses a string without using built-in reverse helpers.',
-    'Build a tiny CLI that prints the current time in three time zones.',
-    'Refactor one function you wrote today into two smaller functions.',
-    'Solve FizzBuzz, then add a custom rule for multiples of seven.',
-  ];
-  final task = challenges[DateTime.now().second % challenges.length];
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) => AppDialog(
-      title: 'CODE INSTEAD',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const StatusPill(label: '10 MINUTE TASK', color: purple),
-          const SizedBox(height: 14),
-          Text(task, style: const TextStyle(fontSize: 13, height: 1.45)),
-          const SizedBox(height: 18),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              style: FilledButton.styleFrom(backgroundColor: purple),
-              child: const Text('START'),
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
