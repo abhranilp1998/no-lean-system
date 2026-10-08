@@ -16,6 +16,7 @@ Future<void> exportRecoveryData(
     await BackupService().exportBackup(
       recovery.events,
       preferences: recovery.portablePreferences,
+      zones: recovery.zones,
     );
     if (context.mounted) {
       AppNotice.show(
@@ -49,6 +50,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
       final recovery = ref.read(recoveryProvider);
       var result = await recovery.mergeImportedEvents(
         preview.events,
+        importedZones: preview.zones,
         preferences: preview.preferences,
         restorePreferences: choice.restorePreferences,
       );
@@ -61,6 +63,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
         if (pin == null) return;
         result = await recovery.mergeImportedEvents(
           preview.events,
+          importedZones: preview.zones,
           preferences: preview.preferences,
           restorePreferences: choice.restorePreferences,
           pin: pin,

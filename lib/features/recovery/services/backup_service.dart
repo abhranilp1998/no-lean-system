@@ -12,6 +12,7 @@ import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../domain/effect_intensity.dart';
 import '../domain/legacy_recovery_migration.dart';
 import '../domain/recovery_event.dart';
+import '../../zones/domain/danger_zone.dart';
 
 class BackupPreview {
   const BackupPreview({
@@ -20,6 +21,7 @@ class BackupPreview {
     required this.newestEventDate,
     required this.events,
     required this.preferences,
+    this.zones = const [],
   });
 
   final int eventCount;
@@ -28,27 +30,44 @@ class BackupPreview {
   final List<RecoveryEvent> events;
   final Map<String, dynamic>? preferences;
 
+  /// Danger zones (backup format 4+). Merged by ID on import.
+  final List<DangerZone> zones;
+
   bool get hasPreferences => preferences != null && preferences!.isNotEmpty;
 }
 
 class BackupService {
-  static const int currentBackupVersion = 3;
+  /// Format 4 adds `zones`. Formats 1–3 still import.
+  static const int currentBackupVersion = 4;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
   Future<void> exportBackup(
     List<RecoveryEvent> events, {
     required Map<String, dynamic> preferences,
+    List<DangerZone> zones = const [],
   }) async {
-    final payload = {
+    await exportJson(
+      jsonEncode(
+        buildBackupPayload(events, preferences: preferences, zones: zones),
+      ),
+    );
+  }
+
+  @visibleForTesting
+  Map<String, dynamic> buildBackupPayload(
+    List<RecoveryEvent> events, {
+    required Map<String, dynamic> preferences,
+    List<DangerZone> zones = const [],
+  }) {
+    return {
       'version': currentBackupVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       'events': events.map((event) => event.toJson()).toList(),
+      'zones': zones.map((zone) => zone.toJson()).toList(),
       'preferences': preferences,
       'excludedSecureData': const ['relapsePin', 'trustedContact'],
     };
-
-    await exportJson(jsonEncode(payload));
   }
 
   Future<void> exportJson(String jsonString) async {
@@ -128,7 +147,7 @@ class BackupService {
       var map = Map<String, dynamic>.from(decoded);
       if (!map.containsKey('version') && map['stateVersion'] is int) {
         final stateVersion = map['stateVersion'] as int;
-        if (stateVersion < 2 || stateVersion > 8) {
+        if (stateVersion < 2 || stateVersion > 9) {
           throw FormatException(
             'Unsupported recovery state version: $stateVersion',
           );
@@ -139,6 +158,7 @@ class BackupService {
               ? migrateLegacyRecovery(map).map((e) => e.toJson()).toList()
               : map['events'],
           'preferences': legacyExportPreferences(map),
+          if (map['zones'] != null) 'zones': map['zones'],
         };
       }
       final version = map['version'];
@@ -182,12 +202,16 @@ class BackupService {
       final preferences = version >= 2
           ? _validatePreferences(map['preferences'])
           : null;
+      final zones = version >= 4 || map['zones'] != null
+          ? DangerZone.decodeList(map['zones'])
+          : const <DangerZone>[];
       return BackupPreview(
         eventCount: events.length,
         oldestEventDate: events.firstOrNull?.timestamp,
         newestEventDate: events.lastOrNull?.timestamp,
         events: events,
         preferences: preferences,
+        zones: zones,
       );
     } on FormatException {
       rethrow;

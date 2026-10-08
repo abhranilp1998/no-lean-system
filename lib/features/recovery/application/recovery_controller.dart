@@ -21,6 +21,8 @@ import '../domain/sos_session.dart';
 import '../services/home_widget_service.dart';
 import '../services/notification_service.dart';
 import '../services/relapse_lock_service.dart';
+import '../../zones/domain/danger_zone.dart';
+import '../../zones/services/geofence_gateway.dart';
 
 const defaultReasons = <String>[
   'I am done financing a habit that steals my evenings.',
@@ -68,17 +70,21 @@ class RecoveryController extends ChangeNotifier {
     RelapseLockGateway? relapseLock,
     RecoveryStateStore? store,
     DateTime Function()? now,
+    GeofenceGateway? geofences,
   }) : _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
        _store = store ?? PreferencesRecoveryStateStore(),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _geofences = geofences ?? const NoopGeofenceGateway();
 
-  /// v8 adds `riskWindowLock` and `appLockPending`. Older states need no
+  /// v8 adds `riskWindowLock` and `appLockPending`; v9 adds `zones`,
+  /// `zoneMonitoring` and `backgroundGeofencing`. Older states need no
   /// transformation: missing keys take the safe defaults below.
-  static const stateVersion = 8;
+  static const stateVersion = 9;
 
   final RelapseLockGateway _relapseLock;
   final RecoveryStateStore _store;
   final DateTime Function() _now;
+  final GeofenceGateway _geofences;
   Future<void>? _loadFuture;
   Future<void> _writeQueue = Future.value();
   Map<String, dynamic> _extraState = {};
@@ -131,6 +137,15 @@ class RecoveryController extends ChangeNotifier {
 
   /// Set when a relapse is logged; the app stays locked until authenticated.
   bool appLockPending = false;
+
+  /// User-defined danger zones (state v9+).
+  List<DangerZone> zones = [];
+
+  /// In-app distance checks while NO LEAN is open (opt-in).
+  bool zoneMonitoring = false;
+
+  /// OS geofencing while the app is closed (opt-in, needs background location).
+  bool backgroundGeofencing = false;
   EffectIntensity intensity = EffectIntensity.standard;
   DashboardNoticeStyle dashboardNoticeStyle = DashboardNoticeStyle.edgeRail;
   bool isLoaded = false;
@@ -254,6 +269,7 @@ class RecoveryController extends ChangeNotifier {
         }
       }
       _restoreSettings(map);
+      zones = DangerZone.decodeList(map['zones']);
       relapseCooldownUntil = DateTime.tryParse(
         map['relapseCooldownUntil']?.toString() ?? '',
       );
@@ -277,6 +293,7 @@ class RecoveryController extends ChangeNotifier {
       _notify();
       unawaited(syncWidget());
       unawaited(_syncRiskNotifications());
+      unawaited(_syncGeofences());
     } catch (_) {
       isLoaded = false;
       loadStatus = RecoveryLoadStatus.error;
@@ -385,6 +402,8 @@ class RecoveryController extends ChangeNotifier {
     appLockPending = map.containsKey('appLockPending')
         ? map['appLockPending'] != false
         : appLockPending;
+    zoneMonitoring = flag('zoneMonitoring', zoneMonitoring);
+    backgroundGeofencing = flag('backgroundGeofencing', backgroundGeofencing);
     feedbackSound = FeedbackSoundEffect.values.firstWhere(
       (v) => v.name == map['feedbackSound'],
       orElse: () => feedbackSound,
@@ -486,6 +505,9 @@ class RecoveryController extends ChangeNotifier {
     'requirePinAfterRelapse': requirePinAfterRelapse,
     'riskWindowLock': riskWindowLock,
     'appLockPending': appLockPending,
+    'zones': zones.map((zone) => zone.toJson()).toList(),
+    'zoneMonitoring': zoneMonitoring,
+    'backgroundGeofencing': backgroundGeofencing,
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
   };
@@ -494,6 +516,7 @@ class RecoveryController extends ChangeNotifier {
     _extraState = Map.from(map);
     events = _decodeCurrentEvents(map['events']);
     _restoreSettings(map);
+    zones = DangerZone.decodeList(map['zones']);
     relapseCooldownUntil = DateTime.tryParse(
       map['relapseCooldownUntil']?.toString() ?? '',
     );
@@ -530,6 +553,10 @@ class RecoveryController extends ChangeNotifier {
             (before['events'] as List).length !=
                 (next['events'] as List).length) {
           unawaited(_syncRiskNotifications());
+        }
+        if (jsonEncode(before['zones']) != jsonEncode(next['zones']) ||
+            before['backgroundGeofencing'] != next['backgroundGeofencing']) {
+          unawaited(_syncGeofences());
         }
         unawaited(syncWidget());
         _notify();
@@ -645,6 +672,7 @@ class RecoveryController extends ChangeNotifier {
 
   Future<ProtectedActionResult> mergeImportedEvents(
     List<RecoveryEvent> importedEvents, {
+    List<DangerZone> importedZones = const [],
     Map<String, dynamic>? preferences,
     bool restorePreferences = false,
     String? pin,
@@ -660,12 +688,25 @@ class RecoveryController extends ChangeNotifier {
     for (final event in importedEvents) {
       if (existingIds.add(event.id)) events.add(event);
     }
+    final zoneIds = zones.map((zone) => zone.id).toSet();
+    final newZones = importedZones
+        .where((zone) => zoneIds.add(zone.id))
+        .toList();
+    if (zones.length + newZones.length > DangerZone.maxZones) {
+      throw StateError(
+        'This backup would exceed ${DangerZone.maxZones} danger zones.',
+      );
+    }
+    zones = [...zones, ...newZones];
     if (restorePreferences && preferences != null) {
       _restoreSettings(
         Map<String, dynamic>.from(preferences)
           ..remove('requirePinAfterRelapse')
           ..remove('riskWindowLock')
           ..remove('appLockPending')
+          ..remove('zones')
+          ..remove('zoneMonitoring')
+          ..remove('backgroundGeofencing')
           ..remove('pin'),
       );
     }
@@ -913,6 +954,95 @@ class RecoveryController extends ChangeNotifier {
       );
     } else if (debrief != null) {
       events[index] = events[index].copyWith(metadata: metadata);
+    }
+  }
+
+  DangerZone? zoneById(String id) =>
+      zones.where((zone) => zone.id == id).firstOrNull;
+
+  Future<DangerZone> addZone({
+    required String name,
+    required double latitude,
+    required double longitude,
+    double radiusMeters = DangerZone.defaultRadiusMeters,
+  }) => _transaction(() async {
+    if (zones.length >= DangerZone.maxZones) {
+      throw StateError('You can keep up to ${DangerZone.maxZones} zones.');
+    }
+    final zone = DangerZone(
+      id: const Uuid().v4(),
+      name: name.trim(),
+      latitude: latitude,
+      longitude: longitude,
+      radiusMeters: radiusMeters,
+      createdAt: _now(),
+    )..validate();
+    zones = [...zones, zone];
+    return zone;
+  });
+
+  /// Renaming or widening a zone is free; shrinking it weakens protection
+  /// and therefore authenticates like other protective changes.
+  Future<ProtectedActionResult> updateZone(
+    String id, {
+    String? name,
+    double? radiusMeters,
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    final index = zones.indexWhere((zone) => zone.id == id);
+    if (index == -1) return ProtectedActionResult.denied;
+    final current = zones[index];
+    if (radiusMeters != null && radiusMeters < current.radiusMeters) {
+      final authorization = await _authorizeProtectedAction(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        reason: 'Authenticate to shrink a danger zone.',
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+    }
+    final next = current.copyWith(name: name, radiusMeters: radiusMeters);
+    zones = [...zones]..[index] = next;
+    return ProtectedActionResult.completed;
+  });
+
+  Future<ProtectedActionResult> deleteZone(
+    String id, {
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    if (zoneById(id) == null) return ProtectedActionResult.denied;
+    final authorization = await _authorizeProtectedAction(
+      pin: pin,
+      tryBiometrics: tryBiometrics,
+      reason: 'Authenticate to delete a danger zone.',
+    );
+    if (authorization != ProtectedActionResult.completed) return authorization;
+    zones = zones.where((zone) => zone.id != id).toList();
+    return ProtectedActionResult.completed;
+  });
+
+  /// Location monitoring is a privacy choice: switching it off never needs
+  /// authentication, so the user can always stop location use in one tap.
+  Future<void> setZoneMonitoring(bool enabled) => _transaction(() async {
+    zoneMonitoring = enabled;
+  });
+
+  Future<void> setBackgroundGeofencing(bool enabled) => _transaction(() async {
+    backgroundGeofencing = enabled;
+  });
+
+  Future<void> _syncGeofences() async {
+    try {
+      if (backgroundGeofencing && zones.isNotEmpty) {
+        await _geofences.sync(zones);
+      } else {
+        await _geofences.clear();
+      }
+    } catch (_) {
+      /* Geofencing is optional; local history never depends on it. */
     }
   }
 

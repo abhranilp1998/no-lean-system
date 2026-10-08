@@ -79,6 +79,7 @@ class _BackupPreviewSheetState extends State<BackupPreviewSheet> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _Row('Total Events', '${preview.eventCount}', cyan),
+                  _Row('Danger Zones', '${preview.zones.length}', magenta),
                   const Divider(color: Colors.white12, height: 24),
                   _Row(
                     'Oldest Record',

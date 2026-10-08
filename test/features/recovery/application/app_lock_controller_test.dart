@@ -24,7 +24,7 @@ void main() {
     return (controller, store, lock);
   }
 
-  test('v7 state migrates to v8 with safe lock defaults', () async {
+  test('v7 state migrates with safe lock defaults', () async {
     final v7 = jsonEncode({
       'stateVersion': 7,
       'events': [
@@ -41,7 +41,7 @@ void main() {
     expect(controller.appLockPending, isFalse);
     expect(controller.riskWindowWallArmed, isTrue);
     final saved = jsonDecode(store.value!) as Map;
-    expect(saved['stateVersion'], 8);
+    expect(saved['stateVersion'], RecoveryController.stateVersion);
     expect(saved['riskWindowLock'], isTrue);
     expect(saved['appLockPending'], isFalse);
     expect(store.copies.single, contains('"stateVersion":7'));
