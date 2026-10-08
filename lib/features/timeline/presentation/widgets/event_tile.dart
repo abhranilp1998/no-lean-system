@@ -69,7 +69,7 @@ class EventTile extends ConsumerWidget {
                 ],
               ),
             ),
-            if (event.type != RecoveryEventType.recoveryStart)
+            if (_ActionsMenu.isEditable(event) || _ActionsMenu.canDelete(event))
               _ActionsMenu(event: event),
           ],
         ),
@@ -368,12 +368,21 @@ class _ActionsMenu extends ConsumerWidget {
   const _ActionsMenu({required this.event});
   final RecoveryEvent event;
 
+  static bool isEditable(RecoveryEvent event) =>
+      event.type == RecoveryEventType.craving ||
+      event.type == RecoveryEventType.sosComplete;
+
+  /// Auto milestones are facts derived from the streak; deleting one would
+  /// only see it recorded again.
+  static bool canDelete(RecoveryEvent event) =>
+      event.type != RecoveryEventType.recoveryStart &&
+      !(event.type == RecoveryEventType.milestone &&
+          event.metadata['source'] == 'auto');
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isEditable =
-        event.type == RecoveryEventType.craving ||
-        event.type == RecoveryEventType.sosComplete;
-    final canDelete = event.type != RecoveryEventType.recoveryStart;
+    final isEditable = _ActionsMenu.isEditable(event);
+    final canDelete = _ActionsMenu.canDelete(event);
 
     return PopupMenuButton<String>(
       icon: const Icon(Icons.more_vert, color: muted, size: 20),

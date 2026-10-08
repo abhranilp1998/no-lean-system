@@ -15,6 +15,7 @@ import '../domain/effect_intensity.dart';
 import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
 import '../domain/relapse_log_entry.dart';
+import '../domain/milestones.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
@@ -148,6 +149,10 @@ class RecoveryController extends ChangeNotifier {
 
   /// Online OSM street tiles on the zone map. Off = grid only, no requests.
   bool streetTiles = true;
+
+  /// Highest milestone reached since the UI last celebrated. Not persisted:
+  /// the milestone events themselves are the record.
+  int? pendingCelebration;
 
   /// Home widget privacy: neutral text, no counter, streak or risk state.
   bool widgetPrivacy = false;
@@ -626,6 +631,55 @@ class RecoveryController extends ChangeNotifier {
       metadata: metadata,
     ),
   );
+
+  /// Records every milestone the current streak has reached but not yet
+  /// logged, each stamped at the moment it was reached (last dose + N days),
+  /// and queues one celebration for the highest. Cheap when nothing is due,
+  /// so the shell can call it on a timer.
+  Future<int?> syncMilestones() async {
+    if (!isLoaded) return null;
+    if (dueMilestones(
+      events: events,
+      lastDose: lastDose,
+      now: _now(),
+    ).isEmpty) {
+      return null;
+    }
+    final reached = await _transaction(() {
+      final due = dueMilestones(
+        events: events,
+        lastDose: lastDose,
+        now: _now(),
+      );
+      if (due.isEmpty) return null;
+      for (final milestone in due) {
+        events.add(
+          RecoveryEvent.create(
+            type: RecoveryEventType.milestone,
+            timestamp: lastDose.add(Duration(days: milestone.days)),
+            metadata: {
+              'days': milestone.days,
+              'label': milestone.label,
+              'source': 'auto',
+            },
+          ),
+        );
+      }
+      _sortAndRecompute();
+      return due.last.days;
+    });
+    if (reached != null) {
+      pendingCelebration = reached;
+      _notify();
+    }
+    return reached;
+  }
+
+  void consumeCelebration() {
+    if (pendingCelebration == null) return;
+    pendingCelebration = null;
+    _notify();
+  }
 
   Future<void> clearRelapseCooldown(String reason) => _transaction(() async {
     if (relapseCooldownUntil == null && relapseCooldownEventId == null) return;

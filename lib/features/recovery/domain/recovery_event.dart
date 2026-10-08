@@ -11,7 +11,7 @@ enum RecoveryEventType {
   sosComplete, // SOS breathing session completed — metadata: {durationSeconds, debrief}
   relapse, // Relapse recorded — metadata: {postSos, streakLost}
   cleanCheckIn, // "I'm safe" from notification action
-  milestone, // Auto-generated when streak hits a milestone — metadata: {days}
+  milestone, // Recorded by RecoveryController.syncMilestones when the streak reaches one — metadata: {days, label, source: 'auto'}
   settingsChange, // Settings mutation — metadata: {field, from, to}
   codeSession, // Code Instead block — metadata: {taskId, task, plannedSeconds, durationSeconds, completed, source}
 }

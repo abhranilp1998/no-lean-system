@@ -2,19 +2,21 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/glass_card.dart';
+import '../../../recovery/domain/milestones.dart';
 
 class MilestoneTracker extends StatelessWidget {
   const MilestoneTracker({required this.currentStreak, super.key});
 
   final int currentStreak;
 
-  static const _milestones = <_MilestoneData>[
-    _MilestoneData(days: 3, label: 'BREAK THE LOOP', color: cyan),
-    _MilestoneData(days: 7, label: 'FIRST WEEK', color: purple),
-    _MilestoneData(days: 14, label: 'HABIT PRESSURE DROPS', color: magenta),
-    _MilestoneData(days: 30, label: 'NEW BASELINE', color: toxic),
-    _MilestoneData(days: 60, label: 'SYSTEM REBUILT', color: cyan),
-    _MilestoneData(days: 90, label: 'LONG GAME', color: purple),
+  /// Same list the controller records events for; colours cycle.
+  static final _milestones = <_MilestoneData>[
+    for (final (index, milestone) in recoveryMilestones.indexed)
+      _MilestoneData(
+        days: milestone.days,
+        label: milestone.label,
+        color: const [cyan, purple, magenta, toxic][index % 4],
+      ),
   ];
 
   @override

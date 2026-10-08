@@ -12,6 +12,7 @@ import '../features/cravings/presentation/cravings_screen.dart';
 import '../features/cravings/presentation/craving_dialog.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
 import '../features/emergency/presentation/emergency_screen.dart';
+import '../features/progress/presentation/milestone_celebration.dart';
 import '../features/progress/presentation/progress_screen.dart';
 import '../features/recovery/application/recovery_provider.dart';
 import '../features/recovery/domain/app_lock_session.dart';
@@ -40,6 +41,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   bool _handlingAction = false;
   bool _sosOpen = false;
   bool _codeOpen = false;
+  bool _celebrating = false;
   final _pendingActions = <String>[];
   int _selectedTab = 0;
   StreamSubscription<String>? _notificationActionSubscription;
@@ -65,11 +67,16 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         .listen(_handleWidgetAction);
     // Re-evaluate the risk-window wall while the app stays in the foreground.
     _lockTicker = Timer.periodic(const Duration(seconds: 20), (_) {
-      if (mounted && _resolveLock() != _lastLockReason) setState(() {});
+      if (!mounted) return;
+      if (_resolveLock() != _lastLockReason) setState(() {});
+      // The streak crosses milestones while the app stays open, too.
+      unawaited(_syncMilestones());
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(ref.read(recoveryProvider).markOpened());
+      unawaited(
+        ref.read(recoveryProvider).markOpened().whenComplete(_syncMilestones),
+      );
       unawaited(WidgetActionService.instance.initialize());
       unawaited(
         NotificationService.instance.takeLaunchAction().then((actionId) {
@@ -155,9 +162,39 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _syncMilestones() async {
+    if (!mounted) return;
+    try {
+      await ref.read(recoveryProvider).syncMilestones();
+    } catch (_) {
+      /* Retried on the next tick. */
+    }
+  }
+
+  /// One celebration at a time, never over the app lock.
+  void _maybeCelebrate() {
+    if (!mounted || _celebrating || _resolveLock() != null) return;
+    final recovery = ref.read(recoveryProvider);
+    final days = recovery.pendingCelebration;
+    if (days == null) return;
+    _celebrating = true;
+    recovery.consumeCelebration();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _celebrating = false;
+        return;
+      }
+      showMilestoneCelebration(
+        context,
+        days: days,
+      ).whenComplete(() => _celebrating = false);
+    });
+  }
+
   void _handleUnlocked() {
     _lockSession.onUnlocked();
     setState(() {});
+    _maybeCelebrate();
     if (_deferredRelapse) {
       _deferredRelapse = false;
       _pendingActions.add('relapse');
@@ -297,7 +334,10 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     final visuals = NoLeanVisuals.of(context);
     final lockReason = _resolveLock();
     _lastLockReason = lockReason;
-    ref.listen(recoveryProvider, (_, _) => _syncZoneMonitor());
+    ref.listen(recoveryProvider, (_, _) {
+      _syncZoneMonitor();
+      _maybeCelebrate();
+    });
 
     return Scaffold(
       body: Stack(
