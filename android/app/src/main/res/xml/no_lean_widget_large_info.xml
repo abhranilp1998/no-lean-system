@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 4x3: everything in 4x2 plus Code Instead. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="180dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="3"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/no_lean_widget_large"
+    android:previewLayout="@layout/no_lean_widget_large"
+    android:previewImage="@drawable/no_lean_widget_preview_large"
+    android:description="@string/widget_description_large"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />

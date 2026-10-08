@@ -86,4 +86,16 @@ void main() {
     expect(prefs.quietHoursEnabled, isTrue);
     expect(find.textContaining('risk + zone alerts still on'), findsOneWidget);
   });
+
+  testWidgets('private home widget toggle saves the setting', (tester) async {
+    final container = await pumpSettings(tester);
+    final toggle = find.byKey(const ValueKey('settings-widget-privacy'));
+    await tester.scrollUntilVisible(toggle, 300);
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(container.read(recoveryProvider).widgetPrivacy, isTrue);
+    expect(find.textContaining('no counter, streak'), findsOneWidget);
+  });
 }

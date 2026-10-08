@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 4x2, the original widget. previewLayout (Android 12+) renders the real
+     layout in the picker; previewImage covers older launchers. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="250dp"
     android:minHeight="130dp"
@@ -6,6 +8,8 @@
     android:targetCellHeight="2"
     android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/no_lean_widget"
+    android:previewLayout="@layout/no_lean_widget"
+    android:previewImage="@drawable/no_lean_widget_preview"
     android:description="@string/widget_description"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" />

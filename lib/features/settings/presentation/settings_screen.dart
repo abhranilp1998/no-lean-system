@@ -270,6 +270,19 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
             SettingToggle(
+              key: const ValueKey('settings-widget-privacy'),
+              title: 'Private home widget',
+              subtitle: recovery.widgetPrivacy
+                  ? 'Neutral labels // no counter, streak or risk state'
+                  : 'Widget shows clean time, streak and risk window',
+              value: recovery.widgetPrivacy,
+              color: cyan,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).setWidgetPrivacy(value),
+              ),
+            ),
+            SettingToggle(
               key: const ValueKey('settings-hide-sensitive'),
               title: 'Hide sensitive content',
               subtitle: recovery.notificationPrefs.hideSensitive

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2x1: counter + SOS. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/no_lean_widget_small"
+    android:previewLayout="@layout/no_lean_widget_small"
+    android:previewImage="@drawable/no_lean_widget_preview_small"
+    android:description="@string/widget_description_small"
+    android:resizeMode="horizontal"
+    android:widgetCategory="home_screen" />

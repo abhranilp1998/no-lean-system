@@ -60,6 +60,30 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/no_lean_widget_info" />
         </receiver>
+        <!-- Extra sizes. Boot/time changes reach the 4x2 receiver, which
+             refreshes every size. -->
+        <receiver
+            android:name=".NoLeanSmallWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN 2x1">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/no_lean_widget_small_info" />
+        </receiver>
+        <receiver
+            android:name=".NoLeanLargeWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN 4x3">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/no_lean_widget_large_info" />
+        </receiver>
         <!-- Required by flutter_local_notifications 16+ to deliver scheduled
              notifications and restore them after a reboot or app update. -->
         <receiver

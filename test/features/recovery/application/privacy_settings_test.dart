@@ -175,4 +175,37 @@ void main() {
       expect(controller.notificationPrefs.quietHoursEnabled, isFalse);
     });
   });
+
+  group('home widget privacy', () {
+    test('defaults off and v9 states migrate with it off', () async {
+      final (controller, store) = await loaded(stored: v9State());
+      expect(controller.widgetPrivacy, isFalse);
+      expect((jsonDecode(store.value!) as Map)['widgetPrivacy'], isFalse);
+    });
+
+    test('persists, needs no authentication and survives imports', () async {
+      final (controller, store) = await loaded();
+      await controller.enableRelapseLock('2468');
+      await controller.setWidgetPrivacy(true);
+      await controller.mergeImportedEvents(
+        const [],
+        preferences: {'widgetPrivacy': false},
+        restorePreferences: true,
+      );
+      expect(controller.widgetPrivacy, isTrue);
+      final reloaded = RecoveryController(
+        store: store,
+        relapseLock: FakeRelapseLock(),
+      );
+      await reloaded.load();
+      expect(reloaded.widgetPrivacy, isTrue);
+    });
+
+    test('a malformed stored value stays private', () async {
+      final (controller, _) = await loaded(
+        stored: v9State({'stateVersion': 10, 'widgetPrivacy': 'x'}),
+      );
+      expect(controller.widgetPrivacy, isTrue);
+    });
+  });
 }

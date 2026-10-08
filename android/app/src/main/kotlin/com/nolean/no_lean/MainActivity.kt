@@ -1,7 +1,5 @@
 package com.nolean.no_lean
 
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Intent
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -37,22 +35,25 @@ class MainActivity : FlutterFragmentActivity() {
                 val isRiskWindow = call.argument<Boolean>("isRiskWindow") ?: false
                 val hasPledgedToday = call.argument<Boolean>("hasPledgedToday") ?: false
                 val lastDoseEpochMillis = call.argument<Number>("lastDoseEpochMillis")?.toLong()
+                val privacy = call.argument<Boolean>("privacy") ?: false
                 val editor = getSharedPreferences(NoLeanWidgetProvider.PREFERENCES_NAME, MODE_PRIVATE).edit()
                     .putString("clean_time", cleanTime)
                     .putString("streak_days", streak)
                     .putBoolean(NoLeanWidgetProvider.KEY_IS_RISK_WINDOW, isRiskWindow)
                     .putBoolean(NoLeanWidgetProvider.KEY_HAS_PLEDGED_TODAY, hasPledgedToday)
+                    .putBoolean(NoLeanWidgetProvider.KEY_PRIVACY, privacy)
 
                 // Keep the legacy strings above so widgets created before this upgrade still
                 // have content. New versions calculate elapsed time from this source of truth.
-                if (lastDoseEpochMillis != null && lastDoseEpochMillis > 0L) {
+                if (privacy) {
+                    // Privacy mode keeps no recovery data at rest for the widget.
+                    editor.remove(NoLeanWidgetProvider.KEY_LAST_DOSE_EPOCH_MILLIS)
+                } else if (lastDoseEpochMillis != null && lastDoseEpochMillis > 0L) {
                     editor.putLong(NoLeanWidgetProvider.KEY_LAST_DOSE_EPOCH_MILLIS, lastDoseEpochMillis)
                 }
                 editor.apply()
 
-                val manager = AppWidgetManager.getInstance(this)
-                val component = ComponentName(this, NoLeanWidgetProvider::class.java)
-                NoLeanWidgetProvider().onUpdate(this, manager, manager.getAppWidgetIds(component))
+                NoLeanWidgetProvider.updateAllWidgets(this)
                 result.success(null)
             } else {
                 result.notImplemented()
@@ -120,7 +121,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun widgetActionFrom(intent: Intent?): String? {
         return when (val action = intent?.getStringExtra(EXTRA_WIDGET_ACTION)) {
-            WIDGET_ACTION_SOS, WIDGET_ACTION_CRAVING, WIDGET_ACTION_RELAPSE -> action
+            WIDGET_ACTION_SOS, WIDGET_ACTION_CRAVING, WIDGET_ACTION_RELAPSE, WIDGET_ACTION_CODE -> action
             else -> null
         }
     }
@@ -165,5 +166,6 @@ class MainActivity : FlutterFragmentActivity() {
         const val WIDGET_ACTION_SOS = "sos"
         const val WIDGET_ACTION_CRAVING = "craving"
         const val WIDGET_ACTION_RELAPSE = "relapse"
+        const val WIDGET_ACTION_CODE = "code"
     }
 }

@@ -149,6 +149,9 @@ class RecoveryController extends ChangeNotifier {
   /// Online OSM street tiles on the zone map. Off = grid only, no requests.
   bool streetTiles = true;
 
+  /// Home widget privacy: neutral text, no counter, streak or risk state.
+  bool widgetPrivacy = false;
+
   /// Quiet hours and lock-screen privacy for notifications.
   NotificationPrefs notificationPrefs = const NotificationPrefs();
 
@@ -412,6 +415,10 @@ class RecoveryController extends ChangeNotifier {
         : appLockPending;
     zoneMonitoring = flag('zoneMonitoring', zoneMonitoring);
     streetTiles = flag('streetTiles', streetTiles);
+    // Privacy flag: once present, anything but an explicit false stays private.
+    if (map.containsKey('widgetPrivacy')) {
+      widgetPrivacy = map['widgetPrivacy'] != false;
+    }
     if (map.containsKey('quietHoursEnabled') ||
         map.containsKey('quietHours') ||
         map.containsKey('hideSensitiveNotifications')) {
@@ -523,6 +530,7 @@ class RecoveryController extends ChangeNotifier {
     'zones': zones.map((zone) => zone.toJson()).toList(),
     'zoneMonitoring': zoneMonitoring,
     'streetTiles': streetTiles,
+    'widgetPrivacy': widgetPrivacy,
     ...notificationPrefs.toJson(),
     'backgroundGeofencing': backgroundGeofencing,
     'intensity': intensity.name,
@@ -726,6 +734,7 @@ class RecoveryController extends ChangeNotifier {
           ..remove('zones')
           ..remove('zoneMonitoring')
           ..remove('streetTiles')
+          ..remove('widgetPrivacy')
           ..remove('quietHoursEnabled')
           ..remove('quietHours')
           ..remove('hideSensitiveNotifications')
@@ -1073,6 +1082,11 @@ class RecoveryController extends ChangeNotifier {
         NotificationService.instance.prefs = notificationPrefs;
       });
 
+  /// Home widget privacy; never needs authentication. The widget refreshes
+  /// after the commit like every other change.
+  Future<void> setWidgetPrivacy(bool enabled) =>
+      _transaction(() async => widgetPrivacy = enabled);
+
   /// Lock-screen privacy; never needs authentication.
   Future<void> setHideSensitiveNotifications(bool hide) =>
       _transaction(() async {
@@ -1356,5 +1370,6 @@ class RecoveryController extends ChangeNotifier {
     hasPledgedToday:
         lastPledge != null &&
         dateKey(lastPledge!.toLocal()) == dateKey(DateTime.now()),
+    privacy: widgetPrivacy,
   );
 }

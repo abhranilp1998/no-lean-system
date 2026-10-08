@@ -1,7 +1,14 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../domain/home_widget_payload.dart';
+
+/// Pushes state to every NO LEAN home-screen widget size (2x1, 4x2, 4x3).
 class HomeWidgetService {
   const HomeWidgetService._();
+
+  @visibleForTesting
+  static const channel = MethodChannel('no_lean/widget');
 
   static Future<void> update({
     required DateTime lastDose,
@@ -9,17 +16,20 @@ class HomeWidgetService {
     required int streak,
     required bool isRiskWindow,
     required bool hasPledgedToday,
+    bool privacy = false,
   }) async {
     try {
-      await const MethodChannel(
-        'no_lean/widget',
-      ).invokeMethod<void>('update', <String, Object>{
-        'lastDoseEpochMillis': lastDose.millisecondsSinceEpoch,
-        'cleanTime': cleanTime,
-        'streak': '$streak DAYS',
-        'isRiskWindow': isRiskWindow,
-        'hasPledgedToday': hasPledgedToday,
-      });
+      await channel.invokeMethod<void>(
+        'update',
+        homeWidgetPayload(
+          lastDose: lastDose,
+          cleanTime: cleanTime,
+          streak: streak,
+          isRiskWindow: isRiskWindow,
+          hasPledgedToday: hasPledgedToday,
+          privacy: privacy,
+        ),
+      );
     } catch (_) {
       // Widget support is optional on unsupported launchers; core tracking stays local.
     }
