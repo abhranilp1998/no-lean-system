@@ -31,12 +31,14 @@ Read it before changing code.
 
 ## Recovery and security rules
 
-- Persisted recovery JSON is currently state version 11 (v8 added
+- Persisted recovery JSON is currently state version 12 (v8 added
   `riskWindowLock` and `appLockPending`; v9 added `zones`, `zoneMonitoring`
   and `backgroundGeofencing`; v10 added `streetTiles`, `widgetPrivacy`,
   `quietHoursEnabled`, `quietHours`, `hideSensitiveNotifications` and the
   `codeSession` event type; v11 added `zoneHistory` and the `zoneEntry`
-  event type; older states load with safe defaults). Any schema change must
+  event type; v12 added `bottleMl`, `insightPreferences`, the `cravingCheck`
+  event type and structured dose/cost/stress metadata, and converts exact
+  free-text quantities on load; older states load with safe defaults). Any schema change must
   increment the version and provide a non-destructive migration in
   `RecoveryController.load()`.
 - Production history is stored in `recovery/current.json` in application support
@@ -47,13 +49,18 @@ Read it before changing code.
   Backup format 3 supports these summaries and imports legacy exports.
   Backup format 4 adds danger zones (merged by ID on import); format ≤3 still
   imports with no zones. Format 5 adds `codeSession` events; format 6 adds
-  `zoneEntry` events. A new event type always needs a format bump so older
-  apps refuse the file as a whole.
+  `zoneEntry` events; format 7 adds `cravingCheck` events, dose/cost/stress
+  metadata and the portable `bottleMl` preference (format ≤6 and raw state
+  <12 imports get the exact-quantity conversion). A new event type always
+  needs a format bump so older apps refuse the file as a whole.
 - CSV export (`events_csv.dart`) is a read-only copy of every event, oldest
   first: BOM + CRLF, RFC 4180 quoting, ISO-8601 timestamps with offset, and a
   formula guard (`= + - @` tab/CR get a leading `'`). Unmapped metadata goes in
   the `details` JSON column. JSON stays the only restorable backup. The
   `zone` column (after `details`) carries the zone name of `zoneEntry` rows.
+  After it (append-only): `amount, unit, amount_ml, bottle_ml,
+  amount_source, cost_inr, stress, check_outcome`. Relapse type stays in the
+  existing `relapse_type` column.
 - Milestones (3/7/14/30/60/90/180/365 days, `domain/milestones.dart`) are
   recorded automatically by `syncMilestones()`, stamped at lastDose + N days,
   with `source: 'auto'`; they cannot be deleted from the timeline. The shell
@@ -77,6 +84,60 @@ Read it before changing code.
   another timer-reset path that bypasses its biometric/PIN authorization.
 - Disabling the relapse lock must remain authenticated.
 - Exports deliberately exclude the secure PIN and biometric material.
+
+## Doses, units and money (StillPoint-derived, Oct 2026)
+
+- Units live in `recovery/domain/dose_units.dart`: ml, L, bottle, drink,
+  tablet. Maths is in ml. L = ×1000; bottle = × the user's `bottleMl`
+  (default 100, valid 10-2000, presets 60-750). Drinks and tablets are
+  counts: they never carry `amountMl`, never enter ml totals or ml charts,
+  and escalation only compares them with the same unit.
+- A relapse dose stores what was entered plus its value at that moment:
+  `amount`, `unit`, `amountMl` (volume only), `bottleMl` (bottle only).
+  Changing the bottle size never rewrites history; readers use stored ml.
+  Validation recomputes ml for ml/L only; a bottle dose keeps its stored ml.
+- `parseAmount` accepts `2.5`, `2,5`, `.5`, `1/2`, `1 1/2`, `1½`,
+  `half`/`quarter`/`three quarters`, `2 and a half`; rejects ≤0, non-finite,
+  `/0` and ambiguous `1,000`. `parseMoney` takes ₹/Rs/INR and Indian or
+  western grouping; 0 is a valid cost.
+- Free-text `quantity` is always kept. Structured fields are added only when
+  the whole text parses exactly (`250ml`, `2.5 bottles`, `half a bottle`,
+  `2 tablets`), marked `amountSource: 'parsed'` (new entries, v11→v12 load,
+  format ≤6 import). "half a cup" stays text only.
+- `doseSanityCheck` runs on save before the reset confirm: ≥20 bottles or
+  >5 L of bottles → "Did you mean N ml?"; ≥10 L → ml; <1 ml → L; whole
+  1-4 ml → bottles; >20 tablets / >30 drinks → check the number. The size
+  cap (20 L, 500 count) is enforced after the prompt, never before it.
+  Display rounding (`formatMl`, `formatAmount`) is display-only.
+- Relapse `cost` (₹, optional) and `stress` (1-5, optional; also on
+  cravings). Money: a relapse day with recorded costs loses exactly those,
+  other relapse days are estimated at daily spend; recorded costs chart even
+  at daily spend ₹0. Label which part is recorded vs estimated.
+- Logging warnings (`dose_safety.dart`): mixing depressant classes
+  (opioid = full lean/partial, alcohol, benzo; lean+alcohol counts as both)
+  across the draft and the last 24 h; a second dose on the same day; clean
+  streak ≥3 days (tolerance). Any warning shows the overdose-signs card with
+  CALL 112.
+- Dose insights (`progress/domain/dose_insights.dart`): per-type stats;
+  escalation = latest ≥1.2× the average of up to 3 previous doses of the
+  same type and unit class, needs ≥2 previous, latest within 30 days;
+  same-day repeats (30 days); high need in 48 h = any stress 5, ≥2 logs at
+  stress 4+, or stress 4+ with a "stronger" recheck; stress-vs-intensity
+  needs 3+ logs each side and a 1.2× gap.
+- Insights carry `id`, `evidenceKey`, `evidenceCount` (confidence: <6 early,
+  6-11 moderate, ≥12 strong; null = not applicable) and `why`. "Dismiss
+  until the evidence changes" stores `insightPreferences.dismissed[id] =
+  evidenceKey`; high need is never dismissible. Dismissals stay local
+  (not restored by import).
+- Craving recheck: logging a craving schedules a non-critical
+  `NotificationKind.cravingCheck` (id 710, channel `craving_check_v1`,
+  action `action_recheck`) 15 min later, skipped in quiet hours. The
+  dashboard shows RECHECK DUE for the newest unchecked craving aged
+  15 min-6 h. `cravingCheck` = {cravingId, intensity 0-10, outcome
+  gone|eased|same|stronger, originalIntensity}.
+- Heat map modes: DAYS (default clean/relapse), COUNT, AMOUNT (ml only),
+  COST, STRESS (daily max); the weekday card covers 12 weeks and names a
+  peak only with ≥5 data days and a clear leader.
 
 ## Privacy and notifications
 
@@ -125,10 +186,11 @@ Read it before changing code.
 - Zone alerts are firm and factual and always offer one-tap exit ("I'M
   LEAVING"/close); never block leaving the alert.
 - Insight patterns need ≥5 cravings+relapses and ≥3 repeats before being
-  shown; relapse context tags count as triggers. Money lost is an estimate
-  (relapse days × daily spend) and must be labelled as one. The cumulative
+  shown; relapse context tags count as triggers. Money lost uses recorded
+  relapse costs where present and estimates the rest (relapse days × daily
+  spend); the estimated part must be labelled as one. The cumulative
   kept/lost chart (`money_series.dart`) applies today's daily spend to all
-  history; at ₹0 the chart and dashboard prompt the user to set it instead.
+  history; with ₹0 and no recorded costs it prompts the user to set it.
 - SOS is staged (breathe → 5-4-3-2-1 → reasons → re-pledge). Leaving is held
   only for the first 15 s of breathing; completion is recorded at the pledge.
 
@@ -197,10 +259,10 @@ Read it before changing code.
 Run all of the following after behavior changes:
 
 ```text
-dart format lib test
-dart analyze
+dart format --set-exit-if-changed lib test integration_test test_driver
+dart analyze --fatal-infos
 flutter test
-flutter build apk --debug
+flutter build apk --release   # alone: never alongside flutter drive
 ```
 
 Also run `git diff --check` and ensure no generated `build/` or `.dart_tool/`
