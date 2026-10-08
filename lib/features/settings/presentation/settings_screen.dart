@@ -14,6 +14,7 @@ import '../services/recovery_export_service.dart';
 import 'settings_dialogs.dart';
 import 'trusted_contact_dialog.dart';
 import 'widgets/settings_controls.dart';
+import '../../zones/presentation/zones_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -154,6 +155,16 @@ class SettingsScreen extends ConsumerWidget {
                   '${recovery.riskWindow.label} // 15-min warning + 4 interrupts',
               color: purple,
               onTap: () => showRiskWindowDialog(context, ref),
+            ),
+            SettingAction(
+              icon: Icons.dangerous_outlined,
+              title: 'Danger zones',
+              subtitle:
+                  '${recovery.zones.length} marked // offline map${recovery.zoneMonitoring || recovery.backgroundGeofencing ? ' // alerts on' : ''}',
+              color: red,
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const ZonesScreen())),
             ),
             SettingAction(
               icon: Icons.hourglass_bottom,
