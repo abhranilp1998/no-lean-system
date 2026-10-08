@@ -10,6 +10,11 @@ import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
 
+/// Monochrome status-bar icon (`res/drawable/ic_stat_no_lean.xml`). Android
+/// draws small icons from alpha only, and the name is resolved at runtime, so
+/// `res/raw/keep.xml` must keep it from the release resource shrinker.
+const notificationSmallIcon = 'ic_stat_no_lean';
+
 class NotificationService {
   NotificationService._();
 
@@ -46,7 +51,7 @@ class NotificationService {
 
       await _plugin.initialize(
         const InitializationSettings(
-          android: AndroidInitializationSettings('no_lean_icon'),
+          android: AndroidInitializationSettings(notificationSmallIcon),
         ),
         onDidReceiveNotificationResponse: (response) {
           if (response.actionId != null) {

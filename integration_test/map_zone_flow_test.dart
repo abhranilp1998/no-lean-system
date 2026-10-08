@@ -14,6 +14,7 @@ import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/application/recovery_provider.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
 import 'package:no_lean/features/recovery/domain/risk_window.dart';
+import 'package:no_lean/features/settings/presentation/settings_screen.dart';
 import 'package:no_lean/features/zones/domain/zone_presence.dart';
 import 'package:no_lean/features/zones/services/location_service.dart';
 import 'package:no_lean/main.dart';
@@ -78,12 +79,16 @@ Future<void> _openZones(WidgetTester tester) async {
   await _waitFor(tester, find.text('THE COUNTER'));
   await tester.tap(find.text('Settings'));
   await _settle(tester);
-  final entry = find.text('Danger zones');
-  await tester.scrollUntilVisible(
-    entry,
-    300,
-    scrollable: find.byType(Scrollable).first,
-  );
+  final entry = find.byKey(const ValueKey('settings-danger-zones'));
+  final settingsList = find
+      .descendant(
+        of: find.byType(SettingsScreen),
+        matching: find.byType(Scrollable),
+      )
+      .first;
+  await tester.scrollUntilVisible(entry, 300, scrollable: settingsList);
+  await tester.ensureVisible(entry);
+  await _settle(tester, 3);
   await tester.tap(entry);
   await _waitFor(tester, find.byKey(const ValueKey('zones-map')));
   await _settle(tester);

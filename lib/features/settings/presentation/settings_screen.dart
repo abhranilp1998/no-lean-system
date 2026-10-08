@@ -175,6 +175,7 @@ class SettingsScreen extends ConsumerWidget {
               onTap: () => showQuietHoursDialog(context, ref),
             ),
             SettingAction(
+              key: const ValueKey('settings-danger-zones'),
               icon: Icons.dangerous_outlined,
               title: 'Danger zones',
               subtitle:
