@@ -30,8 +30,9 @@ Read it before changing code.
 
 ## Recovery and security rules
 
-- Persisted recovery JSON is currently state version 8 (v8 added
-  `riskWindowLock` and `appLockPending`; older states load with safe defaults). Any schema change must
+- Persisted recovery JSON is currently state version 9 (v8 added
+  `riskWindowLock` and `appLockPending`; v9 added `zones`, `zoneMonitoring`
+  and `backgroundGeofencing`; older states load with safe defaults). Any schema change must
   increment the version and provide a non-destructive migration in
   `RecoveryController.load()`.
 - Production history is stored in `recovery/current.json` in application support
@@ -40,6 +41,8 @@ Read it before changing code.
   Unknown/corrupt current history opens a recovery screen and must never reset.
 - Legacy day summaries retain date-only facts, not invented timestamps/counts.
   Backup format 3 supports these summaries and imports legacy exports.
+  Backup format 4 adds danger zones (merged by ID on import); format ≤3 still
+  imports with no zones.
 - Multiple relapse rows use one protected, idempotent batch operation with a
   separate chosen occurrence time per event. Cooldown support never hides tabs,
   logging, SOS or settings; retain the original cooldown owner on later logs.
@@ -57,6 +60,27 @@ Read it before changing code.
   another timer-reset path that bypasses its biometric/PIN authorization.
 - Disabling the relapse lock must remain authenticated.
 - Exports deliberately exclude the secure PIN and biometric material.
+
+## Danger zones and location
+
+- Maps are fully offline (user decision, Oct 2026): `flutter_map` with no
+  TileLayer (grid canvas + scale bar), no tile servers, no geocoding/address
+  search. Do not add network map sources.
+- Zones: 100–2000 m radius, max 20, name ≤ 40. Deleting or shrinking a zone is
+  protected by the relapse lock; adding, growing, and toggling monitoring are
+  not. Location toggles never require auth, so the user can always switch
+  tracking off. Imported preferences never switch location features on.
+- In-app checks (`ZoneMonitor`) stream balanced-accuracy fixes only while the
+  app is resumed, monitoring is on and zones exist. Background alerts use
+  `native_geofence` (enter-only, ids `nolean_zone_<id>`), are opt-in behind the
+  disclosure screen, and the isolate callback reads only the local state file.
+- Zone alerts are firm and factual and always offer one-tap exit ("I'M
+  LEAVING"/close); never block leaving the alert.
+- Insight patterns need ≥5 cravings+relapses and ≥3 repeats before being
+  shown; relapse context tags count as triggers. Money lost is an estimate
+  (relapse days × daily spend) and must be labelled as one.
+- SOS is staged (breathe → 5-4-3-2-1 → reasons → re-pledge). Leaving is held
+  only for the first 15 s of breathing; completion is recorded at the pledge.
 
 ## Shared UI and feedback
 
