@@ -1,3 +1,5 @@
+import 'dose_units.dart';
+
 enum RelapseType { fullLean, partial, alcohol, benzo, leanPlusAlcohol, other }
 
 extension RelapseTypeLabel on RelapseType {
@@ -28,6 +30,9 @@ class RelapseLogEntry {
     required this.attemptedSos,
     this.quantity,
     this.contextTags = const [],
+    this.dose,
+    this.stress,
+    this.cost,
   });
 
   static const minimumNoteLength = 12;
@@ -38,6 +43,16 @@ class RelapseLogEntry {
   final bool attemptedSos;
   final String? quantity;
   final List<String> contextTags;
+
+  /// Structured dose, when the user entered one. Free-text [quantity] is
+  /// kept alongside it.
+  final DoseAmount? dose;
+
+  /// Optional 1-5 stress rating.
+  final int? stress;
+
+  /// Optional real ₹ cost of this dose.
+  final double? cost;
 
   String get normalizedNote => note.trim();
 
@@ -74,6 +89,13 @@ class RelapseLogEntry {
         normalizedContextTags.any((tag) => tag.length > 40)) {
       throw ArgumentError('Choose up to 10 short context signals.');
     }
+    if (stress != null && (stress! < 1 || stress! > 5)) {
+      throw ArgumentError('Stress must be between 1 and 5.');
+    }
+    if (cost != null &&
+        (!cost!.isFinite || cost! < 0 || cost! > maxRelapseCost)) {
+      throw ArgumentError('Cost must be 0 or more.');
+    }
   }
 
   Map<String, dynamic> toMetadata() => {
@@ -82,5 +104,8 @@ class RelapseLogEntry {
     'attemptedSos': attemptedSos,
     'quantity': ?normalizedQuantity,
     'contextTags': ?storedContextTags,
+    'stress': ?stress,
+    'cost': ?cost,
+    ...?dose?.toMetadata(),
   };
 }

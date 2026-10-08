@@ -10,9 +10,11 @@ import 'package:share_plus/share_plus.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../application/recovery_controller.dart';
+import '../domain/dose_units.dart';
 import '../domain/effect_intensity.dart';
 import '../domain/events_csv.dart';
 import '../domain/legacy_recovery_migration.dart';
+import '../domain/quantity_upgrade.dart';
 import '../domain/recovery_event.dart';
 import '../../zones/domain/danger_zone.dart';
 
@@ -40,9 +42,12 @@ class BackupPreview {
 
 class BackupService {
   /// Format 4 adds `zones`; format 5 adds `codeSession` events; format 6 adds
-  /// `zoneEntry` events. Older formats
-  /// still import; older apps refuse format 5 instead of failing per event.
-  static const int currentBackupVersion = 6;
+  /// `zoneEntry` events; format 7 adds `cravingCheck` events, structured
+  /// dose/cost/stress metadata and the `bottleMl` preference. Older formats
+  /// still import (format 6 and older get exact free-text quantities
+  /// converted, text kept); older apps refuse newer formats instead of
+  /// failing per event.
+  static const int currentBackupVersion = 7;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
@@ -174,8 +179,15 @@ class BackupService {
         throw const FormatException('Backup must be a JSON object.');
       }
       var map = Map<String, dynamic>.from(decoded);
+      var upgradeQuantities = false;
+      var upgradeBottleMl = defaultBottleMl;
       if (!map.containsKey('version') && map['stateVersion'] is int) {
         final stateVersion = map['stateVersion'] as int;
+        upgradeQuantities = stateVersion < 12;
+        final stateBottle = map['bottleMl'];
+        if (stateBottle is num && isValidBottleMl(stateBottle)) {
+          upgradeBottleMl = stateBottle.toDouble();
+        }
         if (stateVersion < 2 ||
             stateVersion > RecoveryController.stateVersion) {
           throw FormatException(
@@ -195,6 +207,9 @@ class BackupService {
       if (version is! int || version < 1 || version > currentBackupVersion) {
         throw FormatException('Unsupported backup version: $version');
       }
+      // Older backups have no bottle size: "2 bottles" uses the 100 ml
+      // default, exactly like the v11 -> v12 state migration.
+      if (version <= 6) upgradeQuantities = true;
 
       final rawEvents = map['events'];
       if (rawEvents is! List) {
@@ -225,7 +240,11 @@ class BackupService {
             'Event timestamp is outside the supported range.',
           );
         }
-        events.add(event);
+        events.add(
+          upgradeQuantities
+              ? upgradeEventQuantity(event, bottleMl: upgradeBottleMl)
+              : event,
+        );
       }
       events.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
@@ -278,6 +297,10 @@ class BackupService {
     if (dailySpend != null &&
         (dailySpend is! num || !dailySpend.isFinite || dailySpend < 0)) {
       throw const FormatException('dailySpend must be a non-negative number.');
+    }
+    final bottleMl = input['bottleMl'];
+    if (bottleMl != null && (bottleMl is! num || !isValidBottleMl(bottleMl))) {
+      throw const FormatException('bottleMl must be 10-2000 ml.');
     }
     final riskWindow = input['riskWindow'];
     if (riskWindow != null) {
@@ -353,6 +376,7 @@ class BackupService {
     final reminders = stringList('reminderMessages');
     final preferences = <String, dynamic>{};
     if (dailySpend != null) preferences['dailySpend'] = dailySpend;
+    if (bottleMl != null) preferences['bottleMl'] = bottleMl;
     if (reasons != null) preferences['reasons'] = reasons;
     if (reminders != null) preferences['reminderMessages'] = reminders;
     if (riskWindow != null) {

@@ -167,7 +167,7 @@ void main() {
     expect(controller.zoneHistory, isFalse);
   });
 
-  test('backups carry zone entries from format 6', () async {
+  test('backups carry zone entries (format 6+)', () async {
     final (controller, _, _) = await loaded();
     final zone = await addZone(controller);
     await controller.setZoneHistory(true);
@@ -178,7 +178,7 @@ void main() {
       preferences: controller.portablePreferences,
       zones: controller.zones,
     );
-    expect(payload['version'], 6);
+    expect(payload['version'], BackupService.currentBackupVersion);
     final preview = service.validateBackupJson(jsonEncode(payload));
     expect(
       preview.events.where((e) => e.type == RecoveryEventType.zoneEntry),

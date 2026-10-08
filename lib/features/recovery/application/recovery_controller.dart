@@ -9,6 +9,8 @@ import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../domain/craving_entry.dart';
+import '../domain/dose_units.dart';
+import '../domain/quantity_upgrade.dart';
 import '../domain/legacy_recovery_migration.dart';
 import '../services/recovery_state_store.dart';
 import '../domain/effect_intensity.dart';
@@ -76,7 +78,15 @@ class RecoveryController extends ChangeNotifier {
     DateTime Function()? now,
     GeofenceGateway? geofences,
     ZoneEntryInbox? zoneInbox,
-  }) : _zoneInbox = zoneInbox ?? const NoopZoneEntryInbox(),
+    Future<bool> Function(DateTime at)? scheduleCravingCheck,
+    Future<void> Function()? cancelCravingCheck,
+  }) : _scheduleCravingCheck =
+           scheduleCravingCheck ??
+           ((at) => NotificationService.instance.scheduleCravingCheck(at: at)),
+       _cancelCravingCheck =
+           cancelCravingCheck ??
+           NotificationService.instance.cancelCravingCheck,
+       _zoneInbox = zoneInbox ?? const NoopZoneEntryInbox(),
        _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
        _store = store ?? PreferencesRecoveryStateStore(),
        _now = now ?? DateTime.now,
@@ -87,7 +97,13 @@ class RecoveryController extends ChangeNotifier {
   /// notification preferences (`streetTiles`, ...); v11 adds the opt-in
   /// `zoneHistory` flag and `zoneEntry` events. Older states need no
   /// transformation: missing keys take the safe defaults below.
-  static const stateVersion = 11;
+  /// v12 adds `bottleMl`, `insightPreferences`, `cravingCheck` events and
+  /// structured dose/cost/stress relapse metadata. Loading an older state
+  /// converts free-text quantities that parse exactly (text is kept).
+  static const stateVersion = 12;
+
+  final Future<bool> Function(DateTime at) _scheduleCravingCheck;
+  final Future<void> Function() _cancelCravingCheck;
 
   final ZoneEntryInbox _zoneInbox;
 
@@ -128,6 +144,13 @@ class RecoveryController extends ChangeNotifier {
   Map<String, bool> cleanDays = {};
 
   double dailySpend = 0;
+
+  /// Size of one "bottle" for dose logging (ml). Applies to new entries
+  /// only; stored doses keep the ml they were logged with.
+  double bottleMl = defaultBottleMl;
+
+  /// Insights dismissed "until the evidence changes": id -> evidenceKey.
+  Map<String, String> dismissedInsights = {};
   List<String> reasons = List<String>.from(defaultReasons);
   List<String> reminderMessages = List<String>.from(defaultReminderMessages);
   RiskWindow riskWindow = const RiskWindow.defaultWindow();
@@ -190,6 +213,8 @@ class RecoveryController extends ChangeNotifier {
                 trigger: e.metadata['trigger'] as String? ?? 'Other',
                 note: e.metadata['note'] as String? ?? '',
                 createdAt: e.timestamp,
+                stress: e.metadata['stress'] as int?,
+                id: e.id,
               ),
             )
             .toList()
@@ -295,6 +320,9 @@ class RecoveryController extends ChangeNotifier {
         }
       }
       _restoreSettings(map);
+      if (stored != null && version is int && version < 12) {
+        events = upgradeQuantityText(events, bottleMl: bottleMl);
+      }
       zones = DangerZone.decodeList(map['zones']);
       relapseCooldownUntil = DateTime.tryParse(
         map['relapseCooldownUntil']?.toString() ?? '',
@@ -382,6 +410,18 @@ class RecoveryController extends ChangeNotifier {
     final spend = map['dailySpend'];
     if (spend is num && spend.isFinite && spend >= 0) {
       dailySpend = spend.toDouble();
+    }
+    final bottle = map['bottleMl'];
+    if (bottle is num && isValidBottleMl(bottle)) {
+      bottleMl = bottle.toDouble();
+    }
+    final insightPrefs = map['insightPreferences'];
+    if (insightPrefs is Map && insightPrefs['dismissed'] is Map) {
+      dismissedInsights = {
+        for (final entry in (insightPrefs['dismissed'] as Map).entries)
+          if (entry.key is String && entry.value is String)
+            entry.key as String: entry.value as String,
+      };
     }
     reasons = _decodeStrings(map['reasons'], reasons);
     reminderMessages = _decodeStrings(
@@ -531,6 +571,8 @@ class RecoveryController extends ChangeNotifier {
     'relapseCooldownEventId': relapseCooldownEventId,
     'cooldownMinutes': cooldownMinutes,
     'dailySpend': dailySpend,
+    'bottleMl': bottleMl,
+    'insightPreferences': {'dismissed': dismissedInsights},
     'reasons': reasons,
     'reminderMessages': reminderMessages,
     'riskWindow': riskWindow.toJson(),
@@ -822,6 +864,7 @@ class RecoveryController extends ChangeNotifier {
           ..remove('quietHours')
           ..remove('hideSensitiveNotifications')
           ..remove('backgroundGeofencing')
+          ..remove('insightPreferences')
           ..remove('pin'),
       );
     }
@@ -832,6 +875,7 @@ class RecoveryController extends ChangeNotifier {
 
   Map<String, dynamic> get portablePreferences => {
     'dailySpend': dailySpend,
+    'bottleMl': bottleMl,
     'reasons': reasons,
     'reminderMessages': reminderMessages,
     'riskWindow': riskWindow.toJson(),
@@ -853,14 +897,77 @@ class RecoveryController extends ChangeNotifier {
     await appendEvent(RecoveryEvent.create(type: RecoveryEventType.pledge));
   }
 
-  Future<void> recordCraving(CravingEntry entry) async {
+  /// Logs a craving and schedules the 15-minute recheck prompt (unless it
+  /// would land in quiet hours). Returns the new event id.
+  Future<String> recordCraving(CravingEntry entry) async {
+    final event = RecoveryEvent.create(
+      type: RecoveryEventType.craving,
+      timestamp: entry.createdAt,
+      metadata: entry.toJson()..remove('id'),
+    );
+    await appendEvent(event);
+    final due = event.timestamp.add(cravingCheckDelay);
+    if (due.isAfter(_now())) {
+      try {
+        await _scheduleCravingCheck(due);
+      } catch (_) {
+        /* Notifications never block local history. */
+      }
+    }
+    return event.id;
+  }
+
+  static const cravingCheckDelay = Duration(minutes: 15);
+
+  /// A recheck is offered for this long after the craving.
+  static const cravingCheckExpiry = Duration(hours: 6);
+
+  /// The newest craving that is due for a recheck: at least 15 minutes old,
+  /// under 6 hours old, and not yet rechecked. Older cravings are not
+  /// nagged about.
+  RecoveryEvent? get pendingCravingCheck {
+    final now = _now();
+    final checked = {
+      for (final e in events)
+        if (e.type == RecoveryEventType.cravingCheck) e.metadata['cravingId'],
+    };
+    final latest = events
+        .where((e) => e.type == RecoveryEventType.craving)
+        .lastOrNull;
+    if (latest == null || checked.contains(latest.id)) return null;
+    final age = now.difference(latest.timestamp);
+    if (age < cravingCheckDelay || age > cravingCheckExpiry) return null;
+    return latest;
+  }
+
+  /// Records how a craving feels on recheck (0 = gone). The outcome is
+  /// derived from the original intensity.
+  Future<void> recordCravingCheck({
+    required String cravingId,
+    required int intensity,
+  }) async {
+    final craving = events
+        .where((e) => e.id == cravingId && e.type == RecoveryEventType.craving)
+        .firstOrNull;
+    if (craving == null) throw StateError('Craving not found.');
+    final original = craving.metadata['intensity'] as int;
     await appendEvent(
       RecoveryEvent.create(
-        type: RecoveryEventType.craving,
-        timestamp: entry.createdAt,
-        metadata: entry.toJson(),
+        type: RecoveryEventType.cravingCheck,
+        timestamp: _now(),
+        metadata: {
+          'cravingId': cravingId,
+          'intensity': intensity.clamp(0, 10),
+          'outcome': cravingCheckOutcome(original, intensity.clamp(0, 10)),
+          'originalIntensity': original,
+        },
       ),
     );
+    try {
+      await _cancelCravingCheck();
+    } catch (_) {
+      /* Optional. */
+    }
   }
 
   Future<ProtectedActionResult> recordRelapse({
@@ -1375,6 +1482,38 @@ class RecoveryController extends ChangeNotifier {
 
   Future<void> updateDailySpend(double value) => _transaction(() async {
     dailySpend = math.max(0, value);
+  });
+
+  /// Changes the bottle size for *new* dose entries. Past entries keep the
+  /// ml they were stored with.
+  Future<void> updateBottleMl(double value) => _transaction(() async {
+    if (!isValidBottleMl(value)) {
+      throw ArgumentError('Bottle size must be 10-2000 ml.');
+    }
+    if (value == bottleMl) return;
+    final previous = bottleMl;
+    bottleMl = value;
+    events.add(
+      RecoveryEvent.create(
+        type: RecoveryEventType.settingsChange,
+        metadata: {
+          'setting': 'bottleMl',
+          'from': previous,
+          'newValue': value.toString(),
+        },
+      ),
+    );
+  });
+
+  /// Hides an insight until its evidence key changes.
+  Future<void> dismissInsight(String id, String evidenceKey) =>
+      _transaction(() async {
+        dismissedInsights = {...dismissedInsights, id: evidenceKey};
+      });
+
+  /// Brings every dismissed insight back.
+  Future<void> restoreDismissedInsights() => _transaction(() async {
+    dismissedInsights = {};
   });
 
   Future<void> updateRiskWindow(RiskWindow value) => _transaction(() async {

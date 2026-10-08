@@ -348,6 +348,70 @@ class NotificationService {
     }
   }
 
+  static const cravingCheckId = 710;
+
+  /// Delay before the craving recheck prompt.
+  static const cravingCheckDelay = Duration(minutes: 15);
+
+  /// Non-critical: asks "how is the craving now?" 15 minutes after a craving
+  /// was logged. Skipped when it would land in quiet hours. Returns whether
+  /// it was scheduled.
+  Future<bool> scheduleCravingCheck({required DateTime at}) async {
+    if (!prefs.allows(NotificationKind.cravingCheck, at)) {
+      await cancelCravingCheck();
+      return false;
+    }
+    final text = prefs.textFor(
+      'CRAVING RECHECK',
+      '15 minutes on. Rate it again: did it pass, ease or grow?',
+    );
+    try {
+      await _initialize(requestPermission: true);
+      await scheduleWithExactFallback(
+        exactAllowed: await exactAlarmsAllowed(),
+        schedule: (mode) => _plugin.zonedSchedule(
+          cravingCheckId,
+          text.title,
+          text.body,
+          tz.TZDateTime.from(at, tz.local),
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              'craving_check_v1',
+              'NO LEAN craving recheck',
+              channelDescription:
+                  'Asks how a logged craving is going 15 minutes later',
+              importance: Importance.defaultImportance,
+              priority: Priority.defaultPriority,
+              visibility: lockScreenVisibility,
+              category: AndroidNotificationCategory.reminder,
+              ticker: neutralNotificationText.title,
+              actions: [
+                AndroidNotificationAction(
+                  'action_recheck',
+                  prefs.label('RATE IT NOW', 'OPEN'),
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+              ],
+            ),
+          ),
+          androidScheduleMode: mode,
+        ),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> cancelCravingCheck() async {
+    try {
+      await _plugin.cancel(cravingCheckId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
   Future<void> cancelRiskWindow() async {
     try {
       // Cancellation does not require permission and Android can service it

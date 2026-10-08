@@ -134,6 +134,11 @@ void main() {
       RecoveryEventType.daySummary => {'date': '2026-10-01', 'clean': true},
       RecoveryEventType.craving => {'intensity': 5, 'trigger': 'Boredom'},
       RecoveryEventType.zoneEntry => {'zoneId': 'z1', 'zoneName': 'Bar'},
+      RecoveryEventType.cravingCheck => {
+        'cravingId': 'c1',
+        'intensity': 3,
+        'outcome': 'eased',
+      },
       RecoveryEventType.codeSession => {
         'taskId': 'word-count',
         'plannedSeconds': 600,
@@ -159,7 +164,10 @@ void main() {
     expect(summary[3], '2026-10-01');
     expect(summary[eventsCsvColumns.indexOf('details')], '{"clean":true}');
     final zone = rows.firstWhere((r) => r[1] == 'zoneEntry');
-    expect(zone.last, 'Bar');
+    expect(zone[eventsCsvColumns.indexOf('zone')], 'Bar');
+    final check = rows.firstWhere((r) => r[1] == 'cravingCheck');
+    expect(check[eventsCsvColumns.indexOf('check_outcome')], 'eased');
+    expect(check[eventsCsvColumns.indexOf('details')], '{"cravingId":"c1"}');
     expect(zone[eventsCsvColumns.indexOf('details')], '{"zoneId":"z1"}');
   });
 }

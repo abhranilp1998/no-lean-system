@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/formatters.dart';
 import '../../../../core/services/app_notice.dart';
 import '../../../../core/widgets/glass_card.dart';
 import '../../../recovery/application/recovery_controller.dart';
 import '../../../recovery/application/recovery_provider.dart';
+import '../../../recovery/domain/dose_units.dart';
 import '../../../recovery/domain/recovery_event.dart';
 import '../../../recovery/domain/relapse_log_entry.dart';
 import '../../../recovery/presentation/relapse_auth_dialog.dart';
@@ -111,6 +113,12 @@ class EventTile extends ConsumerWidget {
           Icons.place_outlined,
           red,
         );
+      case RecoveryEventType.cravingCheck:
+        return (
+          'CRAVING RECHECK // ${'${event.metadata['outcome']}'.toUpperCase()}',
+          Icons.update,
+          magenta,
+        );
       case RecoveryEventType.codeSession:
         return (
           event.metadata['completed'] == true
@@ -146,6 +154,12 @@ class _RelapseEventCard extends StatelessWidget {
     final note = event.metadata['note'] as String?;
     final quantity = event.metadata['quantity'] as String?;
     final attemptedSos = event.metadata['attemptedSos'] as bool?;
+    final dose = DoseAmount.fromMetadata(event.metadata);
+    final showQuantity =
+        quantity?.isNotEmpty == true &&
+        (dose == null || event.metadata['amountSource'] != 'parsed');
+    final cost = event.metadata['cost'];
+    final stress = event.metadata['stress'];
     final streakLost = event.metadata['streakLost'];
     final contextTags = switch (event.metadata['contextTags']) {
       final List values => values.whereType<String>().toList(),
@@ -157,6 +171,9 @@ class _RelapseEventCard extends StatelessWidget {
       label: [
         'Relapse recorded $formattedDate.',
         if (relapseType != null) 'Type ${relapseType.label}.',
+        if (dose != null) 'Amount ${dose.display}.',
+        if (cost is num) 'Cost ${money(cost)}.',
+        if (stress is num) 'Stress $stress of 5.',
         if (attemptedSos != null)
           attemptedSos ? 'SOS was attempted.' : 'SOS was not attempted.',
         if (contextTags.isNotEmpty)
@@ -256,10 +273,25 @@ class _RelapseEventCard extends StatelessWidget {
                                     ? 'SOS ATTEMPTED'
                                     : 'NO SOS ATTEMPT',
                               ),
-                            if (quantity?.isNotEmpty == true)
+                            if (dose != null)
+                              _RelapseFact(
+                                icon: Icons.science_outlined,
+                                label: dose.display.toUpperCase(),
+                              ),
+                            if (showQuantity)
                               _RelapseFact(
                                 icon: Icons.straighten,
                                 label: quantity!,
+                              ),
+                            if (cost is num)
+                              _RelapseFact(
+                                icon: Icons.currency_rupee,
+                                label: money(cost),
+                              ),
+                            if (stress is num)
+                              _RelapseFact(
+                                icon: Icons.speed,
+                                label: 'STRESS $stress/5',
                               ),
                             if (streakLost != null)
                               _RelapseFact(
@@ -337,6 +369,7 @@ class _MetadataView extends StatelessWidget {
               'taskId',
               'zoneId',
               'plannedSeconds',
+              'cravingId',
             }.contains(e.key),
           )
           .map((e) {

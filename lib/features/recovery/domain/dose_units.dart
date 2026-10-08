@@ -21,6 +21,9 @@ const bottleSizePresets = <double>[60, 100, 120, 200, 250, 330, 500, 750];
 const maxDoseMl = 20000.0;
 const maxDoseCount = 500.0;
 
+/// Upper bound for a stored relapse cost (₹). Anything above is a typo.
+const maxRelapseCost = 10000000.0;
+
 extension DoseUnitInfo on DoseUnit {
   bool get isVolume => switch (this) {
     DoseUnit.ml || DoseUnit.litre || DoseUnit.bottle => true,

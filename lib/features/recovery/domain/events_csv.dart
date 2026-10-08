@@ -23,6 +23,14 @@ const eventsCsvColumns = [
   'note',
   'details',
   'zone',
+  'amount',
+  'unit',
+  'amount_ml',
+  'bottle_ml',
+  'amount_source',
+  'cost_inr',
+  'stress',
+  'check_outcome',
 ];
 
 /// Metadata keys that have their own column; everything else goes to
@@ -44,6 +52,14 @@ const _mappedKeys = {
   'field',
   'note',
   'zoneName',
+  'amount',
+  'unit',
+  'amountMl',
+  'bottleMl',
+  'amountSource',
+  'cost',
+  'stress',
+  'outcome',
 };
 
 /// Builds an RFC 4180 CSV of every event, oldest first, with CRLF line
@@ -71,6 +87,11 @@ List<String> eventCsvRow(RecoveryEvent event) {
   final m = event.metadata;
   String text(Object? value) => value == null ? '' : csvText('$value');
   String plain(Object? value) => value == null ? '' : csvEscape('$value');
+  String number(Object? value) => value is num
+      ? (value == value.roundToDouble() && value.abs() < 1e15
+            ? '${value.round()}'
+            : '$value')
+      : '';
   String flag(Object? value) => value is bool ? (value ? 'true' : 'false') : '';
   final extra = {
     for (final entry in m.entries)
@@ -97,6 +118,14 @@ List<String> eventCsvRow(RecoveryEvent event) {
     text(m['note']),
     extra.isEmpty ? '' : text(jsonEncode(extra)),
     text(m['zoneName']),
+    number(m['amount']),
+    plain(m['unit']),
+    number(m['amountMl']),
+    number(m['bottleMl']),
+    plain(m['amountSource']),
+    number(m['cost']),
+    number(m['stress']),
+    plain(m['outcome']),
   ];
 }
 
