@@ -1,3 +1,4 @@
+import '../../../core/layout/tab_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -75,8 +76,7 @@ class ProgressScreen extends ConsumerWidget {
       }
     }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
+    return TabListView(
       children: [
         const BrandHeader(),
         const SizedBox(height: 24),

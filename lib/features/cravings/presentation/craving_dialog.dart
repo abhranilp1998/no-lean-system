@@ -1,3 +1,4 @@
+import '../../../core/layout/tab_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -52,7 +53,7 @@ class _CravingDialogState extends State<_CravingDialog> {
   Widget build(BuildContext context) {
     return AppDialog(
       title: 'LOG THE SIGNAL',
-      child: SingleChildScrollView(
+      child: KeyboardSafeScroll(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,6 +91,8 @@ class _CravingDialogState extends State<_CravingDialog> {
             TextField(
               controller: note,
               maxLines: 3,
+              textInputAction: TextInputAction.done,
+              scrollPadding: KeyboardSafeScroll.fieldScrollPadding,
               decoration: const InputDecoration(
                 labelText: 'What is actually happening?',
                 hintText: 'Name the moment, not the story.',

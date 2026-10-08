@@ -1,3 +1,4 @@
+import '../../../core/layout/tab_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -24,8 +25,7 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final recovery = ref.watch(recoveryProvider);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
+    return TabListView(
       children: [
         const BrandHeader(),
         const SizedBox(height: 24),

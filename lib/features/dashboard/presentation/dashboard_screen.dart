@@ -1,3 +1,4 @@
+import '../../../core/layout/tab_layout.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -54,8 +55,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       color: cyan,
       backgroundColor: panel,
       onRefresh: () async => ref.read(recoveryProvider).syncWidget(),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
+      child: TabListView(
         children: [
           const BrandHeader(),
           const SizedBox(height: 22),
@@ -90,9 +90,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           : 'SYSTEM STABLE',
                       color: recovery.isRiskWindow ? red : toxic,
                     ),
-                    Text(
-                      'LIVE SINCE ${DateFormat('MMM d • HH:mm').format(recovery.lastDose)}',
-                      style: microStyle,
+                    const SizedBox(width: 10),
+                    // Narrow phones and large text scales: shrink, never
+                    // overflow the card.
+                    Flexible(
+                      child: Text(
+                        'LIVE SINCE ${DateFormat('MMM d • HH:mm').format(recovery.lastDose)}',
+                        style: microStyle,
+                        textAlign: TextAlign.end,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
