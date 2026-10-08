@@ -52,6 +52,59 @@ void main() {
     expect(await service.verifyPin('2468'), PinVerificationResult.verified);
   });
 
+  test('repeat lockouts escalate 5, 15, then 60 minutes', () async {
+    var now = DateTime(2026, 10, 8, 18);
+    final storage = _MemoryLockStorage();
+    final service = _service(storage, now: () => now, maximumFailedAttempts: 2);
+    await service.savePin('2468');
+
+    Future<void> failUntilLocked() async {
+      expect(await service.verifyPin('0000'), PinVerificationResult.denied);
+      expect(await service.verifyPin('0000'), PinVerificationResult.lockedOut);
+    }
+
+    for (final minutes in [5, 15, 60, 60]) {
+      await failUntilLocked();
+      expect(
+        await service.lockedOutUntil(),
+        now.add(Duration(minutes: minutes)),
+      );
+      now = now.add(Duration(minutes: minutes) - const Duration(seconds: 1));
+      expect(await service.verifyPin('2468'), PinVerificationResult.lockedOut);
+      now = now.add(const Duration(seconds: 2));
+      expect(await service.lockedOutUntil(), isNull);
+    }
+  });
+
+  test(
+    'the escalation level survives a restart and resets on success',
+    () async {
+      var now = DateTime(2026, 10, 8, 18);
+      final storage = _MemoryLockStorage();
+      var service = _service(storage, now: () => now, maximumFailedAttempts: 1);
+      await service.savePin('2468');
+
+      expect(await service.verifyPin('0000'), PinVerificationResult.lockedOut);
+      now = now.add(const Duration(minutes: 6));
+
+      // A new service instance reads the same secure storage, like a restart.
+      service = _service(storage, now: () => now, maximumFailedAttempts: 1);
+      expect(await service.verifyPin('0000'), PinVerificationResult.lockedOut);
+      expect(
+        await service.lockedOutUntil(),
+        now.add(const Duration(minutes: 15)),
+      );
+
+      now = now.add(const Duration(minutes: 16));
+      expect(await service.verifyPin('2468'), PinVerificationResult.verified);
+      expect(await service.verifyPin('0000'), PinVerificationResult.lockedOut);
+      expect(
+        await service.lockedOutUntil(),
+        now.add(const Duration(minutes: 5)),
+      );
+    },
+  );
+
   test('clearing the lock removes the credential and attempt state', () async {
     final storage = _MemoryLockStorage();
     final service = _service(storage, maximumFailedAttempts: 1);

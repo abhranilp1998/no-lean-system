@@ -44,7 +44,7 @@ enum ProtectedActionResult {
 extension ProtectedActionResultMessage on ProtectedActionResult {
   String get failureMessage => switch (this) {
     ProtectedActionResult.lockedOut =>
-      'Too many incorrect PIN attempts. PIN entry is paused for 5 minutes.',
+      'Too many incorrect PIN attempts. PIN entry is paused: 5 minutes, then 15, then 60 on repeat lockouts. Biometrics still work.',
     ProtectedActionResult.denied =>
       'Authentication failed. Nothing was changed.',
     ProtectedActionResult.authenticationRequired =>

@@ -54,7 +54,7 @@ class _RelapsePinDialogState extends State<_RelapsePinDialog> {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Biometrics did not complete. Enter your local NO LEAN PIN. Five incorrect attempts pause PIN entry for five minutes.',
+                    'Biometrics did not complete. Enter your local NO LEAN PIN. Five incorrect attempts pause PIN entry for 5 minutes; repeat lockouts escalate to 15, then 60.',
                     style: TextStyle(color: muted, fontSize: 12, height: 1.45),
                   ),
                 ),
