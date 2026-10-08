@@ -97,7 +97,7 @@ void main() {
     final event = RecoveryEvent.create(type: RecoveryEventType.pledge);
     final store = MemoryRecoveryStore(
       jsonEncode({
-        'stateVersion': 7,
+        'stateVersion': RecoveryController.stateVersion,
         'events': [event.toJson()],
         'dailySpend': 'broken',
         'riskWindow': 'broken',

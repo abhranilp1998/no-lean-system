@@ -30,7 +30,8 @@ Read it before changing code.
 
 ## Recovery and security rules
 
-- Persisted recovery JSON is currently state version 7. Any schema change must
+- Persisted recovery JSON is currently state version 8 (v8 added
+  `riskWindowLock` and `appLockPending`; older states load with safe defaults). Any schema change must
   increment the version and provide a non-destructive migration in
   `RecoveryController.load()`.
 - Production history is stored in `recovery/current.json` in application support
@@ -42,6 +43,13 @@ Read it before changing code.
 - Multiple relapse rows use one protected, idempotent batch operation with a
   separate chosen occurrence time per event. Cooldown support never hides tabs,
   logging, SOS or settings; retain the original cooldown owner on later logs.
+- App lock (user decision, Oct 2026): with a PIN set, the shell locks during the
+  configured risk window (`riskWindowLock`, on by default, disabling requires
+  auth) and after every saved relapse (`appLockPending`). The lock screen must
+  keep SOS and craving logging reachable without unlocking; a widget relapse
+  action waits until unlock. Import never restores either lock flag.
+- PIN lockouts escalate 5 → 15 → 60 minutes; the level lives in secure storage
+  and resets only on a verified PIN, a new PIN, or clearing the lock.
 - The relapse PIN belongs only in `flutter_secure_storage`. Never put PIN text,
   biometric material, or authentication tokens in SharedPreferences, exports,
   logs, analytics, or notifications.

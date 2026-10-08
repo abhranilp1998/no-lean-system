@@ -71,7 +71,9 @@ class RecoveryController extends ChangeNotifier {
        _store = store ?? PreferencesRecoveryStateStore(),
        _now = now ?? DateTime.now;
 
-  static const stateVersion = 7;
+  /// v8 adds `riskWindowLock` and `appLockPending`. Older states need no
+  /// transformation: missing keys take the safe defaults below.
+  static const stateVersion = 8;
 
   final RelapseLockGateway _relapseLock;
   final RecoveryStateStore _store;
@@ -122,6 +124,12 @@ class RecoveryController extends ChangeNotifier {
   bool hapticFeedback = true;
   FeedbackSoundEffect feedbackSound = FeedbackSoundEffect.neonPulse;
   bool requirePinAfterRelapse = false;
+
+  /// Auto-locks the app inside [riskWindow] when a PIN exists.
+  bool riskWindowLock = true;
+
+  /// Set when a relapse is logged; the app stays locked until authenticated.
+  bool appLockPending = false;
   EffectIntensity intensity = EffectIntensity.standard;
   DashboardNoticeStyle dashboardNoticeStyle = DashboardNoticeStyle.edgeRail;
   bool isLoaded = false;
@@ -370,6 +378,12 @@ class RecoveryController extends ChangeNotifier {
     requirePinAfterRelapse = map.containsKey('requirePinAfterRelapse')
         ? map['requirePinAfterRelapse'] != false
         : requirePinAfterRelapse;
+    riskWindowLock = map.containsKey('riskWindowLock')
+        ? map['riskWindowLock'] != false
+        : riskWindowLock;
+    appLockPending = map.containsKey('appLockPending')
+        ? map['appLockPending'] != false
+        : appLockPending;
     feedbackSound = FeedbackSoundEffect.values.firstWhere(
       (v) => v.name == map['feedbackSound'],
       orElse: () => feedbackSound,
@@ -427,6 +441,12 @@ class RecoveryController extends ChangeNotifier {
   double get moneySaved => math.max(0, cleanDuration.inHours / 24) * dailySpend;
   bool get isRiskWindow => riskWindow.contains(_now());
   bool get isPeakHourLockActive => peakHourLock && isRiskWindow;
+
+  /// The risk-window wall needs a credential; without a PIN nothing can lock.
+  bool get riskWindowWallArmed => requirePinAfterRelapse && riskWindowLock;
+
+  /// True after a relapse was logged with the lock enabled, until unlocked.
+  bool get relockPending => requirePinAfterRelapse && appLockPending;
   RiskWindowEvidence get riskWindowEvidence =>
       computeRiskWindowEvidence(events, riskWindow);
 
@@ -479,6 +499,8 @@ class RecoveryController extends ChangeNotifier {
     'hapticFeedback': hapticFeedback,
     'feedbackSound': feedbackSound.name,
     'requirePinAfterRelapse': requirePinAfterRelapse,
+    'riskWindowLock': riskWindowLock,
+    'appLockPending': appLockPending,
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
   };
@@ -657,6 +679,8 @@ class RecoveryController extends ChangeNotifier {
       _restoreSettings(
         Map<String, dynamic>.from(preferences)
           ..remove('requirePinAfterRelapse')
+          ..remove('riskWindowLock')
+          ..remove('appLockPending')
           ..remove('pin'),
       );
     }
@@ -806,6 +830,8 @@ class RecoveryController extends ChangeNotifier {
         relapseCooldownUntil = deadline;
         relapseCooldownEventId = latest.id;
       }
+      // Re-lock after every newly saved relapse so the next move is deliberate.
+      if (requirePinAfterRelapse) appLockPending = true;
       return ProtectedActionResult.completed;
     });
   }
@@ -911,6 +937,50 @@ class RecoveryController extends ChangeNotifier {
     }
     await _relapseLock.savePin(pin);
     requirePinAfterRelapse = true;
+    // The risk-window wall is on by default whenever a PIN exists.
+    riskWindowLock = true;
+  });
+
+  /// Clears an app lock (risk window or post-relapse) after authentication.
+  Future<ProtectedActionResult> unlockApp({
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    final authorization = await _authorizeProtectedAction(
+      pin: pin,
+      tryBiometrics: tryBiometrics,
+      reason: 'Authenticate to unlock NO LEAN.',
+    );
+    if (authorization != ProtectedActionResult.completed) return authorization;
+    appLockPending = false;
+    return ProtectedActionResult.completed;
+  });
+
+  /// Enabling the risk-window wall is free; disabling it must authenticate.
+  Future<ProtectedActionResult> setRiskWindowLock(
+    bool enabled, {
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    if (enabled == riskWindowLock) return ProtectedActionResult.completed;
+    if (!enabled) {
+      final authorization = await _authorizeProtectedAction(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        reason: 'Authenticate to turn off the risk-window lock.',
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+    }
+    riskWindowLock = enabled;
+    events.add(
+      RecoveryEvent.create(
+        type: RecoveryEventType.settingsChange,
+        metadata: {'setting': 'riskWindowLock', 'newValue': '$enabled'},
+      ),
+    );
+    return ProtectedActionResult.completed;
   });
 
   Future<ProtectedActionResult> disableRelapseLock({
@@ -928,6 +998,7 @@ class RecoveryController extends ChangeNotifier {
       }
 
       requirePinAfterRelapse = false;
+      appLockPending = false;
       return ProtectedActionResult.completed;
     });
     if (result == ProtectedActionResult.completed) {

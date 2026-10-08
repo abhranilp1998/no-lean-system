@@ -128,7 +128,7 @@ class BackupService {
       var map = Map<String, dynamic>.from(decoded);
       if (!map.containsKey('version') && map['stateVersion'] is int) {
         final stateVersion = map['stateVersion'] as int;
-        if (stateVersion < 2 || stateVersion > 7) {
+        if (stateVersion < 2 || stateVersion > 8) {
           throw FormatException(
             'Unsupported recovery state version: $stateVersion',
           );
