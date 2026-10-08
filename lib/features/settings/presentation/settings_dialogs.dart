@@ -14,6 +14,7 @@ import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/services/notification_service.dart';
 import '../../recovery/domain/risk_window.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
+import '../../recovery/domain/dose_units.dart';
 
 Future<void> showDashboardNoticeStyleDialog(
   BuildContext context,
@@ -189,6 +190,122 @@ Future<void> showCooldownDialog(BuildContext context, WidgetRef ref) async {
       type: AppNoticeType.success,
     );
   }
+}
+
+/// Bottle size for dose logging. Applies to new entries only.
+Future<void> showBottleSizeDialog(BuildContext context, WidgetRef ref) async {
+  final current = ref.read(recoveryProvider).bottleMl;
+  final updated = await showDialog<double>(
+    context: context,
+    builder: (_) => BottleSizeDialog(initial: current),
+  );
+  if (updated == null || !context.mounted) return;
+  if (!await saveAction(
+    context,
+    () => ref.read(recoveryProvider).updateBottleMl(updated),
+  )) {
+    return;
+  }
+  if (context.mounted) {
+    AppNotice.show(
+      context,
+      'BOTTLE SIZE // ${formatMl(updated)}. PAST ENTRIES KEEP THEIR ML.',
+      type: AppNoticeType.success,
+    );
+  }
+}
+
+class BottleSizeDialog extends StatefulWidget {
+  const BottleSizeDialog({required this.initial, super.key});
+
+  final double initial;
+
+  @override
+  State<BottleSizeDialog> createState() => _BottleSizeDialogState();
+}
+
+class _BottleSizeDialogState extends State<BottleSizeDialog> {
+  late double? _selected = bottleSizePresets.contains(widget.initial)
+      ? widget.initial
+      : null;
+  late final _custom = TextEditingController(
+    text: bottleSizePresets.contains(widget.initial)
+        ? ''
+        : formatAmount(widget.initial),
+  );
+  String? _error;
+
+  @override
+  void dispose() {
+    _custom.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final custom = _custom.text.trim();
+    final value = custom.isEmpty ? _selected : parseAmount(custom);
+    if (value == null || !isValidBottleMl(value)) {
+      setState(() => _error = 'Enter a size from 10 to 2000 ml.');
+      return;
+    }
+    Navigator.pop(context, value);
+  }
+
+  @override
+  Widget build(BuildContext context) => AppDialog(
+    title: 'BOTTLE SIZE',
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'How much one "bottle" holds when you log a dose in bottles. '
+          'Changing it only affects new entries: past entries keep the ml '
+          'they were saved with.',
+          style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final ml in bottleSizePresets)
+              ChoiceChip(
+                key: ValueKey('bottle-size-${ml.round()}'),
+                label: Text(formatMl(ml)),
+                selected: _custom.text.trim().isEmpty && _selected == ml,
+                onSelected: (_) => setState(() {
+                  _selected = ml;
+                  _custom.clear();
+                  _error = null;
+                }),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const ValueKey('bottle-size-custom'),
+          controller: _custom,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            labelText: 'CUSTOM (ML)',
+            suffixText: 'ml',
+            errorText: _error,
+          ),
+          onChanged: (_) => setState(() => _error = null),
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            key: const ValueKey('bottle-size-save'),
+            onPressed: _save,
+            child: const Text('SAVE BOTTLE SIZE'),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _StringListDialog extends StatefulWidget {

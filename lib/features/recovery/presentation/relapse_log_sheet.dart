@@ -11,9 +11,13 @@ import '../../emergency/presentation/emergency_screen.dart';
 import '../application/recovery_controller.dart';
 import '../application/recovery_provider.dart';
 import '../domain/craving_entry.dart';
+import '../domain/dose_safety.dart';
+import '../domain/dose_units.dart';
 import '../domain/relapse_log_entry.dart';
+import 'dose_safety_cards.dart';
 import 'peak_hour_gate_dialog.dart';
 import 'relapse_auth_dialog.dart';
+import '../../cravings/presentation/craving_dialog.dart';
 
 Future<void> showRelapseLogSheet(
   BuildContext context, {
@@ -176,6 +180,45 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
         false;
   }
 
+  /// "Did you mean 250 ml?" Returns the unit to use, or null to go back
+  /// and edit.
+  Future<DoseUnit?> _confirmDoseUnit(
+    DoseSanityCheck check,
+    DoseUnit current, {
+    required bool keepable,
+  }) => showDialog<DoseUnit>(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) {
+      return AlertDialog(
+        key: const ValueKey('dose-sanity-dialog'),
+        backgroundColor: panelRaised,
+        title: const Text('CHECK THE UNIT'),
+        content: Text(check.message, style: const TextStyle(height: 1.45)),
+        actions: [
+          TextButton(
+            key: const ValueKey('dose-sanity-edit'),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('EDIT'),
+          ),
+          if (keepable)
+            TextButton(
+              key: const ValueKey('dose-sanity-keep'),
+              onPressed: () => Navigator.pop(dialogContext, current),
+              child: Text('KEEP ${current.label.toUpperCase()}'),
+            ),
+          if (check.suggestedUnit != null)
+            FilledButton(
+              key: const ValueKey('dose-sanity-switch'),
+              onPressed: () =>
+                  Navigator.pop(dialogContext, check.suggestedUnit),
+              child: Text('USE ${check.suggestedUnit!.label.toUpperCase()}'),
+            ),
+        ],
+      );
+    },
+  );
+
   Future<void> _save() async {
     if (_saving) return;
     FocusScope.of(context).unfocus();
@@ -190,6 +233,27 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       );
       return;
     }
+    final bottleMl = ref.read(recoveryProvider).bottleMl;
+    for (final entry in _entries) {
+      final amount = parseAmount(entry.amountController.text);
+      if (amount == null) continue;
+      final check = doseSanityCheck(amount, entry.unit, bottleMl: bottleMl);
+      if (check == null) continue;
+      bool keepable;
+      try {
+        DoseAmount.entered(amount, entry.unit, bottleMl: bottleMl);
+        keepable = true;
+      } on ArgumentError {
+        keepable = false;
+      }
+      final choice = await _confirmDoseUnit(
+        check,
+        entry.unit,
+        keepable: keepable,
+      );
+      if (!mounted || choice == null) return;
+      if (choice != entry.unit) setState(() => entry.unit = choice);
+    }
     if (!await _confirmReset() || !mounted) return;
 
     setState(() {
@@ -199,7 +263,9 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
     AppFeedback.warning();
     try {
       final recovery = ref.read(recoveryProvider);
-      final entries = _entries.map((entry) => entry.toDomain()).toList();
+      final entries = _entries
+          .map((entry) => entry.toDomain(bottleMl: recovery.bottleMl))
+          .toList();
       var result = await recovery.recordRelapse(
         entries: entries,
         operationId: _operationId,
@@ -268,6 +334,13 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final recovery = ref.watch(recoveryProvider);
+    final warnings = loggingSafetyWarnings(
+      draft: [for (final e in _entries) (type: e.type, at: e.occurredAt)],
+      events: recovery.events,
+      cleanStreakDays: recovery.streak,
+      now: DateTime.now(),
+    );
     return PopScope(
       canPop: !_saving,
       child: FractionallySizedBox(
@@ -334,6 +407,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                             child: _RelapseEntryCard(
                               index: index,
                               entry: _entries[index],
+                              bottleMl: recovery.bottleMl,
                               saving: _saving,
                               canRemove: _entries.length > 1,
                               onDate: () => _pickDate(index),
@@ -342,6 +416,15 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                               onChanged: () => setState(() => _error = null),
                             ),
                           ),
+                        if (warnings.isNotEmpty) ...[
+                          for (final warning in warnings)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: DoseWarningCard(warning: warning),
+                            ),
+                          const OverdoseSignsCard(),
+                          const SizedBox(height: 8),
+                        ],
                         TextButton.icon(
                           onPressed: _saving || _entries.length >= 50
                               ? null
@@ -481,6 +564,7 @@ class _RelapseEntryCard extends StatelessWidget {
   const _RelapseEntryCard({
     required this.index,
     required this.entry,
+    required this.bottleMl,
     required this.saving,
     required this.canRemove,
     required this.onDate,
@@ -491,6 +575,7 @@ class _RelapseEntryCard extends StatelessWidget {
 
   final int index;
   final _RelapseDraft entry;
+  final double bottleMl;
   final bool saving;
   final bool canRemove;
   final VoidCallback onDate;
@@ -620,15 +705,57 @@ class _RelapseEntryCard extends StatelessWidget {
             onChanged: (_) => onChanged(),
           ),
           const SizedBox(height: 8),
+          _DoseFields(
+            index: index,
+            entry: entry,
+            bottleMl: bottleMl,
+            saving: saving,
+            onChanged: onChanged,
+          ),
           TextFormField(
             key: ValueKey('relapse-quantity-$index'),
             controller: entry.quantityController,
             enabled: !saving,
             maxLength: 120,
             decoration: const InputDecoration(
-              labelText: 'QUANTITY (OPTIONAL)',
+              labelText: 'QUANTITY NOTE (OPTIONAL)',
               hintText: 'Example: half a cup',
+              helperText:
+                  'Exact text like "250ml" or "2 bottles" also counts as the amount.',
+              helperMaxLines: 2,
             ),
+          ),
+          const SizedBox(height: 4),
+          TextFormField(
+            key: ValueKey('relapse-cost-$index'),
+            controller: entry.costController,
+            enabled: !saving,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'WHAT IT COST (OPTIONAL)',
+              prefixText: '₹ ',
+              hintText: 'Example: 450',
+              helperText: 'Real cost replaces the daily-spend estimate.',
+            ),
+            validator: (value) {
+              final text = value?.trim() ?? '';
+              if (text.isEmpty) return null;
+              final cost = parseMoney(text);
+              if (cost == null) return 'Enter an amount like 450 or 1,200.';
+              if (cost > maxRelapseCost) return 'That amount is too large.';
+              return null;
+            },
+            onChanged: (_) => onChanged(),
+          ),
+          const SizedBox(height: 12),
+          StressPicker(
+            keyPrefix: 'relapse-stress-$index',
+            value: entry.stress,
+            enabled: !saving,
+            onChanged: (value) {
+              entry.stress = value;
+              onChanged();
+            },
           ),
           SwitchListTile(
             key: ValueKey('relapse-attempted-sos-$index'),
@@ -657,22 +784,124 @@ class _RelapseDraft {
   DateTime occurredAt = DateTime.now();
   RelapseType type = RelapseType.fullLean;
   bool attemptedSos = false;
+  DoseUnit unit = DoseUnit.bottle;
+  int? stress;
   final contextTags = <String>{};
   final noteController = TextEditingController();
   final quantityController = TextEditingController();
+  final amountController = TextEditingController();
+  final costController = TextEditingController();
 
-  RelapseLogEntry toDomain() => RelapseLogEntry(
-    occurredAt: occurredAt,
-    type: type,
-    note: noteController.text,
-    attemptedSos: attemptedSos,
-    quantity: quantityController.text,
-    contextTags: contextTags.toList(growable: false),
-  );
+  /// The amount field wins; otherwise an exact free-text quantity is used.
+  RelapseLogEntry toDomain({required double bottleMl}) {
+    final amount = parseAmount(amountController.text);
+    final typed = amount == null
+        ? null
+        : DoseAmount.entered(amount, unit, bottleMl: bottleMl);
+    final parsed = typed == null
+        ? parseQuantityText(quantityController.text, bottleMl: bottleMl)
+        : null;
+    final costText = costController.text.trim();
+    return RelapseLogEntry(
+      occurredAt: occurredAt,
+      type: type,
+      note: noteController.text,
+      attemptedSos: attemptedSos,
+      quantity: quantityController.text,
+      contextTags: contextTags.toList(growable: false),
+      dose: typed ?? parsed,
+      doseParsedFromText: parsed != null,
+      stress: stress,
+      cost: costText.isEmpty ? null : parseMoney(costText),
+    );
+  }
 
   void dispose() {
     noteController.dispose();
     quantityController.dispose();
+    amountController.dispose();
+    costController.dispose();
+  }
+}
+
+/// Amount + unit, with the live ml conversion so the user sees exactly
+/// what will be stored.
+class _DoseFields extends StatelessWidget {
+  const _DoseFields({
+    required this.index,
+    required this.entry,
+    required this.bottleMl,
+    required this.saving,
+    required this.onChanged,
+  });
+
+  final int index;
+  final _RelapseDraft entry;
+  final double bottleMl;
+  final bool saving;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final amount = parseAmount(entry.amountController.text);
+    String? preview;
+    if (amount != null) {
+      final ml = toMl(amount, entry.unit, bottleMl: bottleMl);
+      preview = ml == null
+          ? '${formatAmount(amount)} ${entry.unit.labelFor(amount)} // counted separately from ml'
+          : entry.unit == DoseUnit.bottle
+          ? '= ${formatMl(ml)} at ${formatMl(bottleMl)} per bottle'
+          : '= ${formatMl(ml)}';
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          key: ValueKey('relapse-amount-$index'),
+          controller: entry.amountController,
+          enabled: !saving,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            labelText: 'AMOUNT (OPTIONAL)',
+            hintText: 'Example: 2.5, 2,5 or 1/2',
+            helperText: preview,
+          ),
+          validator: (value) {
+            final text = value?.trim() ?? '';
+            if (text.isEmpty) return null;
+            final parsed = parseAmount(text);
+            if (parsed == null) {
+              return 'Enter a number above 0, like 2.5, 2,5, 1/2 or half.';
+            }
+            // Implausible sizes are caught by the unit check on save, which
+            // can offer the likely unit ("Did you mean 250 ml?").
+            return null;
+          },
+          onChanged: (_) => onChanged(),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final unit in DoseUnit.values)
+              ChoiceChip(
+                key: ValueKey('relapse-unit-$index-${unit.name}'),
+                label: Text(unit.label, style: const TextStyle(fontSize: 11)),
+                selected: entry.unit == unit,
+                selectedColor: red.withValues(alpha: .25),
+                onSelected: saving
+                    ? null
+                    : (_) {
+                        entry.unit = unit;
+                        onChanged();
+                      },
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
   }
 }
 

@@ -9,11 +9,11 @@ import 'package:no_lean/main.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
 import 'package:no_lean/features/recovery/domain/risk_window.dart';
-import 'package:no_lean/features/recovery/presentation/relapse_log_sheet.dart';
 import 'package:no_lean/features/recovery/services/widget_action_service.dart';
 import 'package:flutter/services.dart';
 import 'support/recovery_fakes.dart';
 import 'package:no_lean/features/recovery/application/recovery_provider.dart';
+import 'support/relapse_form.dart';
 
 void main() {
   setUp(() {
@@ -94,14 +94,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('LOG MORE EVENTS'));
       await tester.pumpAndSettle();
-      await tester.drag(
-        find.descendant(
-          of: find.byType(RelapseLogSheet),
-          matching: find.byType(ListView),
-        ),
-        const Offset(0, -700),
-      );
-      await tester.pumpAndSettle();
+      await revealInRelapseSheet(tester, find.text('ADD ANOTHER EVENT'));
       await tester.tap(find.text('ADD ANOTHER EVENT'));
       await tester.pump();
       expect(find.byKey(const ValueKey('relapse-date-1')), findsOneWidget);
@@ -226,7 +219,7 @@ void main() {
 Future<void> _completeRelapseEntries(WidgetTester tester, int count) async {
   for (var index = 0; index < count; index++) {
     final note = find.byKey(ValueKey('relapse-note-$index'));
-    await tester.ensureVisible(note);
+    await revealInRelapseSheet(tester, note);
     await tester.enterText(note, 'Recorded context for relapse ${index + 1}.');
   }
   await tester.pump();

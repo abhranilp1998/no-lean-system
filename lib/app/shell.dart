@@ -312,6 +312,13 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       _openCodeInstead('notification');
     } else if (actionId == 'action_safe') {
       unawaited(_checkIn());
+    } else if (actionId == 'action_recheck') {
+      final craving = ref.read(recoveryProvider).pendingCravingCheck;
+      if (craving != null) {
+        unawaited(showCravingRecheckDialog(context, ref, craving));
+      } else {
+        AppNotice.show(context, 'NO CRAVING WAITING FOR A RECHECK.');
+      }
     }
   }
 

@@ -31,6 +31,7 @@ class RelapseLogEntry {
     this.quantity,
     this.contextTags = const [],
     this.dose,
+    this.doseParsedFromText = false,
     this.stress,
     this.cost,
   });
@@ -47,6 +48,10 @@ class RelapseLogEntry {
   /// Structured dose, when the user entered one. Free-text [quantity] is
   /// kept alongside it.
   final DoseAmount? dose;
+
+  /// True when [dose] was read from the free-text [quantity] rather than
+  /// entered in the amount field.
+  final bool doseParsedFromText;
 
   /// Optional 1-5 stress rating.
   final int? stress;
@@ -107,5 +112,6 @@ class RelapseLogEntry {
     'stress': ?stress,
     'cost': ?cost,
     ...?dose?.toMetadata(),
+    if (dose != null && doseParsedFromText) 'amountSource': 'parsed',
   };
 }

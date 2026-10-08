@@ -16,6 +16,7 @@ import 'settings_dialogs.dart';
 import 'trusted_contact_dialog.dart';
 import 'widgets/settings_controls.dart';
 import '../../zones/presentation/zones_screen.dart';
+import '../../recovery/domain/dose_units.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -59,6 +60,15 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: '${money(recovery.dailySpend)} per day',
               color: toxic,
               onTap: () => showSpendDialog(context, ref),
+            ),
+            SettingAction(
+              key: const ValueKey('settings-bottle-size'),
+              icon: Icons.local_drink_outlined,
+              title: 'Bottle size',
+              subtitle:
+                  '${formatMl(recovery.bottleMl)} per bottle // new entries only',
+              color: magenta,
+              onTap: () => showBottleSizeDialog(context, ref),
             ),
             SettingAction(
               icon: Icons.ios_share,

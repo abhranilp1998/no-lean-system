@@ -137,6 +137,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           if (recovery.welcomeBackSince != null ||
               recovery.relapseCooldownUntil != null)
             const SizedBox(height: 14),
+          const CravingRecheckCard(),
           GlowButton(
             label: 'I WILL NOT BUY LEAN TODAY',
             icon: Icons.lock_outline,
