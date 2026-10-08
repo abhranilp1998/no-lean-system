@@ -105,6 +105,12 @@ class EventTile extends ConsumerWidget {
         return ('MILESTONE', Icons.emoji_events, Colors.amber);
       case RecoveryEventType.settingsChange:
         return ('SETTING CHANGED', Icons.tune, Colors.white54);
+      case RecoveryEventType.zoneEntry:
+        return (
+          'ZONE ENTERED // ${event.metadata['zoneName']}',
+          Icons.place_outlined,
+          red,
+        );
       case RecoveryEventType.codeSession:
         return (
           event.metadata['completed'] == true
@@ -329,6 +335,7 @@ class _MetadataView extends StatelessWidget {
               'date',
               'clean',
               'taskId',
+              'zoneId',
               'plannedSeconds',
             }.contains(e.key),
           )

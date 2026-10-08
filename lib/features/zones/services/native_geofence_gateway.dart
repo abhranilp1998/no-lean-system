@@ -9,6 +9,7 @@ import '../../recovery/services/recovery_state_store.dart';
 import '../domain/background_zone_alert.dart';
 import '../domain/danger_zone.dart';
 import 'geofence_gateway.dart';
+import 'zone_entry_inbox.dart';
 
 /// OS geofencing via Android's GeofencingClient. No continuous GPS: the OS
 /// batches location from its own providers. Enter-only triggers and a relaxed
@@ -86,11 +87,22 @@ Future<void> zoneGeofenceTriggered(GeofenceCallbackParams params) async {
   } catch (_) {
     raw = null;
   }
-  final copy = backgroundZoneAlert(
+  final now = DateTime.now();
+  final ids = params.geofences.map((geofence) => geofence.id).toList();
+  final copy = backgroundZoneAlert(rawState: raw, geofenceIds: ids, now: now);
+  // Opt-in history: hand entries to the app instead of writing the state
+  // file from this isolate.
+  for (final entry in backgroundZoneEntries(
     rawState: raw,
-    geofenceIds: params.geofences.map((geofence) => geofence.id),
-    now: DateTime.now(),
-  );
+    geofenceIds: ids,
+    now: now,
+  )) {
+    try {
+      await FileZoneEntryInbox().append(entry);
+    } catch (_) {
+      /* The alert still matters more than the log. */
+    }
+  }
   if (copy == null) return;
   await NotificationService.instance.showZoneAlert(
     title: copy.title,

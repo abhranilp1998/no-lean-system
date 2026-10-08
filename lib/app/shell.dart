@@ -27,6 +27,7 @@ import '../features/timeline/presentation/timeline_screen.dart';
 import '../features/zones/application/zone_monitor.dart';
 import '../features/zones/domain/danger_zone.dart';
 import '../features/zones/domain/zone_alert_copy.dart';
+import '../features/zones/domain/zone_entry.dart';
 import '../features/zones/presentation/zone_alert_screen.dart';
 import '../features/zones/services/location_service.dart';
 
@@ -75,7 +76,10 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(
-        ref.read(recoveryProvider).markOpened().whenComplete(_syncMilestones),
+        ref.read(recoveryProvider).markOpened().whenComplete(() {
+          unawaited(_syncMilestones());
+          unawaited(_importZoneInbox());
+        }),
       );
       unawaited(WidgetActionService.instance.initialize());
       unawaited(
@@ -103,6 +107,11 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     _zoneAlertOpen = true;
     try {
       final recovery = ref.read(recoveryProvider);
+      unawaited(
+        recovery
+            .recordZoneEntry(ZoneEntry.of(zone, DateTime.now(), 'app'))
+            .catchError((Object _) => false),
+      );
       AppFeedback.tap(strength: AppFeedbackStrength.strong);
       final choice = await ZoneAlertScreen.show(
         context,
@@ -149,6 +158,8 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       if (mounted) setState(() {});
       unawaited(ref.read(recoveryProvider).markOpened());
       unawaited(WidgetActionService.instance.initialize());
+      unawaited(_importZoneInbox());
+      unawaited(_syncMilestones());
     }
   }
 
@@ -160,6 +171,15 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       riskWindowWallArmed: recovery.riskWindowWallArmed,
       inRiskWindow: recovery.isRiskWindow,
     );
+  }
+
+  Future<void> _importZoneInbox() async {
+    if (!mounted) return;
+    try {
+      await ref.read(recoveryProvider).importZoneInbox();
+    } catch (_) {
+      /* Entries stay in the inbox until the next resume. */
+    }
   }
 
   Future<void> _syncMilestones() async {

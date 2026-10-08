@@ -22,6 +22,7 @@ const eventsCsvColumns = [
   'setting',
   'note',
   'details',
+  'zone',
 ];
 
 /// Metadata keys that have their own column; everything else goes to
@@ -42,6 +43,7 @@ const _mappedKeys = {
   'setting',
   'field',
   'note',
+  'zoneName',
 };
 
 /// Builds an RFC 4180 CSV of every event, oldest first, with CRLF line
@@ -94,6 +96,7 @@ List<String> eventCsvRow(RecoveryEvent event) {
     text(m['setting'] ?? m['field']),
     text(m['note']),
     extra.isEmpty ? '' : text(jsonEncode(extra)),
+    text(m['zoneName']),
   ];
 }
 

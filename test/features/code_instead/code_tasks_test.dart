@@ -127,18 +127,28 @@ void main() {
     }
   });
 
-  test('backup format 5 carries code sessions; newer formats are refused', () {
-    final service = BackupService();
-    final event = session('word-count', day);
-    final payload = service.buildBackupPayload([event], preferences: const {});
-    expect(payload['version'], 5);
-    final preview = service.validateBackupJson(jsonEncode(payload));
-    expect(preview.events.single.type, RecoveryEventType.codeSession);
-    expect(preview.events.single.metadata['taskId'], 'word-count');
-    expect(
-      () =>
-          service.validateBackupJson(jsonEncode({'version': 6, 'events': []})),
-      throwsFormatException,
-    );
-  });
+  test(
+    'backups since format 5 carry code sessions; newer formats are refused',
+    () {
+      final service = BackupService();
+      final event = session('word-count', day);
+      final payload = service.buildBackupPayload([
+        event,
+      ], preferences: const {});
+      expect(payload['version'], BackupService.currentBackupVersion);
+      expect(payload['version'], greaterThanOrEqualTo(5));
+      final preview = service.validateBackupJson(jsonEncode(payload));
+      expect(preview.events.single.type, RecoveryEventType.codeSession);
+      expect(preview.events.single.metadata['taskId'], 'word-count');
+      expect(
+        () => service.validateBackupJson(
+          jsonEncode({
+            'version': BackupService.currentBackupVersion + 1,
+            'events': [],
+          }),
+        ),
+        throwsFormatException,
+      );
+    },
+  );
 }

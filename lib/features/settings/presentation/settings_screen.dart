@@ -270,6 +270,31 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
             SettingToggle(
+              key: const ValueKey('settings-zone-history'),
+              title: 'Zone visit history',
+              subtitle: recovery.zoneHistory
+                  ? 'Logs zone name + time on entry // never coordinates'
+                  : 'Off // zone entries alert but are not recorded',
+              value: recovery.zoneHistory,
+              color: red,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).setZoneHistory(value),
+              ),
+            ),
+            if (recovery.zoneEntryCount > 0)
+              SettingAction(
+                key: const ValueKey('settings-clear-zone-history'),
+                icon: Icons.delete_sweep_outlined,
+                title: 'Clear zone history',
+                subtitle:
+                    '${recovery.zoneEntryCount} recorded '
+                    '${recovery.zoneEntryCount == 1 ? 'entry' : 'entries'} // '
+                    'removed from this device',
+                color: red,
+                onTap: () => confirmClearZoneHistory(context, ref),
+              ),
+            SettingToggle(
               key: const ValueKey('settings-widget-privacy'),
               title: 'Private home widget',
               subtitle: recovery.widgetPrivacy

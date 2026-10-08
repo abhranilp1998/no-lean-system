@@ -6,6 +6,7 @@ import 'package:no_lean/core/theme/app_theme.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/application/recovery_provider.dart';
 import 'package:no_lean/features/settings/presentation/settings_screen.dart';
+import 'package:no_lean/features/zones/domain/zone_entry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../support/recovery_fakes.dart';
@@ -97,5 +98,46 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(recoveryProvider).widgetPrivacy, isTrue);
     expect(find.textContaining('no counter, streak'), findsOneWidget);
+  });
+
+  testWidgets('zone history: opt in, then clear with confirmation', (
+    tester,
+  ) async {
+    final container = await pumpSettings(tester);
+    final recovery = container.read(recoveryProvider);
+    final toggle = find.byKey(const ValueKey('settings-zone-history'));
+    await tester.scrollUntilVisible(toggle, 300);
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('settings-clear-zone-history')),
+      findsNothing,
+    );
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(recovery.zoneHistory, isTrue);
+
+    final zone = await recovery.addZone(
+      name: 'Old bar',
+      latitude: 22.57,
+      longitude: 88.36,
+    );
+    await recovery.recordZoneEntry(
+      ZoneEntry.of(zone, DateTime(2026, 10, 9, 21), 'app'),
+    );
+    await tester.pumpAndSettle();
+    final clear = find.byKey(const ValueKey('settings-clear-zone-history'));
+    await tester.ensureVisible(clear);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 recorded entry'), findsOneWidget);
+    await tester.tap(clear);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('confirm-clear-zone-history')));
+    await tester.pumpAndSettle();
+    expect(recovery.zoneEntryCount, 0);
+    expect(
+      find.byKey(const ValueKey('settings-clear-zone-history')),
+      findsNothing,
+    );
   });
 }

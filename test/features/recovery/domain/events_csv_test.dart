@@ -133,6 +133,7 @@ void main() {
     Map<String, dynamic> metaFor(RecoveryEventType type) => switch (type) {
       RecoveryEventType.daySummary => {'date': '2026-10-01', 'clean': true},
       RecoveryEventType.craving => {'intensity': 5, 'trigger': 'Boredom'},
+      RecoveryEventType.zoneEntry => {'zoneId': 'z1', 'zoneName': 'Bar'},
       RecoveryEventType.codeSession => {
         'taskId': 'word-count',
         'plannedSeconds': 600,
@@ -156,6 +157,9 @@ void main() {
     );
     final summary = rows.firstWhere((r) => r[1] == 'daySummary');
     expect(summary[3], '2026-10-01');
-    expect(summary.last, '{"clean":true}');
+    expect(summary[eventsCsvColumns.indexOf('details')], '{"clean":true}');
+    final zone = rows.firstWhere((r) => r[1] == 'zoneEntry');
+    expect(zone.last, 'Bar');
+    expect(zone[eventsCsvColumns.indexOf('details')], '{"zoneId":"z1"}');
   });
 }

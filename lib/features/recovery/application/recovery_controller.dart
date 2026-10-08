@@ -24,7 +24,9 @@ import '../services/home_widget_service.dart';
 import '../services/notification_service.dart';
 import '../services/relapse_lock_service.dart';
 import '../../zones/domain/danger_zone.dart';
+import '../../zones/domain/zone_entry.dart';
 import '../../zones/services/geofence_gateway.dart';
+import '../../zones/services/zone_entry_inbox.dart';
 
 const defaultReasons = <String>[
   'I am done financing a habit that steals my evenings.',
@@ -73,16 +75,21 @@ class RecoveryController extends ChangeNotifier {
     RecoveryStateStore? store,
     DateTime Function()? now,
     GeofenceGateway? geofences,
-  }) : _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
+    ZoneEntryInbox? zoneInbox,
+  }) : _zoneInbox = zoneInbox ?? const NoopZoneEntryInbox(),
+       _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
        _store = store ?? PreferencesRecoveryStateStore(),
        _now = now ?? DateTime.now,
        _geofences = geofences ?? const NoopGeofenceGateway();
 
   /// v8 adds `riskWindowLock` and `appLockPending`; v9 adds `zones`,
   /// `zoneMonitoring` and `backgroundGeofencing`; v10 adds the privacy and
-  /// notification preferences (`streetTiles`, ...). Older states need no
+  /// notification preferences (`streetTiles`, ...); v11 adds the opt-in
+  /// `zoneHistory` flag and `zoneEntry` events. Older states need no
   /// transformation: missing keys take the safe defaults below.
-  static const stateVersion = 10;
+  static const stateVersion = 11;
+
+  final ZoneEntryInbox _zoneInbox;
 
   final RelapseLockGateway _relapseLock;
   final RecoveryStateStore _store;
@@ -149,6 +156,9 @@ class RecoveryController extends ChangeNotifier {
 
   /// Online OSM street tiles on the zone map. Off = grid only, no requests.
   bool streetTiles = true;
+
+  /// Opt-in zone visit log (name + time only). Default off for privacy.
+  bool zoneHistory = false;
 
   /// Highest milestone reached since the UI last celebrated. Not persisted:
   /// the milestone events themselves are the record.
@@ -420,6 +430,10 @@ class RecoveryController extends ChangeNotifier {
         : appLockPending;
     zoneMonitoring = flag('zoneMonitoring', zoneMonitoring);
     streetTiles = flag('streetTiles', streetTiles);
+    // Opt-in data collection: only an explicit true turns it on.
+    if (map.containsKey('zoneHistory')) {
+      zoneHistory = map['zoneHistory'] == true;
+    }
     // Privacy flag: once present, anything but an explicit false stays private.
     if (map.containsKey('widgetPrivacy')) {
       widgetPrivacy = map['widgetPrivacy'] != false;
@@ -535,6 +549,7 @@ class RecoveryController extends ChangeNotifier {
     'zones': zones.map((zone) => zone.toJson()).toList(),
     'zoneMonitoring': zoneMonitoring,
     'streetTiles': streetTiles,
+    'zoneHistory': zoneHistory,
     'widgetPrivacy': widgetPrivacy,
     ...notificationPrefs.toJson(),
     'backgroundGeofencing': backgroundGeofencing,
@@ -801,6 +816,7 @@ class RecoveryController extends ChangeNotifier {
           ..remove('zones')
           ..remove('zoneMonitoring')
           ..remove('streetTiles')
+          ..remove('zoneHistory')
           ..remove('widgetPrivacy')
           ..remove('quietHoursEnabled')
           ..remove('quietHours')
@@ -1131,6 +1147,73 @@ class RecoveryController extends ChangeNotifier {
 
   Future<void> setBackgroundGeofencing(bool enabled) => _transaction(() async {
     backgroundGeofencing = enabled;
+  });
+
+  /// Opt-in zone visit log; a privacy choice, so never behind auth.
+  Future<void> setZoneHistory(bool enabled) => _transaction(() async {
+    zoneHistory = enabled;
+  });
+
+  int get zoneEntryCount =>
+      events.where((e) => e.type == RecoveryEventType.zoneEntry).length;
+
+  bool _isDuplicateEntry(ZoneEntry entry) => events.any(
+    (e) =>
+        e.type == RecoveryEventType.zoneEntry &&
+        e.metadata['zoneId'] == entry.zoneId &&
+        e.timestamp.difference(entry.at).abs() < zoneEntryDedupWindow,
+  );
+
+  /// Records a zone entry when zone history is on. Returns whether it was
+  /// recorded (off, or a duplicate of a recent entry, records nothing).
+  Future<bool> recordZoneEntry(ZoneEntry entry) => _transaction(() async {
+    if (!zoneHistory || _isDuplicateEntry(entry)) return false;
+    events.add(
+      RecoveryEvent.create(
+        type: RecoveryEventType.zoneEntry,
+        timestamp: entry.at,
+        metadata: entry.metadata,
+      ),
+    );
+    _sortAndRecompute();
+    return true;
+  });
+
+  /// Imports entries the background geofence left in the inbox. With zone
+  /// history off they are discarded, never stored.
+  Future<int> importZoneInbox() async {
+    if (!isLoaded) return 0;
+    final pending = await _zoneInbox.drain();
+    var added = 0;
+    if (pending.isNotEmpty) {
+      added = await _transaction(() async {
+        if (!zoneHistory) return 0;
+        var count = 0;
+        for (final entry in pending) {
+          if (_isDuplicateEntry(entry)) continue;
+          events.add(
+            RecoveryEvent.create(
+              type: RecoveryEventType.zoneEntry,
+              timestamp: entry.at,
+              metadata: entry.metadata,
+            ),
+          );
+          count++;
+        }
+        if (count > 0) _sortAndRecompute();
+        return count;
+      });
+    }
+    await _zoneInbox.acknowledge();
+    return added;
+  }
+
+  /// Deletes every recorded zone entry. Privacy control: no auth.
+  Future<int> clearZoneHistory() => _transaction(() async {
+    final before = events.length;
+    events.removeWhere((e) => e.type == RecoveryEventType.zoneEntry);
+    _sortAndRecompute();
+    return before - events.length;
   });
 
   /// Quiet hours mute non-critical notifications only; risk-window and

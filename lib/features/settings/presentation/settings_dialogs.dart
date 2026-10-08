@@ -501,6 +501,61 @@ Future<void> showQuietHoursDialog(BuildContext context, WidgetRef ref) async {
   }
 }
 
+Future<void> confirmClearZoneHistory(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final count = ref.read(recoveryProvider).zoneEntryCount;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AppDialog(
+      title: 'CLEAR ZONE HISTORY',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Delete $count zone ${count == 1 ? 'entry' : 'entries'} from '
+            'your timeline? Zones, alerts and the rest of your history stay. '
+            'A JSON backup made earlier still contains them.',
+            style: const TextStyle(color: muted, fontSize: 12, height: 1.45),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('CANCEL'),
+              ),
+              FilledButton(
+                key: const ValueKey('confirm-clear-zone-history'),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: FilledButton.styleFrom(backgroundColor: red),
+                child: const Text('CLEAR'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  if (!await saveAction(
+    context,
+    () => ref.read(recoveryProvider).clearZoneHistory(),
+  )) {
+    return;
+  }
+  if (context.mounted) {
+    AppNotice.show(
+      context,
+      'ZONE HISTORY CLEARED // $count REMOVED',
+      type: AppNoticeType.success,
+    );
+  }
+}
+
 Future<void> showFeedbackDialog(BuildContext context, WidgetRef ref) async {
   final recovery = ref.read(recoveryProvider);
   var soundEnabled = recovery.soundscape;

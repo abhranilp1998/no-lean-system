@@ -14,7 +14,20 @@ enum RecoveryEventType {
   milestone, // Recorded by RecoveryController.syncMilestones when the streak reaches one — metadata: {days, label, source: 'auto'}
   settingsChange, // Settings mutation — metadata: {field, from, to}
   codeSession, // Code Instead block — metadata: {taskId, task, plannedSeconds, durationSeconds, completed, source}
+  zoneEntry, // Opt-in danger-zone visit — metadata: {zoneId, zoneName, source}. Never coordinates.
 }
+
+/// Location keys that must never be stored on a zone entry.
+const _locationKeys = {
+  'latitude',
+  'longitude',
+  'lat',
+  'lng',
+  'lon',
+  'accuracy',
+  'accuracyMeters',
+  'radiusMeters',
+};
 
 /// An immutable append-only event representing state changes in the recovery journey.
 class RecoveryEvent {
@@ -246,6 +259,18 @@ class RecoveryEvent {
         result['taskId'] = taskId.trim();
         result['plannedSeconds'] = planned.round();
         result['durationSeconds'] = duration.round();
+      case RecoveryEventType.zoneEntry:
+        final zoneId = result['zoneId'];
+        final zoneName = result['zoneName'];
+        if (zoneId is! String || zoneId.trim().isEmpty) {
+          throw const FormatException('Zone entry needs a zone ID.');
+        }
+        if (zoneName is! String || zoneName.trim().isEmpty) {
+          throw const FormatException('Zone entry needs a zone name.');
+        }
+        // Privacy invariant: a zone entry is a name and a time, nothing more.
+        result.removeWhere((key, _) => _locationKeys.contains(key));
+        result['zoneName'] = zoneName.trim();
       case RecoveryEventType.recoveryStart:
       case RecoveryEventType.pledge:
       case RecoveryEventType.sosStart:

@@ -37,12 +37,12 @@ void main() {
   });
 
   test(
-    'v9 migrates to v10 with street tiles on and the v9 copy kept',
+    'v9 migrates to the current version with street tiles on and the v9 copy kept',
     () async {
       final (controller, store) = await loaded(stored: v9State());
       expect(controller.streetTiles, isTrue);
       final saved = jsonDecode(store.value!) as Map;
-      expect(saved['stateVersion'], 10);
+      expect(saved['stateVersion'], RecoveryController.stateVersion);
       expect(saved['streetTiles'], isTrue);
       expect(store.copies.single, contains('"stateVersion":9'));
     },
@@ -81,7 +81,9 @@ void main() {
   });
 
   test('states from a newer app version are refused unchanged', () async {
-    final newer = v9State({'stateVersion': 11});
+    final newer = v9State({
+      'stateVersion': RecoveryController.stateVersion + 1,
+    });
     final (controller, store) = await loaded(stored: newer);
     expect(controller.loadStatus, RecoveryLoadStatus.incompatible);
     expect(store.value, newer);
