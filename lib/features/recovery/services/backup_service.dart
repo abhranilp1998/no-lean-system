@@ -141,9 +141,14 @@ class BackupService {
   }
 
   Future<BackupPreview?> pickAndValidateBackup() async {
+    // Android's picker filters custom extensions by MIME type. Backups that
+    // went through Drive, WhatsApp, Telegram or Downloads often come back as
+    // application/octet-stream or text/plain and show up greyed out, so on
+    // mobile we allow any file and rely on validateBackupJson instead.
+    final isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
     final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['json'],
+      type: isMobile ? FileType.any : FileType.custom,
+      allowedExtensions: isMobile ? null : const ['json'],
       allowMultiple: false,
       withData: kIsWeb,
     );
@@ -160,7 +165,7 @@ class BackupService {
       if (bytes == null) {
         throw const FormatException('Cannot read backup data.');
       }
-      content = utf8.decode(bytes);
+      content = utf8.decode(bytes, allowMalformed: false);
     } else {
       content = await File(file.path!).readAsString();
     }
