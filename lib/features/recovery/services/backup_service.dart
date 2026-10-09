@@ -114,19 +114,23 @@ class BackupService {
     required String shareText,
   }) async {
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/$fileName');
+      // Save straight to a location the user picks (Downloads, Drive, ...)
+      // with the system "Save to" screen. The old share-sheet flow deleted
+      // the temp file as soon as the sheet closed, so slow targets saved
+      // nothing ("save failed") or only the share text.
+      final bytes = Uint8List.fromList(utf8.encode(content));
       try {
-        await file.writeAsString(content, flush: true);
-        await SharePlus.instance.share(
-          ShareParams(
-            files: [XFile(file.path, mimeType: mimeType)],
-            text: shareText,
-          ),
+        await FilePicker.saveFile(
+          dialogTitle: 'Save export',
+          fileName: fileName,
+          type: FileType.any,
+          bytes: bytes,
         );
-      } finally {
-        if (await file.exists()) await file.delete();
+        return;
+      } on UnsupportedError {
+        // Fall through to sharing on platforms without a save screen.
       }
+      await _shareFile(content, fileName: fileName, mimeType: mimeType);
     } else {
       final path = await FilePicker.saveFile(
         dialogTitle: 'Save export',
@@ -139,6 +143,41 @@ class BackupService {
       }
     }
   }
+
+  /// Shares a copy without deleting it right away: the receiving app may
+  /// read it after the share sheet closes. Older shared exports are cleaned
+  /// up on the next share instead.
+  Future<void> _shareFile(
+    String content, {
+    required String fileName,
+    required String mimeType,
+  }) async {
+    final root = await getTemporaryDirectory();
+    final dir = Directory('${root.path}/exports');
+    if (await dir.exists()) {
+      final cutoff = DateTime.now().subtract(const Duration(hours: 1));
+      await for (final entity in dir.list()) {
+        if (entity is File && (await entity.lastModified()).isBefore(cutoff)) {
+          await entity.delete();
+        }
+      }
+    } else {
+      await dir.create(recursive: true);
+    }
+    final file = File('${dir.path}/$fileName');
+    await file.writeAsString(content, flush: true);
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(file.path, mimeType: mimeType)]),
+    );
+  }
+
+  /// Shares an export through the share sheet (for sending to a chat or
+  /// email instead of saving).
+  Future<void> shareBackupJson(String jsonString) => _shareFile(
+    jsonString,
+    fileName: 'nolean_backup_${_stamp()}.json',
+    mimeType: 'application/json',
+  );
 
   Future<BackupPreview?> pickAndValidateBackup() async {
     // Android's picker filters custom extensions by MIME type. Backups that
