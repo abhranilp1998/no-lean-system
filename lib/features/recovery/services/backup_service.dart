@@ -159,27 +159,82 @@ class BackupService {
       throw const FormatException('Backup exceeds the 5 MB safety limit.');
     }
 
-    final String content;
+    final List<int> bytes;
     if (kIsWeb || file.path == null) {
-      final bytes = file.bytes;
-      if (bytes == null) {
+      final data = file.bytes;
+      if (data == null) {
         throw const FormatException('Cannot read backup data.');
       }
-      content = utf8.decode(bytes, allowMalformed: false);
+      bytes = data;
     } else {
-      content = await File(file.path!).readAsString();
+      bytes = await File(file.path!).readAsBytes();
     }
-    return validateBackupJson(content);
+    return validateBackupJson(decodeBackupBytes(bytes));
+  }
+
+  /// Decodes backup bytes written by any app version or re-saved by another
+  /// app: UTF-8 with or without a BOM, or UTF-16 LE/BE with a BOM (some
+  /// Android editors save that way).
+  @visibleForTesting
+  static String decodeBackupBytes(List<int> bytes) {
+    if (bytes.length >= 2) {
+      final b0 = bytes[0], b1 = bytes[1];
+      final isLe = b0 == 0xFF && b1 == 0xFE;
+      final isBe = b0 == 0xFE && b1 == 0xFF;
+      if (isLe || isBe) {
+        final units = <int>[];
+        for (var i = 2; i + 1 < bytes.length; i += 2) {
+          units.add(
+            isLe
+                ? bytes[i] | (bytes[i + 1] << 8)
+                : (bytes[i] << 8) | bytes[i + 1],
+          );
+        }
+        return String.fromCharCodes(units);
+      }
+    }
+    try {
+      return utf8.decode(bytes);
+    } on FormatException {
+      return latin1.decode(bytes);
+    }
+  }
+
+  /// Strips things that commonly wrap an otherwise valid backup: a byte-order
+  /// mark, whitespace or NUL padding, or text a share target added before or
+  /// after the JSON object.
+  @visibleForTesting
+  static String normalizeBackupText(String raw) {
+    var text = raw.replaceAll('\uFEFF', '').replaceAll('\u0000', '').trim();
+    if (text.startsWith('{') && text.endsWith('}')) return text;
+    final start = text.indexOf('{');
+    final end = text.lastIndexOf('}');
+    if (start < 0 || end <= start) {
+      throw const FormatException(
+        'This file is not a NO LEAN backup. Pick the .json file from '
+        'Export backup.',
+      );
+    }
+    return text.substring(start, end + 1);
   }
 
   @visibleForTesting
-  BackupPreview validateBackupJson(String jsonString) {
+  BackupPreview validateBackupJson(String rawJson) {
+    final jsonString = normalizeBackupText(rawJson);
     if (utf8.encode(jsonString).length > maxBackupBytes) {
       throw const FormatException('Backup exceeds the 5 MB safety limit.');
     }
 
     try {
-      final decoded = jsonDecode(jsonString);
+      final Object? decoded;
+      try {
+        decoded = jsonDecode(jsonString);
+      } on FormatException {
+        throw const FormatException(
+          'This file is damaged or not a NO LEAN backup. Pick the .json file '
+          'from Export backup.',
+        );
+      }
       if (decoded is! Map) {
         throw const FormatException('Backup must be a JSON object.');
       }
