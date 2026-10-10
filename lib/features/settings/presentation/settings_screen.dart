@@ -195,6 +195,19 @@ class SettingsScreen extends ConsumerWidget {
                 context,
               ).push(MaterialPageRoute(builder: (_) => const ZonesScreen())),
             ),
+            SettingToggle(
+              key: const ValueKey('settings-position-notification'),
+              title: 'Position notification',
+              subtitle: recovery.positionNotification
+                  ? 'Quiet, always-on position status while the app is open // zone alerts unchanged'
+                  : 'Off // zone alerts still work as set',
+              value: recovery.positionNotification,
+              color: cyan,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).setPositionNotification(value),
+              ),
+            ),
             SettingAction(
               icon: Icons.hourglass_bottom,
               title: 'Relapse reset window',

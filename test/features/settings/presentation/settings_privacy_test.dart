@@ -140,4 +140,20 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets('position notification toggle is on by default and turns off', (
+    tester,
+  ) async {
+    final container = await pumpSettings(tester);
+    expect(container.read(recoveryProvider).positionNotification, isTrue);
+    final toggle = find.byKey(const ValueKey('settings-position-notification'));
+    await tester.scrollUntilVisible(toggle, 300);
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('always-on position status'), findsOneWidget);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(container.read(recoveryProvider).positionNotification, isFalse);
+    expect(find.textContaining('zone alerts still work'), findsOneWidget);
+  });
 }

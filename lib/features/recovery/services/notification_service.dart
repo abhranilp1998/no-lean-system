@@ -292,6 +292,72 @@ class NotificationService {
     }
   }
 
+  static const positionStatusId = 800;
+
+  /// Always-on position indicator while the app is open (see
+  /// `PositionStatusHost`). Deliberately separate from every alert:
+  /// - its own low-importance channel, silent, no heads-up, no vibration;
+  /// - never filtered by quiet hours or the zone de-duplication (it is not a
+  ///   [NotificationKind] at all), and it never replaces [zoneAlertId];
+  /// - `ongoing` so it is not cleared by "Clear all" (Android 14+ still lets
+  ///   the user swipe it away; the next refresh re-posts it);
+  /// - `timeoutAfter` removes it if the process dies without a lifecycle
+  ///   callback (e.g. swiped from recents), since the host refreshes it at
+  ///   least every 15 s while the app is open.
+  /// Uses the same monochrome small icon as every other notification, which
+  /// `res/raw/keep.xml` already keeps from the resource shrinker.
+  Future<void> showPositionStatus({
+    required String title,
+    required String body,
+  }) async {
+    try {
+      await _initialize(requestPermission: true);
+      await _plugin.show(
+        positionStatusId,
+        title,
+        body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'position_status_v1',
+            'Position status',
+            channelDescription:
+                'Quiet, always-on position indicator while NO LEAN is open',
+            importance: Importance.low,
+            priority: Priority.low,
+            ongoing: true,
+            autoCancel: false,
+            onlyAlertOnce: true,
+            silent: true,
+            playSound: false,
+            enableVibration: false,
+            showWhen: false,
+            timeoutAfter: positionStatusTimeout.inMilliseconds,
+            visibility: lockScreenVisibility,
+            category: AndroidNotificationCategory.status,
+            styleInformation: BigTextStyleInformation(
+              body,
+              contentTitle: title,
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      // The indicator is optional; it must never break location handling.
+    }
+  }
+
+  /// Safety net for an orphaned position notification; must stay well above
+  /// the host's 15 s refresh interval.
+  static const positionStatusTimeout = Duration(minutes: 2);
+
+  Future<void> cancelPositionStatus() async {
+    try {
+      await _plugin.cancel(positionStatusId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
   static const codeTimerId = 700;
 
   /// Non-critical: tells the user a Code Instead block ended while the app

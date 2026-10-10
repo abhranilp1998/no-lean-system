@@ -62,6 +62,9 @@ void main() {
       radiusMeters: 200,
     );
     await recovery.setZoneMonitoring(true);
+    // This test counts the zone monitor's own location stream; the
+    // always-on position notification has its own tests.
+    await recovery.setPositionNotification(false);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: const NoLeanApp()),

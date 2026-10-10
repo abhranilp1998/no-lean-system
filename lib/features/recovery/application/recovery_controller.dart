@@ -180,6 +180,12 @@ class RecoveryController extends ChangeNotifier {
   /// Online OSM street tiles on the zone map. Off = grid only, no requests.
   bool streetTiles = true;
 
+  /// Always-on "Position status" notification while the app is open.
+  /// Default on. Added without a state-version bump on purpose: a missing
+  /// key reads as the default and unknown keys survive in older builds via
+  /// `_extraState`, so states stay readable in both directions.
+  bool positionNotification = true;
+
   /// Opt-in zone visit log (name + time only). Default off for privacy.
   bool zoneHistory = false;
 
@@ -470,6 +476,7 @@ class RecoveryController extends ChangeNotifier {
         : appLockPending;
     zoneMonitoring = flag('zoneMonitoring', zoneMonitoring);
     streetTiles = flag('streetTiles', streetTiles);
+    positionNotification = flag('positionNotification', positionNotification);
     // Opt-in data collection: only an explicit true turns it on.
     if (map.containsKey('zoneHistory')) {
       zoneHistory = map['zoneHistory'] == true;
@@ -591,6 +598,7 @@ class RecoveryController extends ChangeNotifier {
     'zones': zones.map((zone) => zone.toJson()).toList(),
     'zoneMonitoring': zoneMonitoring,
     'streetTiles': streetTiles,
+    'positionNotification': positionNotification,
     'zoneHistory': zoneHistory,
     'widgetPrivacy': widgetPrivacy,
     ...notificationPrefs.toJson(),
@@ -858,6 +866,7 @@ class RecoveryController extends ChangeNotifier {
           ..remove('zones')
           ..remove('zoneMonitoring')
           ..remove('streetTiles')
+          ..remove('positionNotification')
           ..remove('zoneHistory')
           ..remove('widgetPrivacy')
           ..remove('quietHoursEnabled')
@@ -1359,6 +1368,10 @@ class RecoveryController extends ChangeNotifier {
   Future<void> setStreetTiles(bool enabled) => _transaction(() async {
     streetTiles = enabled;
   });
+
+  /// Always-on position notification; never needs authentication.
+  Future<void> setPositionNotification(bool enabled) =>
+      _transaction(() async => positionNotification = enabled);
 
   Future<void> _syncGeofences() async {
     try {

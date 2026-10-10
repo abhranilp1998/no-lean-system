@@ -80,6 +80,44 @@ void main() {
     expect(controller.streetTiles, isFalse);
   });
 
+  test('position notification defaults on for v12 states without the key, '
+      'keeps the state version and persists its toggle', () async {
+    final (controller, store) = await loaded(
+      stored: v9State({'stateVersion': 12}),
+    );
+    expect(controller.positionNotification, isTrue);
+    expect(RecoveryController.stateVersion, 12);
+
+    await controller.setPositionNotification(false);
+    final saved = jsonDecode(store.value!) as Map;
+    expect(saved['positionNotification'], isFalse);
+    expect(saved['stateVersion'], 12);
+
+    final reloaded = RecoveryController(
+      store: store,
+      relapseLock: FakeRelapseLock(),
+    );
+    await reloaded.load();
+    expect(reloaded.positionNotification, isFalse);
+  });
+
+  test('position notification: malformed falls back on, import never changes '
+      'it', () async {
+    final (malformed, _) = await loaded(
+      stored: v9State({'stateVersion': 12, 'positionNotification': 'nope'}),
+    );
+    expect(malformed.positionNotification, isTrue);
+
+    final (controller, _) = await loaded();
+    await controller.setPositionNotification(false);
+    await controller.mergeImportedEvents(
+      const [],
+      preferences: {'positionNotification': true},
+      restorePreferences: true,
+    );
+    expect(controller.positionNotification, isFalse);
+  });
+
   test('states from a newer app version are refused unchanged', () async {
     final newer = v9State({
       'stateVersion': RecoveryController.stateVersion + 1,

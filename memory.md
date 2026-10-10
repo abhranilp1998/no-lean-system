@@ -183,6 +183,17 @@ Read it before changing code.
   geofence both fire). The background isolate never writes the state file;
   it appends to `recovery/zone_entries.jsonl` and the app imports that inbox
   on open/resume (drain → commit → acknowledge; discarded if history is off).
+- Position notification (user decision, Oct 2026; default ON, toggle in
+  Settings > Protection, key `positionNotification`, no state-version bump:
+  missing key = on). `PositionStatusHost` wraps `Shell` in `NoLeanApp` and
+  posts id 800 on channel `position_status_v1` ("Position status", low
+  importance, silent, ongoing, `timeoutAfter` 2 min) while the app is
+  foreground; cancelled on pause/hide/detach. Shows rounded coordinates,
+  nearest zone + distance to edge, or `INSIDE <zone>`, or location off / no
+  permission; "hide sensitive" → `NO LEAN // position active` only. Throttle:
+  state change immediately, else ≤ every 15 s. It is an indicator only: it
+  never feeds or suppresses zone alerts, is not a `NotificationKind`, and
+  quiet hours never apply. Never requests location permission itself.
 - Zone alerts are firm and factual and always offer one-tap exit ("I'M
   LEAVING"/close); never block leaving the alert.
 - Insight patterns need ≥5 cravings+relapses and ≥3 repeats before being
