@@ -8,10 +8,17 @@ NO LEAN is an offline-first Android recovery tracker built around a direct inter
 - Daily pledge confirmation and evening clean/relapse check-in.
 - Craving log with intensity, trigger tags, notes, and a progress chart.
 - Full-screen SOS mode with a 60-second breathing/urge-surfing timer.
-- Four high-visibility reminders distributed through a configurable risk window.
+- Data-driven risk-window alerts with a pre-window warning, quiet hours and a hide-sensitive mode.
 - Calendar-style clean-day heat map and milestone tracker.
 - Offline recovery persistence plus encrypted secure storage for the relapse PIN.
-- JSON export through the Android share sheet.
+- JSON backup and CSV history export through the system Save screen (pick
+  Downloads, Drive, ...); import accepts any file and validates it, including
+  BOM/UTF-16 re-saves and every older backup format.
+- Danger zones on an offline map (optional OpenStreetMap tiles) with in-app and
+  opt-in background geofence alerts, plus an always-on position notification
+  while the app is open.
+- Dose logging with ml/L/bottle/drink/tablet units, cost and stress, safety
+  warnings with a 112 call card, and a 15-minute craving recheck.
 - Encrypted relapse lock with biometric-first authentication and PIN fallback.
 - Configurable risk windows with high-visibility scheduled interrupts.
 - Trigger, time-of-day, weekly, and SOS-completion recovery insights.

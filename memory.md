@@ -295,3 +295,21 @@ files are added to version control.
 Follow `docs/PR_REVIEW_SOP.md` and the PR template. Review the complete diff, fix
 blocking findings, and merge the verified head or close with reasons. Preserve
 useful features and local commits. Remove only merged feature branches.
+
+## Export / import contract (Oct 2026)
+
+- Export (JSON backup, CSV history, startup emergency export) goes through
+  `BackupService._shareText`: on Android/iOS `FilePicker.saveFile(bytes: ...)`
+  (Android `ACTION_CREATE_DOCUMENT`, no storage permission on any version).
+  Every export method returns `Future<bool>`: `false` = user cancelled the Save
+  screen, and callers then show NO notice (never a false "ready"). Errors show
+  an error notice. Tests inject `BackupService(saver: ...)`.
+- JSON backups are capped at 5 MB (same as import); the emergency export of
+  preserved copies passes `enforceSizeLimit: false` so it is never blocked.
+- `shareBackupJson` / `_shareFile` keep the shared temp copy (cleaned after
+  1 h on the next share) because targets may read it after the sheet closes.
+- Import picks any file on mobile, decodes UTF-8 (BOM ok) or UTF-16 LE/BE with
+  BOM, strips NUL/padding/share text, accepts backup formats 1–7 and raw state
+  v2–v12. `test/features/recovery/services/compat_matrix_test.dart` guards it.
+- Release builds use `android/app/proguard-rules.pro` (Gson rules for
+  scheduled notifications) and `res/raw/keep.xml` (notification icon).
