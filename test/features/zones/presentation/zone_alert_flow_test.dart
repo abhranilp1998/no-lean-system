@@ -27,7 +27,7 @@ void main() {
     latitude: 22.5726,
     longitude: 88.3639,
     accuracyMeters: 12,
-    at: DateTime(2026, 10, 8, 12),
+    at: DateTime.now(),
   );
 
   testWidgets('entering a zone in-app interrupts, and exit is one tap', (
@@ -79,7 +79,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(location.streamListens, 1);
 
-    location.controller.add(here);
+    // The initial current fix raises the alert without tapping Locate me.
+    expect(find.byKey(const ValueKey('zone-alert-screen')), findsOneWidget);
+    location.controller.add(here); // Duplicate stream fix must not stack it.
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('zone-alert-screen')), findsOneWidget);
     expect(find.text('DANGER ZONE // BAR'), findsOneWidget);
