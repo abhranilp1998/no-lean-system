@@ -335,7 +335,7 @@ class RecoveryController extends ChangeNotifier {
       }
       _restoreSettings(map);
       if (stored != null && version is int && version < 12) {
-        events = upgradeQuantityText(events, bottleMl: bottleMl);
+        events = upgradeQuantityText(events);
       }
       zones = DangerZone.decodeList(map['zones']);
       relapseCooldownUntil = DateTime.tryParse(

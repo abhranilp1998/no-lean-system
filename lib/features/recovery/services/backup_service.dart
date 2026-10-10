@@ -68,8 +68,8 @@ class BackupService {
   /// Format 4 adds `zones`; format 5 adds `codeSession` events; format 6 adds
   /// `zoneEntry` events; format 7 adds `cravingCheck` events, structured
   /// dose/cost/stress metadata and the `bottleMl` preference. Older formats
-  /// still import (format 6 and older get exact free-text quantities
-  /// converted, text kept); older apps refuse newer formats instead of
+  /// still import (format 6 and older convert explicit volumes/counts while
+  /// bottle-only notes keep their unknown volume); older apps refuse newer formats instead of
   /// failing per event. Format 8 adds `appUnlock` events (app lock exit
   /// plan); the app-lock policy itself is device-specific and never exported.
   static const int currentBackupVersion = 8;
@@ -278,6 +278,11 @@ class BackupService {
       final isLe = b0 == 0xFF && b1 == 0xFE;
       final isBe = b0 == 0xFE && b1 == 0xFF;
       if (isLe || isBe) {
+        if (bytes.length.isOdd) {
+          throw const FormatException(
+            'This file has damaged text encoding. Export a new .json backup.',
+          );
+        }
         final units = <int>[];
         for (var i = 2; i + 1 < bytes.length; i += 2) {
           units.add(
@@ -286,13 +291,32 @@ class BackupService {
                 : (bytes[i] << 8) | bytes[i + 1],
           );
         }
+        for (var index = 0; index < units.length; index++) {
+          final unit = units[index];
+          if (unit >= 0xD800 && unit <= 0xDBFF) {
+            index++;
+            if (index == units.length ||
+                units[index] < 0xDC00 ||
+                units[index] > 0xDFFF) {
+              throw const FormatException(
+                'This file has damaged text encoding. Export a new .json backup.',
+              );
+            }
+          } else if (unit >= 0xDC00 && unit <= 0xDFFF) {
+            throw const FormatException(
+              'This file has damaged text encoding. Export a new .json backup.',
+            );
+          }
+        }
         return String.fromCharCodes(units);
       }
     }
     try {
       return utf8.decode(bytes);
     } on FormatException {
-      return latin1.decode(bytes);
+      throw const FormatException(
+        'This file has damaged text encoding. Export a new .json backup.',
+      );
     }
   }
 
@@ -301,7 +325,19 @@ class BackupService {
   /// after the JSON object.
   @visibleForTesting
   static String normalizeBackupText(String raw) {
-    var text = raw.replaceAll('\uFEFF', '').replaceAll('\u0000', '').trim();
+    // Padding belongs outside the JSON. Removing it everywhere would silently
+    // change valid U+FEFF characters inside a recorded note or preference.
+    bool isPadding(int index) =>
+        raw[index] == '\u0000' || raw[index].trim().isEmpty;
+    var startPadding = 0;
+    var endPadding = raw.length;
+    while (startPadding < endPadding && isPadding(startPadding)) {
+      startPadding++;
+    }
+    while (endPadding > startPadding && isPadding(endPadding - 1)) {
+      endPadding--;
+    }
+    var text = raw.substring(startPadding, endPadding);
     if (text.isEmpty) {
       throw const FormatException(
         'This file is empty. Export a new backup and save it to Downloads.',
@@ -347,14 +383,9 @@ class BackupService {
       }
       var map = Map<String, dynamic>.from(decoded);
       var upgradeQuantities = false;
-      var upgradeBottleMl = defaultBottleMl;
       if (!map.containsKey('version') && map['stateVersion'] is int) {
         final stateVersion = map['stateVersion'] as int;
         upgradeQuantities = stateVersion < 12;
-        final stateBottle = map['bottleMl'];
-        if (stateBottle is num && isValidBottleMl(stateBottle)) {
-          upgradeBottleMl = stateBottle.toDouble();
-        }
         if (stateVersion < 2 ||
             stateVersion > RecoveryController.stateVersion) {
           throw FormatException(
@@ -374,8 +405,8 @@ class BackupService {
       if (version is! int || version < 1 || version > currentBackupVersion) {
         throw FormatException('Unsupported backup version: $version');
       }
-      // Older backups have no bottle size: "2 bottles" uses the 100 ml
-      // default, exactly like the v11 -> v12 state migration.
+      // Convert only quantities whose units establish the volume/count.
+      // Legacy bottle notes stay text: no historical size was recorded.
       if (version <= 6) upgradeQuantities = true;
 
       final rawEvents = map['events'];
@@ -407,11 +438,7 @@ class BackupService {
             'Event timestamp is outside the supported range.',
           );
         }
-        events.add(
-          upgradeQuantities
-              ? upgradeEventQuantity(event, bottleMl: upgradeBottleMl)
-              : event,
-        );
+        events.add(upgradeQuantities ? upgradeEventQuantity(event) : event);
       }
       events.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 

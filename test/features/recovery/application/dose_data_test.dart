@@ -147,8 +147,9 @@ void main() {
       expect(meta('a')['amountMl'], 250);
       expect(meta('a')['quantity'], '250ml');
       expect(meta('a')['amountSource'], 'parsed');
-      expect(meta('b')['amountMl'], 250);
-      expect(meta('b')['bottleMl'], 100);
+      expect(meta('b').containsKey('amountMl'), isFalse);
+      expect(meta('b').containsKey('unit'), isFalse);
+      expect(meta('b')['quantity'], '2.5 bottles');
       expect(meta('c').containsKey('unit'), isFalse);
       expect(meta('c')['quantity'], 'half a cup');
       expect(meta('d')['unit'], 'tablet');
@@ -160,6 +161,27 @@ void main() {
       expect(saved['insightPreferences'], {'dismissed': {}});
       // The original v11 state is preserved untouched.
       expect(store.copies.single, contains('"stateVersion":11'));
+    });
+
+    test('current bottle preference cannot supply a historical size', () async {
+      final store = MemoryRecoveryStore(v11State(extra: {'bottleMl': 250}));
+      final controller = RecoveryController(
+        store: store,
+        relapseLock: FakeRelapseLock(),
+      );
+      await controller.load();
+      expect(controller.bottleMl, 250);
+      final originalIds = controller.events.map((event) => event.id).toList();
+      final reloaded = RecoveryController(
+        store: store,
+        relapseLock: FakeRelapseLock(),
+      );
+      await reloaded.load();
+      expect(reloaded.events.map((event) => event.id), originalIds);
+      final metadata = reloaded.events.firstWhere((e) => e.id == 'b').metadata;
+      expect(metadata['quantity'], '2.5 bottles');
+      expect(metadata.containsKey('amountMl'), isFalse);
+      expect(metadata.containsKey('bottleMl'), isFalse);
     });
 
     test('a newer state version is refused, not rewritten', () async {
@@ -234,7 +256,7 @@ void main() {
     final service = BackupService();
     final day = DateTime(2026, 9, 1, 21);
 
-    test('format 6 imports convert exact quantities with 100 ml', () {
+    test('format 6 imports retain bottle notes without inventing ml', () {
       final preview = service.validateBackupJson(
         jsonEncode({
           'version': 6,
@@ -245,25 +267,76 @@ void main() {
         }),
       );
       final a = preview.events.firstWhere((e) => e.id == 'a').metadata;
-      expect(a['amountMl'], 300);
+      expect(a.containsKey('amountMl'), isFalse);
+      expect(a.containsKey('unit'), isFalse);
       expect(a['quantity'], '3 bottles');
       final b = preview.events.firstWhere((e) => e.id == 'b').metadata;
       expect(b.containsKey('amount'), isFalse);
     });
 
-    test('raw v11 state exports convert with their own bottle size', () {
-      final preview = service.validateBackupJson(
-        jsonEncode({
-          'stateVersion': 11,
-          'bottleMl': 120,
-          'events': [
-            relapseJson('a', day, {'quantity': '2 bottles'}),
-          ],
-        }),
-      );
-      expect(preview.events.single.metadata['amountMl'], 240);
-      expect(preview.preferences!['bottleMl'], 120);
-    });
+    test(
+      'raw v11 state keeps bottle preference apart from historical notes',
+      () {
+        final preview = service.validateBackupJson(
+          jsonEncode({
+            'stateVersion': 11,
+            'bottleMl': 120,
+            'events': [
+              relapseJson('a', day, {'quantity': '2 bottles'}),
+            ],
+          }),
+        );
+        expect(preview.events.single.metadata.containsKey('amountMl'), isFalse);
+        expect(preview.events.single.metadata['quantity'], '2 bottles');
+        expect(preview.preferences!['bottleMl'], 120);
+      },
+    );
+
+    test(
+      'all old backup formats preserve unknown bottle size on re-export',
+      () {
+        for (var version = 1; version <= 6; version++) {
+          final preview = service.validateBackupJson(
+            jsonEncode({
+              'version': version,
+              'events': [
+                relapseJson('bottle', day, {'quantity': '2 bottles'}),
+                relapseJson('volume', day, {'quantity': '0.5 L'}),
+                relapseJson('known', day, {
+                  'quantity': '2 bottles',
+                  'amount': 2,
+                  'unit': 'bottle',
+                  'amountMl': 240,
+                  'bottleMl': 120,
+                }),
+              ],
+              'preferences': {'bottleMl': 250},
+            }),
+          );
+          final reExport = service.validateBackupJson(
+            jsonEncode(
+              service.buildBackupPayload(preview.events, preferences: {}),
+            ),
+          );
+          Map<String, dynamic> metadata(String id) =>
+              reExport.events.firstWhere((event) => event.id == id).metadata;
+          expect(
+            metadata('bottle')['quantity'],
+            '2 bottles',
+            reason: 'v$version',
+          );
+          expect(metadata('bottle').containsKey('amountMl'), isFalse);
+          expect(metadata('volume')['amountMl'], 500);
+          expect(metadata('known')['amountMl'], 240);
+          expect(metadata('known')['bottleMl'], 120);
+          expect(reExport.events.map((event) => event.id).toSet(), {
+            'bottle',
+            'volume',
+            'known',
+          });
+        }
+      },
+    );
 
     test('format 7 round-trips doses, checks and bottle size', () async {
       final controller = RecoveryController(

@@ -139,6 +139,11 @@ State v8–v13 adds app-level protection, zones, privacy, zone history, structur
 dose/cost/stress/rechecks and device-specific app locking. Explicit migrations
 retain records; optional preference errors do not erase valid history.
 
+Legacy quantity conversion keeps original text and only derives explicit ml/L
+volumes or tablet/drink counts. A bottle-only note has no recorded historical
+size, so it stays text; neither today's preference nor the 100 ml default fills
+that gap. Existing structured bottle volumes remain unchanged.
+
 Backup v3 supports day summaries; v4–v8 adds zones and newer event types.
 Imports accept event backups v1–v8 and legacy state/export JSON v2–v13.
 Imports merge by event ID and authenticate when the relapse lock is enabled.

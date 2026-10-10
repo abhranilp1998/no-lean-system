@@ -97,6 +97,10 @@ Read it before changing code.
   return true; cancellation returns false. Failed writes never show ready.
   Sharing omits captions and retains distinct source copies until a later
   age-based cleanup; a share result does not establish receipt.
+- Backup text decoding accepts valid UTF-8 or BOM-marked, well-formed UTF-16.
+  Reject malformed encoding instead of guessing Latin-1. Normalize only outer
+  padding/share wrappers; embedded U+FEFF in recorded text must survive import
+  and re-export. Damaged copies must not become valid-looking changed history.
 
 ## Doses, units and money (StillPoint-derived, Oct 2026)
 
@@ -113,10 +117,13 @@ Read it before changing code.
   `half`/`quarter`/`three quarters`, `2 and a half`; rejects ≤0, non-finite,
   `/0` and ambiguous `1,000`. `parseMoney` takes ₹/Rs/INR and Indian or
   western grouping; 0 is a valid cost.
-- Free-text `quantity` is always kept. Structured fields are added only when
-  the whole text parses exactly (`250ml`, `2.5 bottles`, `half a bottle`,
-  `2 tablets`), marked `amountSource: 'parsed'` (new entries, v11→v12 load,
-  format ≤6 import). "half a cup" stays text only.
+- Free-text `quantity` is always kept. New entries can parse exact text such as
+  `250ml`, `2.5 bottles`, `half a bottle` and `2 tablets`, using the current bottle
+  setting where needed and marking `amountSource: 'parsed'`. Legacy load/import
+  converts explicit ml/L values and tablet/drink counts. Bottle-only notes stay
+  text because the historical bottle size is unknown; a global/default size
+  cannot supply that missing fact. Existing structured bottle values are kept.
+  "half a cup" stays text only.
 - `doseSanityCheck` runs on save before the reset confirm: ≥20 bottles or
   >5 L of bottles → "Did you mean N ml?"; ≥10 L → ml; <1 ml → L; whole
   1-4 ml → bottles; >20 tablets / >30 drinks → check the number. The size

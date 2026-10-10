@@ -11,7 +11,7 @@ Final validation and deferred device checks are in the [Android review record](P
 |---|---|
 | Branch | Android: `9112-deviant/android-handoff`, based on `nolean-v2-handoff`. Web is preserved separately on `9112-deviant/web`. Final disposition is in the PR review record. |
 | Scope | P0, P1, P2 and P3, 8 StillPoint-inspired features, always-on position notification, **app lock for other apps with an emergency exit plan**, import/export fixes |
-| Tests | **453 Flutter tests and 6 native export tests pass**. Full analysis and format checks are clean. |
+| Tests | **458 Flutter tests and 6 native export tests pass**. Full analysis and format checks are clean. |
 | Release build | Final universal `flutter build apk --release` succeeds (R8 on). Earlier handoff split-ABI builds also passed. |
 | App version | `1.2.0+4`; state v13 and backup format 8 are independent. |
 | Preview APK | [NO-LEAN-Preview.apk](https://github.com/abhranilp1998/no-lean-system/releases/download/preview-2026-10-09/NO-LEAN-Preview.apk). Separate app ID `com.nolean.no_lean.preview`, so it installs next to the original |
@@ -38,7 +38,7 @@ Recheck the remote base/head before merging.
 flutter pub get
 dart format --output=none --set-exit-if-changed lib test tool
 dart analyze --fatal-infos  # expect: No issues found
-flutter test               # expect: 453 tests, all passed
+flutter test               # expect: 458 tests, all passed
 flutter build apk --debug
 flutter build apk --release
 dart tool/release_version.dart check --base-ref=origin/main
@@ -96,6 +96,9 @@ git diff --check
 1. **Dose units:** ml, L, bottle, drink and tablet.
    - All maths is done in ml. A bottle counts at your bottle-size setting (100 ml by default, valid range 10–2000).
    - Changing the bottle size never rewrites old entries.
+   - Legacy bottle-only notes remain text when their historical size is unknown.
+     New defaults cannot supply missing historical ml; explicit volumes and
+     existing structured bottle values are preserved.
    - Drinks and tablets are counts and never mix into ml totals.
    - Accepted inputs include `2,5`, `1/2`, `half` and `2 and a half`.
    - Sanity prompts catch likely mistakes, for example 250 bottles gets "Did you mean 250 ml?".
@@ -192,7 +195,7 @@ The blocking screen always shows **SOS**, **CALL 112** and **GO HOME**, and Back
 
 ## 5. Verification
 
-- **Automated:** 453 unit and widget tests, covering units, migrations, the backup round trip, import tolerance, the export cancel path, notification policy, zones, SOS, widgets and the zone-alert exit. The app lock adds 46: schedules, the never-lockable list, the exit plan (budget, 30 s / 10 s payment / PIN / 120 s waits, 5-minute unlock), budget counting, `appUnlock` validation, state v13 and backup format 8 migrations and compatibility, the blocking screen (SOS/112/Go home always visible, Back goes home, cancel grants nothing), settings, the disclosure, the picker, the fail-safe banner, the host and the method channel.
+- **Automated:** 458 unit and widget tests, covering units, migrations, the backup round trip, import tolerance, the export cancel path, notification policy, zones, SOS, widgets and the zone-alert exit. The app lock adds 46: schedules, the never-lockable list, the exit plan (budget, 30 s / 10 s payment / PIN / 120 s waits, 5-minute unlock), budget counting, `appUnlock` validation, state v13 and backup format 8 migrations and compatibility, the blocking screen (SOS/112/Go home always visible, Back goes home, cancel grants nothing), settings, the disclosure, the picker, the fail-safe banner, the host and the method channel.
 - **Emulator** (software rendering only, because hardware acceleration kept crashing): app launch, the milestone celebration and the in-app zone alert passed. On-device integration tests are in `integration_test/`.
 - **Release build:** succeeds with R8 and the new keep rules. The scheduled-notification restore after a reboot has not been run on a device.
 - **Not yet verified on a real phone:**

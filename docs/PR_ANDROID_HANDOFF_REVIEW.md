@@ -21,6 +21,8 @@ Web work was preserved and pushed as `9112-deviant/web`, at `e903df8`.
 | Correct | `a07e5dd`: removing any minute from an armed risk window now requires existing PIN/biometric authorization at the controller. Extensions remain free; denials and failed writes preserve the previous setting. |
 | Correct | `36f86ef`: foreground monitoring automatically requests a current fix on activation. Stale/out-of-order and stopped-activation results cannot trigger an alert. This does not establish background GPS reliability. |
 | Replace | `98a4112`: Android JSON/CSV Save uses a native document channel and exact byte readback. Share copies retain their source for delayed readers, use distinct filenames and omit caption text. Import messages distinguish empty/caption/damaged copies. |
+| Correct | Legacy bottle-only quantity migration retains original text without assuming today's/default bottle size. Explicit ml/L quantities and existing structured bottle records are preserved; all old event-backup formats and migration/reload/re-export are covered. |
+| Correct/remove | Remove the unsafe Latin-1 fallback after invalid UTF-8 and global removal of BOM characters from recorded text. Valid UTF-8 and well-formed BOM-marked UTF-16 remain supported; malformed code units/surrogates are refused, and embedded Unicode survives round trips. |
 | Hold | Web stays on its preserved branch. No web changes are included in the Android handoff. |
 
 ## Versions and upgrade contract
@@ -45,7 +47,7 @@ Flutter 3.47.2 / Dart 3.13.2 were used with the configured Windows SDK.
 |---|---|
 | Format (`lib test tool`) | No changes required. |
 | Analysis with fatal infos | No issues. |
-| Full Flutter unit/widget suite | 453 passed. Includes authorization, migration/reload, write-failure rollback, imports, cancellation, zones, widgets and app-lock behavior. |
+| Full Flutter unit/widget suite | 458 passed after the legacy quantity and text corrections. Includes authorization, migration/reload, write-failure rollback, imports, cancellation, zones, widgets and app-lock behavior. |
 | Native document stream suite | 6 passed; verifies Unicode, null streams, flush/close errors, truncation, extra and changed bytes, including large exports. |
 | Private legacy attachment | Three additional checks passed: validation; protected import/duplicate retry/v13 reload/format-8 export; a v7-state migration fixture. Every original ID, type, timestamp and metadata field was retained. The attachment is not committed or published. |
 | Android debug build | Passed. |
