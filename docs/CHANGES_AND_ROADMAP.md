@@ -1,13 +1,13 @@
 # NO LEAN: changes, merge handoff and roadmap
 
 Prepared 10 Oct 2026 for Abhranil and the reviewer who merges this branch.
-Sources: `git log main..stillpoint-8`, `memory.md`, the code and the tests. Nothing here is guessed.
+Sources: `git log main..nolean-v2-handoff`, `memory.md`, the code and the tests. Nothing here is guessed.
 
 ## 1. Summary
 
 | Item | Status |
 |---|---|
-| Branch | `stillpoint-8` (pushed to GitHub). `main` is untouched. |
+| Branch | `nolean-v2-handoff` (pushed to GitHub). `main` is untouched. |
 | Scope | P0, P1, P2 and P3, 8 StillPoint-inspired features, always-on position notification, **app lock for other apps with an emergency exit plan**, import/export fixes |
 | Tests | **430 automated tests pass**. `flutter analyze`: no issues. `dart format`: clean |
 | Release build | `flutter build apk --release --split-per-abi` succeeds (R8 on) |
@@ -19,9 +19,9 @@ The StillPoint repo was only used as a reference. Nothing in it was changed.
 
 ## 2. Merge handoff
 
-**What to merge:** `stillpoint-8` into `main`. **The reviewer does the merge, not us.** No agent has merged anything into `main` or pushed to it.
+**What to merge:** `nolean-v2-handoff` into `main`. **The reviewer does the merge, not us.** No agent has merged anything into `main` or pushed to it.
 
-**Commit range:** `bd3581a..stillpoint-8`, where `bd3581a` is the current `main` and the merge base. That is 51 commits including the latest docs update, from `e240a25` to the branch tip (full list in the Appendix). `main` is an ancestor of the branch, so this is a **clean fast-forward with no conflicts** (checked with `git merge-tree`).
+**Commit range:** `bd3581a..nolean-v2-handoff`, where `bd3581a` is the current `main` and the merge base. That is 51 commits including the latest docs update, from `e240a25` to the branch tip (full list in the Appendix). `main` is an ancestor of the branch, so this is a **clean fast-forward with no conflicts** (checked with `git merge-tree`).
 
 **Pre-merge checks (run on the branch):**
 
@@ -206,7 +206,7 @@ The blocking screen always shows **SOS**, **CALL 112** and **GO HOME**, and Back
 
 ## 7. Gaps found (pre-merge audit, 10 Oct)
 
-**Fixed on `stillpoint-8`, each with tests:**
+**Fixed on `nolean-v2-handoff`, each with tests:**
 
 | Gap | Fix | Commit |
 |---|---|---|
@@ -283,7 +283,7 @@ The blocking screen always shows **SOS**, **CALL 112** and **GO HOME**, and Back
 | Android | `android/app/src/main/AndroidManifest.xml`, `android/app/build.gradle.kts`, `android/app/proguard-rules.pro`, `android/app/src/main/res/raw/keep.xml` |
 | Tests | `test/features/settings/services/export_flow_test.dart`, `test/features/recovery/services/compat_matrix_test.dart`, `test/features/recovery/services/backup_service_test.dart`, `integration_test/` |
 
-## Appendix B: commits on `stillpoint-8` (oldest first, after `main` = `bd3581a`)
+## Appendix B: commits on `nolean-v2-handoff` (oldest first, after `main` = `bd3581a`)
 
 - `e240a25` 2026-10-08 style: apply dart format to relapse lock service test
 - `3b7b708` 2026-10-08 feat: escalate persisted PIN lockouts 5, 15, then 60 minutes
