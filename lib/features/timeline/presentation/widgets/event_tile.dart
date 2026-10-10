@@ -119,6 +119,15 @@ class EventTile extends ConsumerWidget {
           Icons.update,
           magenta,
         );
+      case RecoveryEventType.appUnlock:
+        final zone = event.metadata['zoneName'];
+        return (
+          'APP UNLOCKED // ${event.metadata['appLabel']} // '
+              '${'${event.metadata['reason']}'.toUpperCase()}'
+              '${zone is String ? ' // IN $zone' : ''}',
+          Icons.lock_open,
+          Colors.amber,
+        );
       case RecoveryEventType.codeSession:
         return (
           event.metadata['completed'] == true

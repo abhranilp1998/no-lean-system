@@ -155,7 +155,7 @@ void main() {
       expect(meta('d').containsKey('amountMl'), isFalse);
 
       final saved = jsonDecode(store.value!) as Map;
-      expect(saved['stateVersion'], 12);
+      expect(saved['stateVersion'], RecoveryController.stateVersion);
       expect(saved['bottleMl'], 100);
       expect(saved['insightPreferences'], {'dismissed': {}});
       // The original v11 state is preserved untouched.
@@ -163,7 +163,10 @@ void main() {
     });
 
     test('a newer state version is refused, not rewritten', () async {
-      final raw = jsonEncode({'stateVersion': 13, 'events': []});
+      final raw = jsonEncode({
+        'stateVersion': RecoveryController.stateVersion + 1,
+        'events': [],
+      });
       final store = MemoryRecoveryStore(raw);
       final controller = RecoveryController(
         store: store,
@@ -285,7 +288,7 @@ void main() {
         controller.events,
         preferences: controller.portablePreferences,
       );
-      expect(payload['version'], 7);
+      expect(payload['version'], BackupService.currentBackupVersion);
       final preview = service.validateBackupJson(jsonEncode(payload));
       expect(preview.preferences!['bottleMl'], 120);
       final check = preview.events.firstWhere(
@@ -300,10 +303,13 @@ void main() {
       );
     });
 
-    test('format 8 and bad bottle sizes are refused', () {
+    test('a newer format and bad bottle sizes are refused', () {
       expect(
         () => service.validateBackupJson(
-          jsonEncode({'version': 8, 'events': []}),
+          jsonEncode({
+            'version': BackupService.currentBackupVersion + 1,
+            'events': [],
+          }),
         ),
         throwsFormatException,
       );

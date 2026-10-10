@@ -17,7 +17,13 @@ enum RecoveryEventType {
   codeSession, // Code Instead block — metadata: {taskId, task, plannedSeconds, durationSeconds, completed, source}
   zoneEntry, // Opt-in danger-zone visit — metadata: {zoneId, zoneName, source}. Never coordinates.
   cravingCheck, // 15-minute recheck of a craving — metadata: {cravingId, intensity 0-10, outcome}
+  appUnlock, // Temporary unlock of a locked app — metadata: {packageName, appLabel, reason, method, waitSeconds, unlockMinutes, paymentApp, zoneName?}. Never coordinates.
 }
+
+/// Reasons and methods accepted on `appUnlock` events (see
+/// `app_lock/domain/exit_plan.dart`).
+const appUnlockReasons = {'payment', 'work', 'navigation', 'urgent', 'other'};
+const appUnlockMethods = {'budget', 'pin', 'longWait'};
 
 /// How a craving changed by the time it was rechecked.
 const cravingCheckOutcomes = {'gone', 'eased', 'same', 'stronger'};
@@ -315,6 +321,48 @@ class RecoveryEvent {
         // Privacy invariant: a zone entry is a name and a time, nothing more.
         result.removeWhere((key, _) => _locationKeys.contains(key));
         result['zoneName'] = zoneName.trim();
+      case RecoveryEventType.appUnlock:
+        final packageName = result['packageName'];
+        final label = result['appLabel'];
+        final reason = result['reason'];
+        final method = result['method'];
+        final minutes = result['unlockMinutes'];
+        final wait = result['waitSeconds'];
+        final zoneName = result['zoneName'];
+        if (packageName is! String || packageName.trim().isEmpty) {
+          throw const FormatException('App unlock needs a package name.');
+        }
+        if (label != null && label is! String) {
+          throw const FormatException('App unlock label must be text.');
+        }
+        if (reason is! String || !appUnlockReasons.contains(reason)) {
+          throw const FormatException('App unlock reason is not supported.');
+        }
+        if (method is! String || !appUnlockMethods.contains(method)) {
+          throw const FormatException('App unlock method is not supported.');
+        }
+        if (minutes is! num || minutes < 1 || minutes > 60) {
+          throw const FormatException('App unlock must last 1-60 minutes.');
+        }
+        if (wait != null && (wait is! num || wait < 0)) {
+          throw const FormatException('App unlock wait must be 0 or more.');
+        }
+        if (zoneName != null && zoneName is! String) {
+          throw const FormatException('App unlock zone must be text.');
+        }
+        result.removeWhere((key, _) => _locationKeys.contains(key));
+        result['packageName'] = packageName.trim();
+        result['appLabel'] = (label as String?)?.trim() ?? packageName.trim();
+        result['unlockMinutes'] = minutes.round();
+        if (wait is num) result['waitSeconds'] = wait.round();
+        result['paymentApp'] = result['paymentApp'] == true;
+        if (zoneName is String) {
+          if (zoneName.trim().isEmpty) {
+            result.remove('zoneName');
+          } else {
+            result['zoneName'] = zoneName.trim();
+          }
+        }
       case RecoveryEventType.recoveryStart:
       case RecoveryEventType.pledge:
       case RecoveryEventType.sosStart:

@@ -145,6 +145,14 @@ void main() {
         'durationSeconds': 600,
         'completed': true,
       },
+      RecoveryEventType.appUnlock => {
+        'packageName': 'com.example.chat',
+        'appLabel': 'Chat',
+        'reason': 'payment',
+        'method': 'budget',
+        'unlockMinutes': 5,
+        'zoneName': 'Corner',
+      },
       _ => {},
     };
     final events = [
@@ -169,5 +177,8 @@ void main() {
     expect(check[eventsCsvColumns.indexOf('check_outcome')], 'eased');
     expect(check[eventsCsvColumns.indexOf('details')], '{"cravingId":"c1"}');
     expect(zone[eventsCsvColumns.indexOf('details')], '{"zoneId":"z1"}');
+    final unlock = rows.firstWhere((r) => r[1] == 'appUnlock');
+    expect(unlock[eventsCsvColumns.indexOf('zone')], 'Corner');
+    expect(unlock[eventsCsvColumns.indexOf('details')], contains('payment'));
   });
 }

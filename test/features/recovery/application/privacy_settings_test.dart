@@ -80,18 +80,19 @@ void main() {
     expect(controller.streetTiles, isFalse);
   });
 
-  test('position notification defaults on for v12 states without the key, '
-      'keeps the state version and persists its toggle', () async {
+  test('position notification defaults on for v12 states without the key '
+      '(no version bump of its own) and persists its toggle', () async {
     final (controller, store) = await loaded(
       stored: v9State({'stateVersion': 12}),
     );
     expect(controller.positionNotification, isTrue);
-    expect(RecoveryController.stateVersion, 12);
+    // The key itself needed no bump; v13 is the app lock's.
+    expect(RecoveryController.stateVersion, 13);
 
     await controller.setPositionNotification(false);
     final saved = jsonDecode(store.value!) as Map;
     expect(saved['positionNotification'], isFalse);
-    expect(saved['stateVersion'], 12);
+    expect(saved['stateVersion'], RecoveryController.stateVersion);
 
     final reloaded = RecoveryController(
       store: store,

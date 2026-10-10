@@ -60,8 +60,9 @@ class BackupService {
   /// dose/cost/stress metadata and the `bottleMl` preference. Older formats
   /// still import (format 6 and older get exact free-text quantities
   /// converted, text kept); older apps refuse newer formats instead of
-  /// failing per event.
-  static const int currentBackupVersion = 7;
+  /// failing per event. Format 8 adds `appUnlock` events (app lock exit
+  /// plan); the app-lock policy itself is device-specific and never exported.
+  static const int currentBackupVersion = 8;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 

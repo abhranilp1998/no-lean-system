@@ -67,7 +67,12 @@ class FakeRelapseLock implements RelapseLockGateway {
   }
 
   @override
-  Future<PinVerificationResult> verifyPin(String value) async => pin == value
+  Future<PinVerificationResult> verifyPin(String value) async => lockedOut
+      ? PinVerificationResult.lockedOut
+      : pin == value
       ? PinVerificationResult.verified
       : PinVerificationResult.denied;
+
+  /// Simulates the escalating PIN lockout.
+  bool lockedOut = false;
 }

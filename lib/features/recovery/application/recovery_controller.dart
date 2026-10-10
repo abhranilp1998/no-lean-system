@@ -25,6 +25,8 @@ import '../domain/sos_session.dart';
 import '../services/home_widget_service.dart';
 import '../services/notification_service.dart';
 import '../services/relapse_lock_service.dart';
+import '../../app_lock/domain/exit_plan.dart';
+import '../../app_lock/domain/locked_app.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../zones/domain/zone_entry.dart';
 import '../../zones/services/geofence_gateway.dart';
@@ -100,7 +102,9 @@ class RecoveryController extends ChangeNotifier {
   /// v12 adds `bottleMl`, `insightPreferences`, `cravingCheck` events and
   /// structured dose/cost/stress relapse metadata. Loading an older state
   /// converts free-text quantities that parse exactly (text is kept).
-  static const stateVersion = 12;
+  /// v13 adds `appLockPolicy` (locking other apps) and `appUnlock` events.
+  /// Older states load with the lock off.
+  static const stateVersion = 13;
 
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
   final Future<void> Function() _cancelCravingCheck;
@@ -185,6 +189,10 @@ class RecoveryController extends ChangeNotifier {
   /// key reads as the default and unknown keys survive in older builds via
   /// `_extraState`, so states stay readable in both directions.
   bool positionNotification = true;
+
+  /// Locking other apps (state v13+). Off until the user turns it on;
+  /// never restored by an import.
+  AppLockPolicy appLockPolicy = const AppLockPolicy();
 
   /// Opt-in zone visit log (name + time only). Default off for privacy.
   bool zoneHistory = false;
@@ -477,6 +485,9 @@ class RecoveryController extends ChangeNotifier {
     zoneMonitoring = flag('zoneMonitoring', zoneMonitoring);
     streetTiles = flag('streetTiles', streetTiles);
     positionNotification = flag('positionNotification', positionNotification);
+    if (map.containsKey('appLockPolicy')) {
+      appLockPolicy = AppLockPolicy.fromJson(map['appLockPolicy']);
+    }
     // Opt-in data collection: only an explicit true turns it on.
     if (map.containsKey('zoneHistory')) {
       zoneHistory = map['zoneHistory'] == true;
@@ -600,6 +611,7 @@ class RecoveryController extends ChangeNotifier {
     'streetTiles': streetTiles,
     'positionNotification': positionNotification,
     'zoneHistory': zoneHistory,
+    'appLockPolicy': appLockPolicy.toJson(),
     'widgetPrivacy': widgetPrivacy,
     ...notificationPrefs.toJson(),
     'backgroundGeofencing': backgroundGeofencing,
@@ -868,6 +880,7 @@ class RecoveryController extends ChangeNotifier {
           ..remove('streetTiles')
           ..remove('positionNotification')
           ..remove('zoneHistory')
+          ..remove('appLockPolicy')
           ..remove('widgetPrivacy')
           ..remove('quietHoursEnabled')
           ..remove('quietHours')
@@ -1372,6 +1385,67 @@ class RecoveryController extends ChangeNotifier {
   /// Always-on position notification; never needs authentication.
   Future<void> setPositionNotification(bool enabled) =>
       _transaction(() async => positionNotification = enabled);
+
+  /// Saves a new app-lock policy. Tightening is free; loosening it (turning
+  /// it off, removing an app, a weaker schedule, a bigger budget, a new
+  /// payment app) needs the relapse lock, like deleting a danger zone.
+  Future<ProtectedActionResult> updateAppLockPolicy(
+    AppLockPolicy next, {
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    final clean = next.sanitized();
+    if (clean.isLooserThan(appLockPolicy)) {
+      final authorization = await _authorizeProtectedAction(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        reason: 'Authenticate to loosen the app lock.',
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+    }
+    if (clean.enabled != appLockPolicy.enabled) {
+      events.add(
+        RecoveryEvent.create(
+          type: RecoveryEventType.settingsChange,
+          metadata: {'setting': 'appLock', 'newValue': '${clean.enabled}'},
+        ),
+      );
+    }
+    appLockPolicy = clean;
+    return ProtectedActionResult.completed;
+  });
+
+  /// "I need this app" unlocks spent from today's budget.
+  int get appUnlocksUsedToday => unlocksUsedOn(events, _now());
+
+  int get appUnlocksLeftToday =>
+      math.max(0, appLockPolicy.dailyUnlockBudget - appUnlocksUsedToday);
+
+  /// Whether the exit plan can fall back to the PIN once the budget is used.
+  bool get appUnlockPinConfigured => requirePinAfterRelapse;
+
+  /// PIN/biometric check for the exit plan once the daily budget is spent.
+  /// Same PIN and lockout rules as every other protected action.
+  Future<ProtectedActionResult> authorizeAppUnlock({
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _authorizeProtectedAction(
+    pin: pin,
+    tryBiometrics: tryBiometrics,
+    reason: 'Authenticate to open this app for 5 minutes.',
+  );
+
+  /// Logs a temporary unlock on the timeline (reason, app, zone).
+  Future<void> recordAppUnlock(Map<String, Object> metadata, {DateTime? at}) =>
+      appendEvent(
+        RecoveryEvent.create(
+          type: RecoveryEventType.appUnlock,
+          timestamp: at ?? _now(),
+          metadata: metadata,
+        ),
+      );
 
   Future<void> _syncGeofences() async {
     try {
