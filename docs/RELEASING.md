@@ -10,8 +10,8 @@ major releases for deliberate product compatibility changes. Increase BUILD for
 every distributed APK, including rebuilds and test releases using this package.
 Do not derive it from commit count or restart numbering on a new branch.
 
-The app version, `RecoveryController.stateVersion` (currently 7), and
-`BackupService.currentBackupVersion` (currently 3) are separate contracts.
+The app version, `RecoveryController.stateVersion` (currently 13), and
+`BackupService.currentBackupVersion` (currently 8) are separate contracts.
 A UI fix does not require a data migration. Change a schema version only when
 its stored format changes, with explicit migrations and round-trip fixtures.
 
@@ -34,6 +34,14 @@ its stored format changes, with explicit migrations and round-trip fixtures.
    apksigner verify --print-certs previous.apk
    ```
 
+   Inspect the actual APK code as well as the pubspec build. Flutter's
+   `--split-per-abi` adds ABI offsets: build 4 produces 1004 (ARMv7), 2004
+   (ARM64) and 4004 (x86_64); the universal APK has code 4. A future universal
+   or debug APK with source build 5 cannot update a package installed at 2004.
+   Prefer universal APKs for local update/debug continuity, or allocate a source
+   build above the installed code before switching layouts. Preview is a
+   separate package with independent ordering/signing.
+
 3. On the release PR branch, prepare a version. The tool selects a build above
    the current pubspec and every fetched `vMAJOR.MINOR.PATCH+BUILD` tag:
 
@@ -50,6 +58,13 @@ its stored format changes, with explicit migrations and round-trip fixtures.
 4. Run analysis, tests, Android builds, and the upgrade checks below. Review and
    merge the PR. The version command validates numbering; it does not establish
    that an app is safe to release.
+
+   Run Flutter tests and Android builds sequentially. After tests, use the normal
+   `flutter build apk --release` command, including its dependency refresh. On
+   Flutter 3.47.2, a release build with `--no-pub` can retain the generated
+   `integration_test` registration even though release Gradle excludes that dev
+   plugin, causing Java compilation to fail. Regenerate through Flutter rather
+   than editing `GeneratedPluginRegistrant.java` by hand.
 
 5. On the clean main commit that passed review and migration/reload tests, create
    the annotated source tag. A source tag identifies code; distribution still
@@ -103,7 +118,7 @@ Rollback means a corrective release with a higher BUILD that can still read the
 newest stored schema. Installing an old binary that interprets newer state as
 corrupt can erase active history.
 
-## State version 7 and backup version 3
+## State version 13 and backup version 8
 
 The app now commits history to `recovery/current.json` in application support
 storage using a flushed, verified temporary file and rename. `previous.json`
@@ -120,9 +135,15 @@ Version 6 preserves all event IDs and repairs available legacy day facts from
 its saved backup. Previously synthesized v6 events without provenance are kept;
 the app cannot safely distinguish them from real events and delete them.
 
-Backup v3 supports day summaries; imports accept event backups v1–v3 and legacy
-state/export JSON v2–v7. Imports merge by event ID and authenticate when the
-relapse lock is enabled. Preferences remain opt-in and cannot disable the lock.
+State v8–v13 adds app-level protection, zones, privacy, zone history, structured
+dose/cost/stress/rechecks and device-specific app locking. Explicit migrations
+retain records; optional preference errors do not erase valid history.
+
+Backup v3 supports day summaries; v4–v8 adds zones and newer event types.
+Imports accept event backups v1–v8 and legacy state/export JSON v2–v13.
+Imports merge by event ID and authenticate when the relapse lock is enabled.
+Preferences remain opt-in and cannot disable the lock, restore the app-lock
+policy, enable location or change local privacy settings.
 Startup recovery exports a sanitized bundle of readable current/preserved copies
 for manual recovery; a bundle is not an automatic instruction to replace current
 history. Unreadable originals stay on the device.

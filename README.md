@@ -12,7 +12,8 @@ NO LEAN is an offline-first Android recovery tracker built around a direct inter
 - Calendar-style clean-day heat map and milestone tracker.
 - Offline recovery persistence plus encrypted secure storage for the relapse PIN.
 - JSON backup and CSV history export through the system Save screen (pick
-  Downloads, Drive, ...); import accepts any file and validates it, including
+  Downloads, Drive, ...), with verified byte readback on Android; import accepts
+  any file and validates it, including
   BOM/UTF-16 re-saves and every older backup format.
 - Danger zones on an offline map (optional OpenStreetMap tiles) with in-app and
   opt-in background geofence alerts, plus an always-on position notification
@@ -29,6 +30,7 @@ NO LEAN is an offline-first Android recovery tracker built around a direct inter
   PIN. Dialer, emergency, maps, settings, launchers and NO LEAN are never
   lockable. Every unlock is logged on the timeline.
 - Configurable risk windows with high-visibility scheduled interrupts.
+  Removing armed protection hours requires authentication; extending them is free.
 - Trigger, time-of-day, weekly, and SOS-completion recovery insights.
 - Native Android home-screen widget with live clean-time seconds and streak.
 - Four-level visual effects with an Ultra glyph/glitch overdrive mode.
@@ -60,6 +62,9 @@ in [docs/PR_REVIEW_SOP.md](docs/PR_REVIEW_SOP.md).
 
 See [ROADMAP.md](ROADMAP.md) for the production gate and planned functionality,
 accessibility, and UI/UX direction.
+
+Current Android corrections, OnePlus GPS/export follow-ups and the parked web
+branch are recorded in [functional notes](docs/FUNCTIONAL_NOTES_2026-10-10.md).
 
 The visual system bundles a condensed display face (`NoLeanDisplay`) and a monospace terminal face (`NoLeanMono`) under `assets/fonts/`, so the look does not depend on network font loading at runtime.
 

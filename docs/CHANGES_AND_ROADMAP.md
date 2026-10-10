@@ -1,36 +1,48 @@
 # NO LEAN: changes, merge handoff and roadmap
 
 Prepared 10 Oct 2026 for Abhranil and the reviewer who merges this branch.
-Sources: `git log main..nolean-v2-handoff`, `memory.md`, the code and the tests. Nothing here is guessed.
+Sources: the GitHub `origin/main` baseline, handoff commits, `memory.md`, code and
+tests. Current corrections and follow-ups are in [functional notes](FUNCTIONAL_NOTES_2026-10-10.md).
+Final validation and deferred device checks are in the [Android review record](PR_ANDROID_HANDOFF_REVIEW.md).
 
 ## 1. Summary
 
 | Item | Status |
 |---|---|
-| Branch | `nolean-v2-handoff` (pushed to GitHub). `main` is untouched. |
+| Branch | Android: `9112-deviant/android-handoff`, based on `nolean-v2-handoff`. Web is preserved separately on `9112-deviant/web`. Final disposition is in the PR review record. |
 | Scope | P0, P1, P2 and P3, 8 StillPoint-inspired features, always-on position notification, **app lock for other apps with an emergency exit plan**, import/export fixes |
-| Tests | **430 automated tests pass**. `flutter analyze`: no issues. `dart format`: clean |
-| Release build | `flutter build apk --release --split-per-abi` succeeds (R8 on) |
-| App version | still `1.1.0+3`, the same as `main` (see Gaps found) |
+| Tests | **453 Flutter tests and 6 native export tests pass**. Full analysis and format checks are clean. |
+| Release build | Final universal `flutter build apk --release` succeeds (R8 on). Earlier handoff split-ABI builds also passed. |
+| App version | `1.2.0+4`; state v13 and backup format 8 are independent. |
 | Preview APK | [NO-LEAN-Preview.apk](https://github.com/abhranilp1998/no-lean-system/releases/download/preview-2026-10-09/NO-LEAN-Preview.apk). Separate app ID `com.nolean.no_lean.preview`, so it installs next to the original |
-| Real phone | **Not yet tested on a real phone.** Background geofence, street tiles, quiet hours, widgets and the app lock service have only been checked by automated tests and a release build |
+| Real phone | Original share/My Files failure inspected on OnePlus CPH2661 / Android 16; WhatsApp JSON validated. The user disconnected before installing the candidate, so final Save/upgrade/background tests are deferred. |
 
 The StillPoint repo was only used as a reference. Nothing in it was changed.
 
 ## 2. Merge handoff
 
-**What to merge:** `nolean-v2-handoff` into `main`. **The reviewer does the merge, not us.** No agent has merged anything into `main` or pushed to it.
+**What to merge:** the corrected `9112-deviant/android-handoff` into GitHub
+`main`, following `PR_REVIEW_SOP.md`. The user explicitly authorized this handoff
+and merge on 10 October before midnight IST. The earlier instruction to leave
+the merge to another reviewer is superseded. Web stays on hold.
 
-**Commit range:** `bd3581a..nolean-v2-handoff`, where `bd3581a` is the current `main` and the merge base. That is 51 commits including the latest docs update, from `e240a25` to the branch tip (full list in the Appendix). `main` is an ancestor of the branch, so this is a **clean fast-forward with no conflicts** (checked with `git merge-tree`).
+**Commit range:** GitHub baseline `bd3581a` through the reviewed Android head
+recorded in the PR. The original handoff tip is `78198bb`. The later fixes cover
+PIN protection, verified exports and foreground GPS activation. Local web commit
+`e903df8` is preserved on its own pushed branch and excluded from this merge.
+Recheck the remote base/head before merging.
 
 **Pre-merge checks (run on the branch):**
 
 ```bash
 flutter pub get
-dart format --output=none --set-exit-if-changed lib test
-flutter analyze            # expect: No issues found
-flutter test               # expect: 430 tests, all passed
-flutter build apk --release --split-per-abi
+dart format --output=none --set-exit-if-changed lib test tool
+dart analyze --fatal-infos  # expect: No issues found
+flutter test               # expect: 453 tests, all passed
+flutter build apk --debug
+flutter build apk --release
+dart tool/release_version.dart check --base-ref=origin/main
+git diff --check
 ```
 
 **Risky areas to review closely:**
@@ -151,12 +163,20 @@ The blocking screen always shows **SOS**, **CALL 112** and **GO HOME**, and Back
 
 ### 3.9 Export fix
 
-- **The original bug (`main`):** export wrote a temp file, opened the share sheet, then deleted the file as soon as the sheet closed. Apps that took a moment to read it got nothing ("save failed") or just the share text.
+- **The original flow (`main`):** export wrote a temp file, opened the share sheet with a caption, then deleted the source as the sheet closed. The Android plugin also creates a cache copy, so source deletion alone does not establish the cause of the reported OnePlus failure. Caption-only copies, URI access, provider errors and delayed reads remain possible causes. The private WhatsApp attachment is valid legacy JSON.
 - **Fix, commit `90d12fd`:** export now uses Android's own "Save to" screen (`FilePicker.saveFile` with the bytes), so the file is written directly to Downloads or Drive. Copies sent through the share sheet are kept for an hour.
 - **Fix, commit `4a79d8d`, from today's review:**
   - **Cancelling the Save screen used to show "EXPORT READY", which was false.** Exports now report whether the file was saved or cancelled. A cancel shows nothing, a save shows "ready", and an error shows an error.
   - The startup emergency export now confirms when it has saved, and the 5 MB backup limit no longer blocks it.
   - Size errors now say what went wrong.
+- **Final Android correction:** `no_lean/export` uses ACTION_CREATE_DOCUMENT
+  with the exact MIME, then writes/closes and compares returned bytes off the
+  main thread. Null streams, unreadable/truncated copies and provider errors
+  never return a saved result. Immediate deletion alone does not establish the
+  OnePlus failure: the sharing plugin also makes a cache copy. My Files' privacy
+  lock and URI/provider handoff remain possible contributors. The direct Save
+  route avoids that receiver. Empty and caption-only imports now identify those
+  specific cases.
 
 ## 4. Data and compatibility
 
@@ -172,7 +192,7 @@ The blocking screen always shows **SOS**, **CALL 112** and **GO HOME**, and Back
 
 ## 5. Verification
 
-- **Automated:** 430 unit and widget tests, covering units, migrations, the backup round trip, import tolerance, the export cancel path, notification policy, zones, SOS, widgets and the zone-alert exit. The app lock adds 46: schedules, the never-lockable list, the exit plan (budget, 30 s / 10 s payment / PIN / 120 s waits, 5-minute unlock), budget counting, `appUnlock` validation, state v13 and backup format 8 migrations and compatibility, the blocking screen (SOS/112/Go home always visible, Back goes home, cancel grants nothing), settings, the disclosure, the picker, the fail-safe banner, the host and the method channel.
+- **Automated:** 453 unit and widget tests, covering units, migrations, the backup round trip, import tolerance, the export cancel path, notification policy, zones, SOS, widgets and the zone-alert exit. The app lock adds 46: schedules, the never-lockable list, the exit plan (budget, 30 s / 10 s payment / PIN / 120 s waits, 5-minute unlock), budget counting, `appUnlock` validation, state v13 and backup format 8 migrations and compatibility, the blocking screen (SOS/112/Go home always visible, Back goes home, cancel grants nothing), settings, the disclosure, the picker, the fail-safe banner, the host and the method channel.
 - **Emulator** (software rendering only, because hardware acceleration kept crashing): app launch, the milestone celebration and the in-app zone alert passed. On-device integration tests are in `integration_test/`.
 - **Release build:** succeeds with R8 and the new keep rules. The scheduled-notification restore after a reboot has not been run on a device.
 - **Not yet verified on a real phone:**
@@ -187,7 +207,7 @@ The blocking screen always shows **SOS**, **CALL 112** and **GO HOME**, and Back
 
 ## 6. Known issues and caveats
 
-- **The original installed app still has the export bug.** It will keep it until it's updated with an APK signed by your PC's debug key (`C:\Users\Abhranil\.android\debug.keystore`). Your PC is currently offline. Until then, try these in the original app:
+- **Legacy installed builds use the old share flow.** The local signer matches the original OnePlus installation; the candidate can update it in place. Keep the separate preview until any desired backup transfer validates. A successful share selection alone is not evidence of a saved backup. Older-build workarounds were:
   1. Tap Export backup, share to **Gmail**, and send it to yourself. Retry if it fails the first time.
   2. Or share to **Telegram Saved Messages** or **Quick Share**.
   3. Download the `.json` file, which should be a few KB and not 186 bytes, and import it into the Preview or the updated app.
@@ -206,16 +226,23 @@ The blocking screen always shows **SOS**, **CALL 112** and **GO HOME**, and Back
 
 ## 7. Gaps found (pre-merge audit, 10 Oct)
 
-**Fixed on `nolean-v2-handoff`, each with tests:**
+**Fixed on the Android handoff, each with tests:**
 
 | Gap | Fix | Commit |
 |---|---|---|
 | Cancelling the export Save screen showed a false "EXPORT READY" | Exports return saved or cancelled, and a cancel shows nothing | `4a79d8d` |
 | The emergency export could be blocked by the 5 MB limit | The limit no longer applies to the emergency export | `4a79d8d` |
 | No R8 keep rules for Gson. Scheduled notifications (risk window, recheck) could fail to restore after a reboot in release builds | Added `android/app/proguard-rules.pro` and wired it into the release build | `9fbf1dd` |
-| No single test covering every backup format and state version | `compat_matrix_test.dart`: formats 1–7 and state v2–v12 | `4a79d8d` |
+| No single test covering every backup format and state version | `compat_matrix_test.dart`: formats 1–8 and state v2–v13 | `4a79d8d` |
 | No focused test that the zone alert's close and I'M LEAVING buttons exit | `zone_alert_exit_test.dart` | `6ad8997` |
 | README still said "export through the share sheet" and listed none of the new features | README and memory.md updated | `114559a` |
+| Armed risk-window hours could be moved/shrunk without authentication | Require existing PIN/biometrics whenever any protected minute is removed; extensions remain free | `a07e5dd` |
+| Foreground zone entry could wait for Locate me or movement | Request a current fix on activation and reject stale/late results | `36f86ef` |
+| Save providers could fail silently or return an unchecked copy | Native Android write/close/readback verification, explicit errors, safer shared copies and import diagnostics | `98a4112` |
+
+The app version has been prepared as `1.2.0+4`; the version tool validates it
+against the fetched baseline. The private legacy attachment also passed the
+complete import, migration/reload and re-export comparison in the review record.
 
 **Still open:**
 
@@ -226,7 +253,6 @@ The blocking screen always shows **SOS**, **CALL 112** and **GO HOME**, and Back
 | **High** | App lock service never run on a device | Install the preview, grant Usage access + Display over other apps, lock a test app, and check: blocking screen appears, SOS/112/Go home work, exit plan unlocks only that app for 5 min, budget then PIN, revoke Usage access → banner and nothing locked, reboot → service restarts |
 | Medium | Play policy declarations for `PACKAGE_USAGE_STATS`, `SYSTEM_ALERT_WINDOW` and the `specialUse` foreground service | Needed only for a Play Store release (§3.7). Sideloading is unaffected |
 | Medium | OEM battery optimisation can kill the app-lock service | Fail-safe (nothing locked, banner shown). Consider an in-app "exempt from battery optimisation" helper |
-| Medium | Version is still `1.1.0+3`, the same as `main` | Bump it (for example to `1.2.0+4`) with `tool/release_version.dart` before release, so stores and phones see a newer build |
 | Medium | The scheduled-notification restore after reboot is untested in a release build | This is a device test, done after installing the release APK |
 | Low | Some screens have no direct widget test: zone editor, zone monitoring panel, geofence disclosure, map markers, relapse-type card. The geofence gateway is platform code | They are covered indirectly or by integration tests. Add widget tests when those screens next change |
 | Low | `cupertino_icons` is declared but unused | Template leftover, harmless. Removing it is optional |

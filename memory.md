@@ -85,7 +85,18 @@ Read it before changing code.
 - `RecoveryController.recordRelapse()` is the enforcement boundary. Do not add
   another timer-reset path that bypasses its biometric/PIN authorization.
 - Disabling the relapse lock must remain authenticated.
+- Editing the shared risk window authenticates whenever the evening wall or
+  risk-window app schedule is armed and any previously protected minute is
+  removed (`RiskWindow.covers`, including overnight/end boundaries). Extensions
+  and no-ops stay free. Log old/new labels only for committed edits; denied
+  authorization and failed writes retain the previous window/history.
 - Exports deliberately exclude the secure PIN and biometric material.
+- Android Save uses `no_lean/export` / `save` with UTF-8 bytes, filename and
+  JSON/CSV MIME. `DocumentExportChannel` opens ACTION_CREATE_DOCUMENT, then
+  writes/closes/verifies exact bytes off the main thread. Only verified bytes
+  return true; cancellation returns false. Failed writes never show ready.
+  Sharing omits captions and retains distinct source copies until a later
+  age-based cleanup; a share result does not establish receipt.
 
 ## Doses, units and money (StillPoint-derived, Oct 2026)
 
@@ -174,8 +185,11 @@ Read it before changing code.
   protected by the relapse lock; adding, growing, and toggling monitoring are
   not. Location toggles never require auth, so the user can always switch
   tracking off. Imported preferences never switch location features on.
-- In-app checks (`ZoneMonitor`) stream balanced-accuracy fixes only while the
-  app is resumed, monitoring is on and zones exist. Background alerts use
+- In-app checks (`ZoneMonitor`) stream balanced-accuracy fixes and request a
+  current high-accuracy fix on activation while the app is resumed, monitoring
+  is on and zones exist. Ignore fixes older than two minutes and out-of-order
+  results. Activation generations prevent permission/GPS completions after
+  pause from restarting monitoring or raising alerts. Background alerts use
   `native_geofence` (enter-only, ids `nolean_zone_<id>`), are opt-in behind the
   disclosure screen, and the isolate callback reads only the local state file.
 - Zone history (P3, opt-in, default OFF, no auth to change or clear, never
