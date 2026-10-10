@@ -13,11 +13,21 @@ class ActionableInsightsPanel extends StatelessWidget {
   const ActionableInsightsPanel({
     required this.insights,
     required this.onAction,
+    this.onDismiss,
+    this.dismissedCount = 0,
+    this.onRestore,
     super.key,
   });
 
   final List<PatternActionInsight> insights;
   final ValueChanged<PatternActionKind> onAction;
+
+  /// Dismiss until the evidence changes. Null hides the option.
+  final ValueChanged<PatternActionInsight>? onDismiss;
+
+  /// How many insights are currently hidden by a dismissal.
+  final int dismissedCount;
+  final VoidCallback? onRestore;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -27,12 +37,105 @@ class ActionableInsightsPanel extends StatelessWidget {
           insight: insights[index],
           primary: index == 0,
           onTap: () => onAction(insights[index].action),
+          onDismiss: onDismiss == null || !insights[index].dismissible
+              ? null
+              : () => onDismiss!(insights[index]),
         ),
         if (index != insights.length - 1) const SizedBox(height: 9),
       ],
+      if (dismissedCount > 0 && onRestore != null)
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            key: const ValueKey('insights-restore'),
+            onPressed: onRestore,
+            child: Text(
+              'SHOW $dismissedCount DISMISSED',
+              style: const TextStyle(fontSize: 10),
+            ),
+          ),
+        ),
     ],
   );
 }
+
+/// Explains how an insight was computed and how much data backs it.
+Future<void> showInsightWhySheet(
+  BuildContext context,
+  PatternActionInsight insight, {
+  VoidCallback? onDismiss,
+}) => showModalBottomSheet<void>(
+  context: context,
+  backgroundColor: panelRaised,
+  isScrollControlled: true,
+  builder: (sheetContext) {
+    final confidence = insight.confidence;
+    return SafeArea(
+      child: SingleChildScrollView(
+        key: ValueKey('insight-why-${insight.id}'),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('WHY THIS INSIGHT', style: eyebrowStyle.copyWith(color: cyan)),
+            const SizedBox(height: 8),
+            Text(
+              insight.title,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              insight.why.isEmpty ? insight.body : insight.why,
+              style: const TextStyle(fontSize: 12.5, height: 1.5),
+            ),
+            const SizedBox(height: 12),
+            Text('EVIDENCE', style: microStyle.copyWith(color: muted)),
+            const SizedBox(height: 3),
+            Text(insight.evidence, style: const TextStyle(fontSize: 12)),
+            if (confidence != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                'CONFIDENCE // ${confidence.label} (${insight.evidenceCount} DATA POINTS)',
+                style: microStyle.copyWith(color: _confidenceColor(confidence)),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                confidence.explanation,
+                style: const TextStyle(fontSize: 12, height: 1.4),
+              ),
+            ],
+            const SizedBox(height: 14),
+            Text(
+              insight.dismissible
+                  ? 'Dismissing hides this card until the facts behind it change, for example a new dose or a new log for this pattern. Nothing is deleted.'
+                  : 'This card cannot be dismissed. It clears itself when the underlying signal passes.',
+              style: const TextStyle(color: muted, fontSize: 11, height: 1.4),
+            ),
+            if (onDismiss != null) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                key: const ValueKey('insight-dismiss'),
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  onDismiss();
+                },
+                icon: const Icon(Icons.visibility_off_outlined, size: 16),
+                label: const Text('DISMISS UNTIL THE EVIDENCE CHANGES'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  },
+);
+
+Color _confidenceColor(InsightConfidence confidence) => switch (confidence) {
+  InsightConfidence.early => muted,
+  InsightConfidence.moderate => cyan,
+  InsightConfidence.strong => toxic,
+};
 
 class VerifiedRiskBriefs extends StatelessWidget {
   const VerifiedRiskBriefs({required this.insights, super.key});
@@ -85,16 +188,24 @@ class _PatternActionCard extends StatelessWidget {
     required this.insight,
     required this.primary,
     required this.onTap,
+    this.onDismiss,
   });
 
   final PatternActionInsight insight;
   final bool primary;
   final VoidCallback onTap;
+  final VoidCallback? onDismiss;
 
   @override
   Widget build(BuildContext context) {
-    final accent = primary ? magenta : cyan;
+    final accent = !insight.dismissible && insight.id == 'high-need'
+        ? red
+        : primary
+        ? magenta
+        : cyan;
+    final confidence = insight.confidence;
     return GlassCard(
+      key: ValueKey('insight-${insight.id}'),
       accent: accent,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,6 +234,41 @@ class _PatternActionCard extends StatelessWidget {
           Text(
             insight.body,
             style: const TextStyle(fontSize: 11.5, height: 1.45),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              if (confidence != null)
+                Container(
+                  key: ValueKey('insight-confidence-${insight.id}'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(color: _confidenceColor(confidence)),
+                  ),
+                  child: Text(
+                    confidence.label,
+                    style: microStyle.copyWith(
+                      fontSize: 8,
+                      color: _confidenceColor(confidence),
+                    ),
+                  ),
+                ),
+              const Spacer(),
+              TextButton(
+                key: ValueKey('insight-why-button-${insight.id}'),
+                onPressed: () =>
+                    showInsightWhySheet(context, insight, onDismiss: onDismiss),
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(48, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                child: const Text('WHY?', style: TextStyle(fontSize: 10)),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           Row(

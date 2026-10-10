@@ -44,13 +44,21 @@ class RecoveryStartupScreen extends ConsumerWidget {
           'No readable copy is available to export. The originals remain on this device.',
         );
       }
-      await BackupService().exportJson(
+      final saved = await BackupService().exportJson(
         jsonEncode({
           'recoveryCopiesVersion': 1,
           'copies': sanitized,
           'unreadableCopies': copies.length - sanitized.length,
         }),
+        enforceSizeLimit: false,
       );
+      if (saved && context.mounted) {
+        AppNotice.show(
+          context,
+          'PRESERVED DATA SAVED // THE ORIGINALS REMAIN ON THIS DEVICE.',
+          type: AppNoticeType.success,
+        );
+      }
     } catch (error) {
       if (context.mounted) {
         AppNotice.show(

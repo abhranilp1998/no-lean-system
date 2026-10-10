@@ -1,10 +1,19 @@
 import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/theme/app_theme.dart';
+import '../domain/notification_policy.dart';
+import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
+
+/// Monochrome status-bar icon (`res/drawable/ic_stat_no_lean.xml`). Android
+/// draws small icons from alpha only, and the name is resolved at runtime, so
+/// `res/raw/keep.xml` must keep it from the release resource shrinker.
+const notificationSmallIcon = 'ic_stat_no_lean';
 
 class NotificationService {
   NotificationService._();
@@ -15,8 +24,17 @@ class NotificationService {
   bool _initialized = false;
   bool _permissionRequested = false;
 
+  /// Quiet hours and lock-screen privacy. The controller keeps this in sync;
+  /// background isolates pass prefs read from the state file instead.
+  NotificationPrefs prefs = const NotificationPrefs();
+
   final _actionStreamController = StreamController<String>.broadcast();
   Stream<String> get actionStream => _actionStreamController.stream;
+
+  /// Simulates a tapped notification action in tests.
+  @visibleForTesting
+  void debugEmitAction(String actionId) =>
+      _actionStreamController.add(actionId);
 
   Future<void> _initialize({required bool requestPermission}) async {
     if (!_initialized) {
@@ -33,7 +51,7 @@ class NotificationService {
 
       await _plugin.initialize(
         const InitializationSettings(
-          android: AndroidInitializationSettings('no_lean_icon'),
+          android: AndroidInitializationSettings(notificationSmallIcon),
         ),
         onDidReceiveNotificationResponse: (response) {
           if (response.actionId != null) {
@@ -54,20 +72,43 @@ class NotificationService {
     }
   }
 
+  AndroidFlutterLocalNotificationsPlugin? get _android => _plugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
+
+  /// Whether Android currently allows exact alarms for this app.
+  Future<bool> exactAlarmsAllowed() async {
+    try {
+      return await _android?.canScheduleExactNotifications() ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens the system "Alarms & reminders" grant. Returns the new state.
+  Future<bool> requestExactAlarms() async {
+    try {
+      await _android?.requestExactAlarmsPermission();
+    } catch (_) {
+      /* Older Android versions grant exact alarms implicitly. */
+    }
+    return exactAlarmsAllowed();
+  }
+
   Future<void> scheduleRiskWindow(
-    List<String> messages, {
+    List<RiskAlert> alerts, {
     required RiskWindow riskWindow,
   }) async {
     try {
       await _initialize(requestPermission: true);
       await _cancelScheduled();
-      if (messages.isEmpty) return;
+      if (alerts.isEmpty) return;
 
-      final moments = riskWindow.reminderMinutes();
-      for (var index = 0; index < moments.length; index++) {
-        final message = messages[index % messages.length];
-        final hour = moments[index] ~/ 60;
-        final minute = moments[index] % 60;
+      var exactAllowed = await exactAlarmsAllowed();
+      for (final alert in alerts) {
+        final hour = alert.minuteOfDay ~/ 60;
+        final minute = alert.minuteOfDay % 60;
         final now = tz.TZDateTime.now(tz.local);
         var scheduled = tz.TZDateTime(
           tz.local,
@@ -80,62 +121,360 @@ class NotificationService {
         if (!scheduled.isAfter(now)) {
           scheduled = scheduled.add(const Duration(days: 1));
         }
-        await _plugin.zonedSchedule(
-          500 + index,
-          'NO LEAN / RISK WINDOW',
-          message,
-          scheduled,
+        // Risk-window alerts are critical: quiet hours never mute them.
+        final text = prefs.textFor(alert.title, alert.body);
+        final mode = await scheduleWithExactFallback(
+          exactAllowed: exactAllowed,
+          schedule: (mode) => _plugin.zonedSchedule(
+            alert.id,
+            text.title,
+            text.body,
+            scheduled,
+            _details(alert, riskWindow, text),
+            androidScheduleMode: mode,
+            matchDateTimeComponents: DateTimeComponents.time,
+          ),
+        );
+        exactAllowed = mode == AndroidScheduleMode.exactAllowWhileIdle;
+      }
+    } catch (_) {
+      // Notification support must never prevent local recovery tracking.
+    }
+  }
+
+  NotificationDetails _details(
+    RiskAlert alert,
+    RiskWindow riskWindow,
+    NotificationText text,
+  ) => NotificationDetails(
+    android: AndroidNotificationDetails(
+      'risk_window_v2',
+      'NO LEAN risk window',
+      channelDescription:
+          'High-visibility recovery interrupts during your configured risk window',
+      importance: Importance.max,
+      priority: Priority.high,
+      color: red,
+      colorized: !prefs.hideSensitive,
+      enableLights: true,
+      ledColor: cyan,
+      enableVibration: true,
+      playSound: true,
+      visibility: lockScreenVisibility,
+      category: AndroidNotificationCategory.reminder,
+      ticker: neutralNotificationText.title,
+      subText: prefs.hideSensitive ? null : riskWindow.label,
+      styleInformation: BigTextStyleInformation(
+        text.body,
+        contentTitle: text.title,
+      ),
+      actions: [
+        AndroidNotificationAction(
+          'action_sos',
+          prefs.label('OPEN SOS', 'OPEN'),
+          showsUserInterface: true,
+          cancelNotification: true,
+        ),
+        if (alert.kind == RiskAlertKind.preWindow)
+          AndroidNotificationAction(
+            'action_code',
+            prefs.label('CODE INSTEAD', 'START TASK'),
+            showsUserInterface: true,
+            cancelNotification: true,
+          )
+        else
+          AndroidNotificationAction(
+            'action_safe',
+            prefs.label('I\'M SAFE', 'OK'),
+            showsUserInterface: true,
+            cancelNotification: true,
+          ),
+        AndroidNotificationAction(
+          'action_crave',
+          prefs.label('LOG CRAVING', 'LOG'),
+          showsUserInterface: true,
+          cancelNotification: true,
+        ),
+      ],
+    ),
+  );
+
+  /// Every notification is VISIBILITY_PRIVATE: on lock screens set to hide
+  /// sensitive content, Android shows its own neutral public version (app
+  /// name + "Contents hidden"). flutter_local_notifications 19.5 cannot set a
+  /// custom publicVersion, so "hide sensitive content" additionally makes the
+  /// posted title, body and action labels neutral everywhere.
+  static const lockScreenVisibility = NotificationVisibility.private;
+
+  bool _launchActionTaken = false;
+
+  /// The action button that cold-started the app, if any. Android does not
+  /// deliver it through the response callback when the process was dead
+  /// (e.g. OPEN SOS on a background danger-zone alert). Returned once.
+  Future<String?> takeLaunchAction() async {
+    if (_launchActionTaken) return null;
+    _launchActionTaken = true;
+    try {
+      await _initialize(requestPermission: false);
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp ?? false) {
+        return details?.notificationResponse?.actionId;
+      }
+    } catch (_) {
+      // No launch details on this platform.
+    }
+    return null;
+  }
+
+  static const zoneAlertId = 600;
+
+  /// Loud danger-zone notification. Requests a full-screen intent; Android
+  /// only honours it where the app may use full-screen intents (and shows a
+  /// heads-up notification otherwise). "I'M LEAVING" dismisses in one tap.
+  Future<void> showZoneAlert({
+    required String title,
+    required String body,
+    NotificationPrefs? prefs,
+  }) async {
+    // Zone alerts are critical: quiet hours never mute them.
+    final policy = prefs ?? this.prefs;
+    final text = policy.textFor(title, body);
+    try {
+      await _initialize(requestPermission: false);
+      await _plugin.show(
+        zoneAlertId,
+        text.title,
+        text.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'danger_zone_v1',
+            'NO LEAN danger zones',
+            channelDescription:
+                'Interrupts when you enter a place you marked as a danger zone',
+            importance: Importance.max,
+            priority: Priority.max,
+            color: red,
+            colorized: !policy.hideSensitive,
+            enableVibration: true,
+            playSound: true,
+            fullScreenIntent: true,
+            visibility: lockScreenVisibility,
+            category: AndroidNotificationCategory.reminder,
+            ticker: neutralNotificationText.title,
+            styleInformation: BigTextStyleInformation(
+              text.body,
+              contentTitle: text.title,
+            ),
+            actions: [
+              AndroidNotificationAction(
+                'action_sos',
+                policy.label('OPEN SOS', 'OPEN'),
+                showsUserInterface: true,
+                cancelNotification: true,
+              ),
+              AndroidNotificationAction(
+                'action_crave',
+                policy.label('LOG CRAVING', 'LOG'),
+                showsUserInterface: true,
+                cancelNotification: true,
+              ),
+              AndroidNotificationAction(
+                'action_zone_exit',
+                policy.label('I\'M LEAVING', 'DISMISS'),
+                cancelNotification: true,
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (_) {
+      // A missing notification must never break location handling.
+    }
+  }
+
+  static const positionStatusId = 800;
+
+  /// Always-on position indicator while the app is open (see
+  /// `PositionStatusHost`). Deliberately separate from every alert:
+  /// - its own low-importance channel, silent, no heads-up, no vibration;
+  /// - never filtered by quiet hours or the zone de-duplication (it is not a
+  ///   [NotificationKind] at all), and it never replaces [zoneAlertId];
+  /// - `ongoing` so it is not cleared by "Clear all" (Android 14+ still lets
+  ///   the user swipe it away; the next refresh re-posts it);
+  /// - `timeoutAfter` removes it if the process dies without a lifecycle
+  ///   callback (e.g. swiped from recents), since the host refreshes it at
+  ///   least every 15 s while the app is open.
+  /// Uses the same monochrome small icon as every other notification, which
+  /// `res/raw/keep.xml` already keeps from the resource shrinker.
+  Future<void> showPositionStatus({
+    required String title,
+    required String body,
+  }) async {
+    try {
+      await _initialize(requestPermission: true);
+      await _plugin.show(
+        positionStatusId,
+        title,
+        body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'position_status_v1',
+            'Position status',
+            channelDescription:
+                'Quiet, always-on position indicator while NO LEAN is open',
+            importance: Importance.low,
+            priority: Priority.low,
+            ongoing: true,
+            autoCancel: false,
+            onlyAlertOnce: true,
+            silent: true,
+            playSound: false,
+            enableVibration: false,
+            showWhen: false,
+            timeoutAfter: positionStatusTimeout.inMilliseconds,
+            visibility: lockScreenVisibility,
+            category: AndroidNotificationCategory.status,
+            styleInformation: BigTextStyleInformation(
+              body,
+              contentTitle: title,
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      // The indicator is optional; it must never break location handling.
+    }
+  }
+
+  /// Safety net for an orphaned position notification; must stay well above
+  /// the host's 15 s refresh interval.
+  static const positionStatusTimeout = Duration(minutes: 2);
+
+  Future<void> cancelPositionStatus() async {
+    try {
+      await _plugin.cancel(positionStatusId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
+  static const codeTimerId = 700;
+
+  /// Non-critical: tells the user a Code Instead block ended while the app
+  /// was in the background. Skipped entirely when it would land in quiet
+  /// hours. Returns whether it was scheduled.
+  Future<bool> scheduleCodeTimer({
+    required DateTime endsAt,
+    required String task,
+  }) async {
+    if (!prefs.allows(NotificationKind.codeTimer, endsAt)) {
+      await cancelCodeTimer();
+      return false;
+    }
+    final text = prefs.textFor(
+      'CODE BLOCK DONE',
+      'Time is up on: $task Log how it went, or start another block.',
+    );
+    try {
+      await _initialize(requestPermission: true);
+      final when = tz.TZDateTime.from(endsAt, tz.local);
+      await scheduleWithExactFallback(
+        exactAllowed: await exactAlarmsAllowed(),
+        schedule: (mode) => _plugin.zonedSchedule(
+          codeTimerId,
+          text.title,
+          text.body,
+          when,
           NotificationDetails(
             android: AndroidNotificationDetails(
-              'risk_window_v2',
-              'NO LEAN risk window',
-              channelDescription:
-                  'High-visibility recovery interrupts during your configured risk window',
-              importance: Importance.max,
-              priority: Priority.high,
-              color: red,
-              colorized: true,
-              enableLights: true,
-              ledColor: cyan,
-              enableVibration: true,
-              playSound: true,
-              visibility: NotificationVisibility.private,
+              'code_timer_v1',
+              'NO LEAN focus timer',
+              channelDescription: 'Tells you when a Code Instead block ends',
+              importance: Importance.defaultImportance,
+              priority: Priority.defaultPriority,
+              visibility: lockScreenVisibility,
               category: AndroidNotificationCategory.reminder,
-              ticker: 'NO LEAN // HOLD THE LINE',
-              subText: '${riskWindow.label} // PERSONAL OVERRIDE',
-              styleInformation: BigTextStyleInformation(
-                message,
-                contentTitle: 'NO LEAN // RISK WINDOW',
-                summaryText: 'STAY MOVING. DO NOT BUY.',
-              ),
-              actions: const [
+              ticker: neutralNotificationText.title,
+            ),
+          ),
+          androidScheduleMode: mode,
+        ),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> cancelCodeTimer() async {
+    try {
+      await _plugin.cancel(codeTimerId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
+  static const cravingCheckId = 710;
+
+  /// Delay before the craving recheck prompt.
+  static const cravingCheckDelay = Duration(minutes: 15);
+
+  /// Non-critical: asks "how is the craving now?" 15 minutes after a craving
+  /// was logged. Skipped when it would land in quiet hours. Returns whether
+  /// it was scheduled.
+  Future<bool> scheduleCravingCheck({required DateTime at}) async {
+    if (!prefs.allows(NotificationKind.cravingCheck, at)) {
+      await cancelCravingCheck();
+      return false;
+    }
+    final text = prefs.textFor(
+      'CRAVING RECHECK',
+      '15 minutes on. Rate it again: did it pass, ease or grow?',
+    );
+    try {
+      await _initialize(requestPermission: true);
+      await scheduleWithExactFallback(
+        exactAllowed: await exactAlarmsAllowed(),
+        schedule: (mode) => _plugin.zonedSchedule(
+          cravingCheckId,
+          text.title,
+          text.body,
+          tz.TZDateTime.from(at, tz.local),
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              'craving_check_v1',
+              'NO LEAN craving recheck',
+              channelDescription:
+                  'Asks how a logged craving is going 15 minutes later',
+              importance: Importance.defaultImportance,
+              priority: Priority.defaultPriority,
+              visibility: lockScreenVisibility,
+              category: AndroidNotificationCategory.reminder,
+              ticker: neutralNotificationText.title,
+              actions: [
                 AndroidNotificationAction(
-                  'action_sos',
-                  'OPEN SOS',
-                  showsUserInterface: true,
-                  cancelNotification: true,
-                ),
-                AndroidNotificationAction(
-                  'action_safe',
-                  'I\'M SAFE',
-                  showsUserInterface: true,
-                  cancelNotification: true,
-                ),
-                AndroidNotificationAction(
-                  'action_crave',
-                  'LOG CRAVING',
+                  'action_recheck',
+                  prefs.label('RATE IT NOW', 'OPEN'),
                   showsUserInterface: true,
                   cancelNotification: true,
                 ),
               ],
             ),
           ),
-          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-          matchDateTimeComponents: DateTimeComponents.time,
-        );
-      }
+          androidScheduleMode: mode,
+        ),
+      );
+      return true;
     } catch (_) {
-      // Notification support must never prevent local recovery tracking.
+      return false;
+    }
+  }
+
+  Future<void> cancelCravingCheck() async {
+    try {
+      await _plugin.cancel(cravingCheckId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
     }
   }
 
@@ -150,8 +489,27 @@ class NotificationService {
   }
 
   Future<void> _cancelScheduled() async {
-    for (var id = 500; id < 504; id++) {
+    for (var id = riskAlertFirstId; id <= riskAlertLastId; id++) {
       await _plugin.cancel(id);
     }
   }
+}
+
+/// Schedules with exact alarms when Android allows them and falls back to
+/// inexact delivery when they are unavailable or revoked mid-schedule.
+/// Returns the mode that was actually used.
+Future<AndroidScheduleMode> scheduleWithExactFallback({
+  required bool exactAllowed,
+  required Future<void> Function(AndroidScheduleMode mode) schedule,
+}) async {
+  if (exactAllowed) {
+    try {
+      await schedule(AndroidScheduleMode.exactAllowWhileIdle);
+      return AndroidScheduleMode.exactAllowWhileIdle;
+    } on PlatformException catch (error) {
+      if (error.code != 'exact_alarms_not_permitted') rethrow;
+    }
+  }
+  await schedule(AndroidScheduleMode.inexactAllowWhileIdle);
+  return AndroidScheduleMode.inexactAllowWhileIdle;
 }

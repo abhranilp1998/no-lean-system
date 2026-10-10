@@ -11,8 +11,9 @@ Read it before changing code.
 - Accessibility settings refine that identity; they must not replace it with a
   generic Material look. High contrast keeps the neon palette. Reduce motion
   removes animation without flattening the visual hierarchy.
-- Keep the app offline-first. Recovery history must remain usable without an
-  account, network connection, or remote service.
+- Keep the app offline-first with an optional online map. Recovery history,
+  zones, pins and alerts must remain usable without an account, network
+  connection, or remote service; the only network use is OSM street tiles.
 - Never seed fake recovery activity. Default reasons/reminders are
   configuration; cravings, clean days, relapses, and SOS sessions are user data.
 
@@ -30,7 +31,15 @@ Read it before changing code.
 
 ## Recovery and security rules
 
-- Persisted recovery JSON is currently state version 7. Any schema change must
+- Persisted recovery JSON is currently state version 13 (v8 added
+  `riskWindowLock` and `appLockPending`; v9 added `zones`, `zoneMonitoring`
+  and `backgroundGeofencing`; v10 added `streetTiles`, `widgetPrivacy`,
+  `quietHoursEnabled`, `quietHours`, `hideSensitiveNotifications` and the
+  `codeSession` event type; v11 added `zoneHistory` and the `zoneEntry`
+  event type; v12 added `bottleMl`, `insightPreferences`, the `cravingCheck`
+  event type and structured dose/cost/stress metadata, and converts exact
+  free-text quantities on load; v13 added `appLockPolicy` (off by default)
+  and the `appUnlock` event type; older states load with safe defaults). Any schema change must
   increment the version and provide a non-destructive migration in
   `RecoveryController.load()`.
 - Production history is stored in `recovery/current.json` in application support
@@ -39,22 +48,243 @@ Read it before changing code.
   Unknown/corrupt current history opens a recovery screen and must never reset.
 - Legacy day summaries retain date-only facts, not invented timestamps/counts.
   Backup format 3 supports these summaries and imports legacy exports.
+  Backup format 4 adds danger zones (merged by ID on import); format ≤3 still
+  imports with no zones. Format 5 adds `codeSession` events; format 6 adds
+  `zoneEntry` events; format 7 adds `cravingCheck` events, dose/cost/stress
+  metadata and the portable `bottleMl` preference (format ≤6 and raw state
+  <12 imports get the exact-quantity conversion); format 8 adds `appUnlock`
+  events (the app-lock policy is never exported or imported). A new event type always
+  needs a format bump so older apps refuse the file as a whole.
+- CSV export (`events_csv.dart`) is a read-only copy of every event, oldest
+  first: BOM + CRLF, RFC 4180 quoting, ISO-8601 timestamps with offset, and a
+  formula guard (`= + - @` tab/CR get a leading `'`). Unmapped metadata goes in
+  the `details` JSON column. JSON stays the only restorable backup. The
+  `zone` column (after `details`) carries the zone name of `zoneEntry` rows.
+  After it (append-only): `amount, unit, amount_ml, bottle_ml,
+  amount_source, cost_inr, stress, check_outcome`. Relapse type stays in the
+  existing `relapse_type` column.
+- Milestones (3/7/14/30/60/90/180/365 days, `domain/milestones.dart`) are
+  recorded automatically by `syncMilestones()`, stamped at lastDose + N days,
+  with `source: 'auto'`; they cannot be deleted from the timeline. The shell
+  calls it after load, on resume and on the lock ticker (never inside
+  `load()`, which must stay write-free) and celebrates the highest new one
+  once, never over the app lock. The celebration honours reduce motion.
 - Multiple relapse rows use one protected, idempotent batch operation with a
   separate chosen occurrence time per event. Cooldown support never hides tabs,
   logging, SOS or settings; retain the original cooldown owner on later logs.
+- App lock (user decision, Oct 2026): with a PIN set, the shell locks during the
+  configured risk window (`riskWindowLock`, on by default, disabling requires
+  auth) and after every saved relapse (`appLockPending`). The lock screen must
+  keep SOS and craving logging reachable without unlocking; a widget relapse
+  action waits until unlock. Import never restores either lock flag.
+- PIN lockouts escalate 5 → 15 → 60 minutes; the level lives in secure storage
+  and resets only on a verified PIN, a new PIN, or clearing the lock.
 - The relapse PIN belongs only in `flutter_secure_storage`. Never put PIN text,
   biometric material, or authentication tokens in SharedPreferences, exports,
   logs, analytics, or notifications.
 - `RecoveryController.recordRelapse()` is the enforcement boundary. Do not add
   another timer-reset path that bypasses its biometric/PIN authorization.
 - Disabling the relapse lock must remain authenticated.
+- Editing the shared risk window authenticates whenever the evening wall or
+  risk-window app schedule is armed and any previously protected minute is
+  removed (`RiskWindow.covers`, including overnight/end boundaries). Extensions
+  and no-ops stay free. Log old/new labels only for committed edits; denied
+  authorization and failed writes retain the previous window/history.
 - Exports deliberately exclude the secure PIN and biometric material.
+- Android Save uses `no_lean/export` / `save` with UTF-8 bytes, filename and
+  JSON/CSV MIME. `DocumentExportChannel` opens ACTION_CREATE_DOCUMENT, then
+  writes/closes/verifies exact bytes off the main thread. Only verified bytes
+  return true; cancellation returns false. Failed writes never show ready.
+  Sharing omits captions and retains distinct source copies until a later
+  age-based cleanup; a share result does not establish receipt.
+- Backup text decoding accepts valid UTF-8 or BOM-marked, well-formed UTF-16.
+  Reject malformed encoding instead of guessing Latin-1. Normalize only outer
+  padding/share wrappers; embedded U+FEFF in recorded text must survive import
+  and re-export. Damaged copies must not become valid-looking changed history.
+
+## Doses, units and money (StillPoint-derived, Oct 2026)
+
+- Units live in `recovery/domain/dose_units.dart`: ml, L, bottle, drink,
+  tablet. Maths is in ml. L = ×1000; bottle = × the user's `bottleMl`
+  (default 100, valid 10-2000, presets 60-750). Drinks and tablets are
+  counts: they never carry `amountMl`, never enter ml totals or ml charts,
+  and escalation only compares them with the same unit.
+- A relapse dose stores what was entered plus its value at that moment:
+  `amount`, `unit`, `amountMl` (volume only), `bottleMl` (bottle only).
+  Changing the bottle size never rewrites history; readers use stored ml.
+  Validation recomputes ml for ml/L only; a bottle dose keeps its stored ml.
+- `parseAmount` accepts `2.5`, `2,5`, `.5`, `1/2`, `1 1/2`, `1½`,
+  `half`/`quarter`/`three quarters`, `2 and a half`; rejects ≤0, non-finite,
+  `/0` and ambiguous `1,000`. `parseMoney` takes ₹/Rs/INR and Indian or
+  western grouping; 0 is a valid cost.
+- Free-text `quantity` is always kept. New entries can parse exact text such as
+  `250ml`, `2.5 bottles`, `half a bottle` and `2 tablets`, using the current bottle
+  setting where needed and marking `amountSource: 'parsed'`. Legacy load/import
+  converts explicit ml/L values and tablet/drink counts. Bottle-only notes stay
+  text because the historical bottle size is unknown; a global/default size
+  cannot supply that missing fact. Existing structured bottle values are kept.
+  "half a cup" stays text only.
+- `doseSanityCheck` runs on save before the reset confirm: ≥20 bottles or
+  >5 L of bottles → "Did you mean N ml?"; ≥10 L → ml; <1 ml → L; whole
+  1-4 ml → bottles; >20 tablets / >30 drinks → check the number. The size
+  cap (20 L, 500 count) is enforced after the prompt, never before it.
+  Display rounding (`formatMl`, `formatAmount`) is display-only.
+- Relapse `cost` (₹, optional) and `stress` (1-5, optional; also on
+  cravings). Money: a relapse day with recorded costs loses exactly those,
+  other relapse days are estimated at daily spend; recorded costs chart even
+  at daily spend ₹0. Label which part is recorded vs estimated.
+- Logging warnings (`dose_safety.dart`): mixing depressant classes
+  (opioid = full lean/partial, alcohol, benzo; lean+alcohol counts as both)
+  across the draft and the last 24 h; a second dose on the same day; clean
+  streak ≥3 days (tolerance). Any warning shows the overdose-signs card with
+  CALL 112.
+- Dose insights (`progress/domain/dose_insights.dart`): per-type stats;
+  escalation = latest ≥1.2× the average of up to 3 previous doses of the
+  same type and unit class, needs ≥2 previous, latest within 30 days;
+  same-day repeats (30 days); high need in 48 h = any stress 5, ≥2 logs at
+  stress 4+, or stress 4+ with a "stronger" recheck; stress-vs-intensity
+  needs 3+ logs each side and a 1.2× gap.
+- Insights carry `id`, `evidenceKey`, `evidenceCount` (confidence: <6 early,
+  6-11 moderate, ≥12 strong; null = not applicable) and `why`. "Dismiss
+  until the evidence changes" stores `insightPreferences.dismissed[id] =
+  evidenceKey`; high need is never dismissible. Dismissals stay local
+  (not restored by import).
+- Craving recheck: logging a craving schedules a non-critical
+  `NotificationKind.cravingCheck` (id 710, channel `craving_check_v1`,
+  action `action_recheck`) 15 min later, skipped in quiet hours. The
+  dashboard shows RECHECK DUE for the newest unchecked craving aged
+  15 min-6 h. `cravingCheck` = {cravingId, intensity 0-10, outcome
+  gone|eased|same|stronger, originalIntensity}.
+- Heat map modes: DAYS (default clean/relapse), COUNT, AMOUNT (ml only),
+  COST, STRESS (daily max); the weekday card covers 12 weeks and names a
+  peak only with ≥5 data days and a clear leader.
+
+## Privacy and notifications
+
+- Privacy settings (`streetTiles`, `widgetPrivacy`,
+  `hideSensitiveNotifications`, quiet hours) never need auth and are never
+  changed by an import. A malformed privacy flag stays private.
+- Street tiles off = the tile provider is never built: grid only, zero network.
+- Quiet hours (user decision, Oct 2026) mute non-critical notifications only.
+  Risk-window and danger-zone alerts are critical and always come through.
+  Classify every new notification in `NotificationKind`.
+- Every notification is VISIBILITY_PRIVATE so the lock screen shows Android's
+  neutral public version. flutter_local_notifications 19.5 cannot set a custom
+  `publicVersion`; "hide sensitive content" instead makes the posted title,
+  body and action labels neutral (`NotificationPrefs.textFor`/`label`). The
+  background geofence isolate reads prefs from the state file and fails
+  private if it is unreadable.
+- Widget privacy sends no counter, streak, risk or pledge state over the
+  channel, and native code removes the stored last-dose time.
+
+## Danger zones and location
+
+- Map is offline-first with an optional online street layer (user decision,
+  Oct 2026): standard OSM tiles (`tile.openstreetmap.org`, no key/paid
+  provider) restyled by `neonTileMatrix`, over the offline grid + scale bar,
+  which must always stay underneath as the no-network fallback.
+- OSM tile policy is mandatory: `userAgentPackageName` = app id, visible
+  "© OpenStreetMap contributors" whenever tiles show, flutter_map built-in
+  cache (app support dir, 150 MB). Never prefetch or bulk-download tiles, and
+  no geocoding/address search. Tile requests are the only data that leaves the
+  device; zones never do.
+- Zones: 100–2000 m radius, max 20, name ≤ 40. Deleting or shrinking a zone is
+  protected by the relapse lock; adding, growing, and toggling monitoring are
+  not. Location toggles never require auth, so the user can always switch
+  tracking off. Imported preferences never switch location features on.
+- In-app checks (`ZoneMonitor`) stream balanced-accuracy fixes and request a
+  current high-accuracy fix on activation while the app is resumed, monitoring
+  is on and zones exist. Ignore fixes older than two minutes and out-of-order
+  results. Activation generations prevent permission/GPS completions after
+  pause from restarting monitoring or raising alerts. Background alerts use
+  `native_geofence` (enter-only, ids `nolean_zone_<id>`), are opt-in behind the
+  disclosure screen, and the isolate callback reads only the local state file.
+- Zone history (P3, opt-in, default OFF, no auth to change or clear, never
+  switched on by import): each entry is a `zoneEntry` event with zoneId,
+  zoneName, time and source only; coordinate keys are stripped even from
+  crafted events. Same-zone reports within 15 min merge (in-app monitor and
+  geofence both fire). The background isolate never writes the state file;
+  it appends to `recovery/zone_entries.jsonl` and the app imports that inbox
+  on open/resume (drain → commit → acknowledge; discarded if history is off).
+- Position notification (user decision, Oct 2026; default ON, toggle in
+  Settings > Protection, key `positionNotification`, no state-version bump:
+  missing key = on). `PositionStatusHost` wraps `Shell` in `NoLeanApp` and
+  posts id 800 on channel `position_status_v1` ("Position status", low
+  importance, silent, ongoing, `timeoutAfter` 2 min) while the app is
+  foreground; cancelled on pause/hide/detach. Shows rounded coordinates,
+  nearest zone + distance to edge, or `INSIDE <zone>`, or location off / no
+  permission; "hide sensitive" → `NO LEAN // position active` only. Throttle:
+  state change immediately, else ≤ every 15 s. It is an indicator only: it
+  never feeds or suppresses zone alerts, is not a `NotificationKind`, and
+  quiet hours never apply. Never requests location permission itself.
+- Zone alerts are firm and factual and always offer one-tap exit ("I'M
+  LEAVING"/close); never block leaving the alert.
+- Insight patterns need ≥5 cravings+relapses and ≥3 repeats before being
+  shown; relapse context tags count as triggers. Money lost uses recorded
+  relapse costs where present and estimates the rest (relapse days × daily
+  spend); the estimated part must be labelled as one. The cumulative
+  kept/lost chart (`money_series.dart`) applies today's daily spend to all
+  history; with ₹0 and no recorded costs it prompts the user to set it.
+- SOS is staged (breathe → 5-4-3-2-1 → reasons → re-pledge). Leaving is held
+  only for the first 15 s of breathing; completion is recorded at the pledge.
+
+## App lock for other apps (user decision, Oct 2026)
+
+- Distinct from the in-app PIN/biometric lock (`AppLockSession`). Code in
+  `lib/features/app_lock/` + `android/.../AppLock*.kt` (channel
+  `no_lean/app_lock`).
+- Policy (`AppLockPolicy`, state key `appLockPolicy`, v13): enabled, apps
+  (`LockedApp` with `paymentApp`), schedule always / riskWindow (the existing
+  `riskWindow`, end minute inclusive) / off (= danger zones only) / custom
+  (model + native only, no UI), `lockInsideDangerZones` (default on),
+  `dailyUnlockBudget` 0-10 (default 3). Malformed `enabled` = off. Never in
+  `portablePreferences`; `mergeImportedEvents` strips it. Loosening
+  (`isLooserThan`: off, remove app, weaker schedule, zones off, bigger budget,
+  marking an already-locked app as payment) needs `_authorizeProtectedAction`;
+  tightening is free. Saving always runs `sanitized()`.
+- Never lockable (`never_lockable.dart` + `AppLockProtected.kt` at runtime:
+  default dialer, every HOME handler, `tel:`/`geo:`/Settings handlers, NO
+  LEAN's own ids). Filtered on save, in the picker and in the service. Never
+  shrink this list.
+- Exit plan (`exit_plan.dart`, mandatory user instruction): the blocking
+  screen ALWAYS shows SOS, CALL 112 and GO HOME; Back = go home. "I need this
+  app" → reason (payment/work/navigation/urgent/other) → within budget: 30 s
+  wait showing the user's reasons (payment apps 10 s) → that app only, 5 min.
+  Budget spent → PIN/biometrics (existing lockout). No PIN or locked out →
+  120 s wait. Never a dead end. Each unlock = `appUnlock` event {packageName,
+  appLabel, reason, method budget|pin|longWait, waitSeconds, unlockMinutes,
+  paymentApp, zoneName?}; coordinates stripped. Only `budget` unlocks spend
+  the budget (local calendar day).
+- Native: `AppLockService` (FGS `specialUse`, id 900, channel
+  `app_lock_service_v1`, neutral text; hide-sensitive → "Service running")
+  polls `UsageStatsManager.queryEvents` ~1 s while the screen is on and a
+  lock is active; zone rule uses the last known location (≤10 min, accuracy
+  ≤ radius and ≤150 m, exit hysteresis). Blocks by queueing a request
+  (`pending_blocks`) and starting `MainActivity` (needs "Display over other
+  apps" on Android 10+, else notification 901 on `app_lock_block_v1`).
+  `AppLockHost` (wraps Shell) pushes config on every relevant change and on
+  start/resume (restarts a killed service), drains requests and opens
+  `AppBlockScreen`. Grants are per package with an expiry in native prefs.
+  `AppLockBootReceiver` restarts it after boot/update.
+- Fail-safe: no usage access, broken config or any native error = nothing
+  blocked; the service stops itself when access is revoked. The Shell shows
+  `AppLockHealthBanner` (paused/limited/stopped) with FIX. NO LEAN never
+  draws overlays and never consumes Home/Back. No AccessibilityService (Play
+  policy); PACKAGE_USAGE_STATS, SYSTEM_ALERT_WINDOW and the specialUse FGS
+  need Play declarations (docs/CHANGES_AND_ROADMAP.md §3.7).
 
 ## Shared UI and feedback
 
 - Use `AppNotice.show(...)` for user-facing transient messages. Do not create
   ad-hoc SnackBars with unverified foreground/background contrast.
-- Use `AppDialog` for app-styled modal content.
+- Use `AppDialog` for app-styled modal content. Dialogs with text fields wrap
+  their body in `KeyboardSafeScroll` and give fields
+  `KeyboardSafeScroll.fieldScrollPadding` so the primary button stays
+  reachable with the keyboard open.
+- Shell tabs (Dashboard, Cravings, Progress, Timeline, Settings) scroll in
+  `TabListView` (`core/layout/tab_layout.dart`): shared gutters, one bottom
+  clearance, drag-to-dismiss keyboard. The shell owns the only Scaffold and
+  SafeArea; tabs never add their own.
 - Use `AppFeedback` for haptic/sound feedback. Shared controls already emit
   interaction feedback, so avoid adding a second haptic for the same tap.
 - Tap sound, vibration, and sound profile are independent persisted settings.
@@ -69,11 +299,23 @@ Read it before changing code.
 ## Android bridge contract
 
 - Channel: `no_lean/widget`, method: `update`.
-- Widget actions `sos`, `craving`, `relapse` use request codes 10, 11, 12; root
-  remains 0. Queue native actions until the loaded shell drains them. Remove
+- Widget actions `sos`, `craving`, `relapse`, `code` use request codes 10, 11,
+  12, 13; root remains 0. Queue native actions until the loaded shell drains them. Remove
   consumed intent extras so recreation does not replay a completed action.
 - Required source of truth: `lastDoseEpochMillis` as a positive integer.
 - `cleanTime` and `streak` remain compatibility fallback strings.
+- Payload also carries `privacy`. One provider class renders three sizes
+  (`NoLeanWidgetSize`: 2x1 small, 4x2 original, 4x3 large); each layout must
+  contain exactly the ids its size flags promise, because RemoteViews fails the
+  whole widget on a missing id. `test/android/widget_resources_test.dart`
+  enforces this. The agent box now has an Android SDK and emulator
+  (`source /workspace/tools/android_env.sh`, AVD `nolean35`). The 4x2
+  receiver owns the shared boundary alarm and refreshes every size.
+- Code Instead: tasks rotate by history (`nextCodeTask`), never by the clock;
+  catalogue ids are stable, append-only. Blocks are logged as `codeSession`
+  when time is up, the task is done, or the user stops after ≥1 minute.
+  Notification action `action_code` (pre-window risk alert) and widget action
+  `code` open the timer, which opens over the app lock like SOS.
 - The native widget uses a launcher-side Chronometer for live seconds. Do not
   replace it with a per-second Dart timer or alarm.
 - `MainActivity` must remain a `FlutterFragmentActivity` for `local_auth`.
@@ -96,10 +338,10 @@ Read it before changing code.
 Run all of the following after behavior changes:
 
 ```text
-dart format lib test
-dart analyze
+dart format --set-exit-if-changed lib test integration_test test_driver
+dart analyze --fatal-infos
 flutter test
-flutter build apk --debug
+flutter build apk --release   # alone: never alongside flutter drive
 ```
 
 Also run `git diff --check` and ensure no generated `build/` or `.dart_tool/`
@@ -110,3 +352,21 @@ files are added to version control.
 Follow `docs/PR_REVIEW_SOP.md` and the PR template. Review the complete diff, fix
 blocking findings, and merge the verified head or close with reasons. Preserve
 useful features and local commits. Remove only merged feature branches.
+
+## Export / import contract (Oct 2026)
+
+- Export (JSON backup, CSV history, startup emergency export) goes through
+  `BackupService._shareText`: on Android/iOS `FilePicker.saveFile(bytes: ...)`
+  (Android `ACTION_CREATE_DOCUMENT`, no storage permission on any version).
+  Every export method returns `Future<bool>`: `false` = user cancelled the Save
+  screen, and callers then show NO notice (never a false "ready"). Errors show
+  an error notice. Tests inject `BackupService(saver: ...)`.
+- JSON backups are capped at 5 MB (same as import); the emergency export of
+  preserved copies passes `enforceSizeLimit: false` so it is never blocked.
+- `shareBackupJson` / `_shareFile` keep the shared temp copy (cleaned after
+  1 h on the next share) because targets may read it after the sheet closes.
+- Import picks any file on mobile, decodes UTF-8 (BOM ok) or UTF-16 LE/BE with
+  BOM, strips NUL/padding/share text, accepts backup formats 1–7 and raw state
+  v2–v12. `test/features/recovery/services/compat_matrix_test.dart` guards it.
+- Release builds use `android/app/proguard-rules.pro` (Gson rules for
+  scheduled notifications) and `res/raw/keep.xml` (notification icon).

@@ -1,3 +1,6 @@
+import '../../settings/presentation/settings_dialogs.dart';
+import '../../code_instead/presentation/code_instead_screen.dart';
+import '../../../core/layout/tab_layout.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -54,8 +57,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       color: cyan,
       backgroundColor: panel,
       onRefresh: () async => ref.read(recoveryProvider).syncWidget(),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
+      child: TabListView(
         children: [
           const BrandHeader(),
           const SizedBox(height: 22),
@@ -90,9 +92,17 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                           : 'SYSTEM STABLE',
                       color: recovery.isRiskWindow ? red : toxic,
                     ),
-                    Text(
-                      'LIVE SINCE ${DateFormat('MMM d • HH:mm').format(recovery.lastDose)}',
-                      style: microStyle,
+                    const SizedBox(width: 10),
+                    // Narrow phones and large text scales: shrink, never
+                    // overflow the card.
+                    Flexible(
+                      child: Text(
+                        'LIVE SINCE ${DateFormat('MMM d • HH:mm').format(recovery.lastDose)}',
+                        style: microStyle,
+                        textAlign: TextAlign.end,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ],
                 ),
@@ -127,6 +137,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           if (recovery.welcomeBackSince != null ||
               recovery.relapseCooldownUntil != null)
             const SizedBox(height: 14),
+          const CravingRecheckCard(),
           GlowButton(
             label: 'I WILL NOT BUY LEAN TODAY',
             icon: Icons.lock_outline,
@@ -146,12 +157,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: StatCard(
-                  label: 'MONEY SAVED',
-                  value: money(recovery.moneySaved),
-                  detail: 'At ${money(recovery.dailySpend)} / day',
-                  color: toxic,
-                ),
+                child: recovery.dailySpend > 0
+                    ? StatCard(
+                        label: 'MONEY SAVED',
+                        value: money(recovery.moneySaved),
+                        detail: 'At ${money(recovery.dailySpend)} / day',
+                        color: toxic,
+                      )
+                    // ₹0 is "not set", not "saved nothing": ask for it.
+                    : InkWell(
+                        key: const ValueKey('dashboard-set-spend'),
+                        borderRadius: BorderRadius.circular(18),
+                        onTap: () => showSpendDialog(context, ref),
+                        child: const StatCard(
+                          label: 'MONEY SAVED',
+                          value: 'SET ₹',
+                          detail: 'Tap to set daily spend',
+                          color: toxic,
+                        ),
+                      ),
               ),
             ],
           ),
@@ -218,7 +242,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             title: 'CODE INSTEAD',
             subtitle: 'A small task beats a big spiral',
             color: purple,
-            onTap: () => showCodeChallenge(context),
+            onTap: () => CodeInsteadScreen.open(context, source: 'dashboard'),
           ),
           const SizedBox(height: 22),
           SectionHeader(

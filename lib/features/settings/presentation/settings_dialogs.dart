@@ -11,8 +11,10 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
+import '../../recovery/services/notification_service.dart';
 import '../../recovery/domain/risk_window.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
+import '../../recovery/domain/dose_units.dart';
 
 Future<void> showDashboardNoticeStyleDialog(
   BuildContext context,
@@ -188,6 +190,122 @@ Future<void> showCooldownDialog(BuildContext context, WidgetRef ref) async {
       type: AppNoticeType.success,
     );
   }
+}
+
+/// Bottle size for dose logging. Applies to new entries only.
+Future<void> showBottleSizeDialog(BuildContext context, WidgetRef ref) async {
+  final current = ref.read(recoveryProvider).bottleMl;
+  final updated = await showDialog<double>(
+    context: context,
+    builder: (_) => BottleSizeDialog(initial: current),
+  );
+  if (updated == null || !context.mounted) return;
+  if (!await saveAction(
+    context,
+    () => ref.read(recoveryProvider).updateBottleMl(updated),
+  )) {
+    return;
+  }
+  if (context.mounted) {
+    AppNotice.show(
+      context,
+      'BOTTLE SIZE // ${formatMl(updated)}. PAST ENTRIES KEEP THEIR ML.',
+      type: AppNoticeType.success,
+    );
+  }
+}
+
+class BottleSizeDialog extends StatefulWidget {
+  const BottleSizeDialog({required this.initial, super.key});
+
+  final double initial;
+
+  @override
+  State<BottleSizeDialog> createState() => _BottleSizeDialogState();
+}
+
+class _BottleSizeDialogState extends State<BottleSizeDialog> {
+  late double? _selected = bottleSizePresets.contains(widget.initial)
+      ? widget.initial
+      : null;
+  late final _custom = TextEditingController(
+    text: bottleSizePresets.contains(widget.initial)
+        ? ''
+        : formatAmount(widget.initial),
+  );
+  String? _error;
+
+  @override
+  void dispose() {
+    _custom.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final custom = _custom.text.trim();
+    final value = custom.isEmpty ? _selected : parseAmount(custom);
+    if (value == null || !isValidBottleMl(value)) {
+      setState(() => _error = 'Enter a size from 10 to 2000 ml.');
+      return;
+    }
+    Navigator.pop(context, value);
+  }
+
+  @override
+  Widget build(BuildContext context) => AppDialog(
+    title: 'BOTTLE SIZE',
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'How much one "bottle" holds when you log a dose in bottles. '
+          'Changing it only affects new entries: past entries keep the ml '
+          'they were saved with.',
+          style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final ml in bottleSizePresets)
+              ChoiceChip(
+                key: ValueKey('bottle-size-${ml.round()}'),
+                label: Text(formatMl(ml)),
+                selected: _custom.text.trim().isEmpty && _selected == ml,
+                onSelected: (_) => setState(() {
+                  _selected = ml;
+                  _custom.clear();
+                  _error = null;
+                }),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const ValueKey('bottle-size-custom'),
+          controller: _custom,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(
+            labelText: 'CUSTOM (ML)',
+            suffixText: 'ml',
+            errorText: _error,
+          ),
+          onChanged: (_) => setState(() => _error = null),
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            key: const ValueKey('bottle-size-save'),
+            onPressed: _save,
+            child: const Text('SAVE BOTTLE SIZE'),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _StringListDialog extends StatefulWidget {
@@ -396,16 +514,187 @@ Future<void> showRiskWindowDialog(BuildContext context, WidgetRef ref) async {
   );
 
   if (updatedWindow == null || !context.mounted) return;
-  if (!await saveAction(
-    context,
-    () => ref.read(recoveryProvider).updateRiskWindow(updatedWindow),
-  )) {
+  ProtectedActionResult? result;
+  if (!await saveAction(context, () async {
+    result = await recovery.updateRiskWindow(updatedWindow);
+  })) {
+    return;
+  }
+  if (result == ProtectedActionResult.authenticationRequired &&
+      context.mounted) {
+    final pin = await showRelapsePinDialog(
+      context,
+      actionLabel: 'CHANGE WINDOW',
+    );
+    if (pin == null || !context.mounted) return;
+    if (!await saveAction(context, () async {
+      result = await recovery.updateRiskWindow(
+        updatedWindow,
+        pin: pin,
+        tryBiometrics: false,
+      );
+    })) {
+      return;
+    }
+  }
+  if (result != ProtectedActionResult.completed) {
+    if (context.mounted) {
+      AppNotice.show(
+        context,
+        result?.failureMessage ?? 'Risk window was not changed.',
+        type: AppNoticeType.error,
+      );
+    }
     return;
   }
   if (context.mounted) {
     AppNotice.show(
       context,
       'RISK WINDOW SET // ${updatedWindow.label}',
+      type: AppNoticeType.success,
+    );
+  }
+}
+
+Future<void> showQuietHoursDialog(BuildContext context, WidgetRef ref) async {
+  final prefs = ref.read(recoveryProvider).notificationPrefs;
+  var enabled = prefs.quietHoursEnabled;
+  var startMinutes = prefs.quietHours.startMinutes;
+  var endMinutes = prefs.quietHours.endMinutes;
+
+  final result = await showDialog<(bool, RiskWindow)>(
+    context: context,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (_, setState) => AppDialog(
+        title: 'QUIET HOURS',
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Mutes non-critical notifications such as focus-timer pings. '
+              'Risk-window and danger-zone alerts still come through.',
+              style: TextStyle(color: muted, fontSize: 12, height: 1.45),
+            ),
+            const SizedBox(height: 10),
+            SwitchListTile(
+              key: const ValueKey('quiet-hours-enabled'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Quiet hours on'),
+              value: enabled,
+              onChanged: (value) => setState(() => enabled = value),
+            ),
+            const SizedBox(height: 6),
+            _TimeSelector(
+              label: 'QUIET FROM',
+              minutes: startMinutes,
+              color: purple,
+              onTap: () async {
+                final selected = await _pickTime(dialogContext, startMinutes);
+                if (selected != null) setState(() => startMinutes = selected);
+              },
+            ),
+            const SizedBox(height: 10),
+            _TimeSelector(
+              label: 'QUIET UNTIL',
+              minutes: endMinutes,
+              color: cyan,
+              onTap: () async {
+                final selected = await _pickTime(dialogContext, endMinutes);
+                if (selected != null) setState(() => endMinutes = selected);
+              },
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                key: const ValueKey('quiet-hours-save'),
+                onPressed: startMinutes == endMinutes
+                    ? null
+                    : () => Navigator.pop(dialogContext, (
+                        enabled,
+                        RiskWindow(
+                          startMinutes: startMinutes,
+                          endMinutes: endMinutes,
+                        ),
+                      )),
+                icon: const Icon(Icons.bedtime_outlined),
+                label: const Text('SAVE QUIET HOURS'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  if (result == null || !context.mounted) return;
+  final (on, window) = result;
+  if (!await saveAction(
+    context,
+    () => ref.read(recoveryProvider).setQuietHours(enabled: on, window: window),
+  )) {
+    return;
+  }
+  if (context.mounted) {
+    AppNotice.show(
+      context,
+      on ? 'QUIET HOURS ON // ${window.label}' : 'QUIET HOURS OFF',
+      type: AppNoticeType.success,
+    );
+  }
+}
+
+Future<void> confirmClearZoneHistory(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final count = ref.read(recoveryProvider).zoneEntryCount;
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AppDialog(
+      title: 'CLEAR ZONE HISTORY',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Delete $count zone ${count == 1 ? 'entry' : 'entries'} from '
+            'your timeline? Zones, alerts and the rest of your history stay. '
+            'A JSON backup made earlier still contains them.',
+            style: const TextStyle(color: muted, fontSize: 12, height: 1.45),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('CANCEL'),
+              ),
+              FilledButton(
+                key: const ValueKey('confirm-clear-zone-history'),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                style: FilledButton.styleFrom(backgroundColor: red),
+                child: const Text('CLEAR'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  if (!await saveAction(
+    context,
+    () => ref.read(recoveryProvider).clearZoneHistory(),
+  )) {
+    return;
+  }
+  if (context.mounted) {
+    AppNotice.show(
+      context,
+      'ZONE HISTORY CLEARED // $count REMOVED',
       type: AppNoticeType.success,
     );
   }
@@ -515,6 +804,60 @@ Future<void> showFeedbackDialog(BuildContext context, WidgetRef ref) async {
       'FEEDBACK UPDATED // SOUND ${preferences.soundEnabled ? preferences.soundEffect.label : 'OFF'} // VIBRATION ${preferences.vibrationEnabled ? 'ON' : 'OFF'}',
       type: AppNoticeType.success,
     );
+  }
+}
+
+Future<void> requestExactAlertTiming(
+  BuildContext context,
+  WidgetRef ref,
+) async {
+  final allowed = await NotificationService.instance.requestExactAlarms();
+  await ref.read(recoveryProvider).resyncRiskNotifications();
+  if (!context.mounted) return;
+  AppNotice.show(
+    context,
+    allowed
+        ? 'EXACT TIMING ON. Alerts are rescheduled to fire on the minute.'
+        : 'EXACT TIMING OFF. Alerts still fire, but Android may delay them.',
+    type: allowed ? AppNoticeType.success : AppNoticeType.info,
+  );
+}
+
+Future<void> setRiskWindowLock(
+  BuildContext context,
+  WidgetRef ref,
+  bool enabled,
+) async {
+  try {
+    final recovery = ref.read(recoveryProvider);
+    var result = await recovery.setRiskWindowLock(enabled);
+    if (result == ProtectedActionResult.authenticationRequired &&
+        context.mounted) {
+      final pin = await showRelapsePinDialog(
+        context,
+        actionLabel: 'TURN OFF WINDOW LOCK',
+      );
+      if (pin == null) return;
+      result = await recovery.setRiskWindowLock(
+        enabled,
+        pin: pin,
+        tryBiometrics: false,
+      );
+    }
+    if (!context.mounted) return;
+    AppNotice.show(
+      context,
+      result == ProtectedActionResult.completed
+          ? 'RISK-WINDOW LOCK ${enabled ? 'ON' : 'OFF'}.'
+          : '${result.failureMessage} WINDOW LOCK UNCHANGED.',
+      type: result == ProtectedActionResult.completed
+          ? AppNoticeType.info
+          : AppNoticeType.error,
+    );
+  } on RecoverySaveException catch (error) {
+    if (context.mounted) {
+      AppNotice.show(context, error.toString(), type: AppNoticeType.error);
+    }
   }
 }
 

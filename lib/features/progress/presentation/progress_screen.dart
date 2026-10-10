@@ -1,3 +1,4 @@
+import '../../../core/layout/tab_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,15 +10,21 @@ import '../../cravings/presentation/craving_dialog.dart';
 import '../../dashboard/presentation/dashboard_dialogs.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/application/recovery_provider.dart';
+import '../../recovery/domain/recovery_event.dart';
 import '../../settings/presentation/settings_dialogs.dart';
+import '../../../core/services/save_action.dart';
+import '../domain/dose_insights.dart';
+import '../domain/money_series.dart';
 import '../domain/recovery_insights.dart';
 import '../domain/verified_safety_briefs.dart';
 import 'widgets/actionable_insights_panel.dart';
 import 'widgets/craving_timeline_card.dart';
 import 'widgets/insight_breakdown_card.dart';
 import 'widgets/milestone_tracker.dart';
+import 'widgets/money_chart_card.dart';
 import 'widgets/progress_heat_map.dart';
 import 'widgets/recovery_summary_cards.dart';
+import 'widgets/relapse_type_card.dart';
 
 class ProgressScreen extends ConsumerWidget {
   const ProgressScreen({super.key});
@@ -26,20 +33,45 @@ class ProgressScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final recovery = ref.watch(recoveryProvider);
     final timeline = chronologicalCravingSeries(recovery.cravings);
-    final triggers = triggerBreakdown(recovery.cravings);
-    final timeBands = timeOfDayBreakdown(recovery.cravings);
+    final relapses = recovery.events
+        .where((event) => event.type == RecoveryEventType.relapse)
+        .toList();
+    final signals = riskSignals(
+      cravings: recovery.cravings,
+      relapses: relapses,
+    );
+    final triggers = signalTriggerBreakdown(signals);
+    final timeBands = signalTimeBreakdown(signals);
+    final windowShare = riskWindowShare(signals, recovery.riskWindow);
     final weekly = weeklyRecoverySummary(
       cravings: recovery.cravings,
       sosSessions: recovery.sosSessions,
       cleanDays: recovery.cleanDays,
     );
     final sos = sosCompletionSummary(recovery.sosSessions);
-    final actions = patternActionInsights(
-      cravings: recovery.cravings,
-      sosSessions: recovery.sosSessions,
-      dailySpend: recovery.dailySpend,
-      moneySaved: recovery.moneySaved,
-    );
+    List<PatternActionInsight> insightsFor(Map<String, String> dismissed) =>
+        patternActionInsights(
+          cravings: recovery.cravings,
+          sosSessions: recovery.sosSessions,
+          dailySpend: recovery.dailySpend,
+          moneySaved: recovery.moneySaved,
+          relapses: relapses,
+          riskWindow: recovery.riskWindow,
+          events: recovery.events,
+          dismissed: dismissed,
+        );
+    final actions = insightsFor(recovery.dismissedInsights);
+    // Dismissals that still match their evidence (hidden right now).
+    final hidden = recovery.dismissedInsights.isEmpty
+        ? 0
+        : insightsFor(
+            const {},
+          ).where((i) => i.isDismissedBy(recovery.dismissedInsights)).length;
+    final typeStats = relapseTypeStats(relapses);
+    final costByType = {
+      for (final stats in typeStats)
+        if (stats.costedCount > 0) stats.label: stats.realCost,
+    };
     final safetyInsights = verifiedSafetyInsights(
       events: recovery.events,
       cleanStreakDays: recovery.streak,
@@ -64,8 +96,7 @@ class ProgressScreen extends ConsumerWidget {
       }
     }
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
+    return TabListView(
       children: [
         const BrandHeader(),
         const SizedBox(height: 24),
@@ -81,12 +112,12 @@ class ProgressScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'CLEAN DAYS / LAST 30',
-                style: microStyle.copyWith(color: purple),
+              Text('LAST 30 DAYS', style: microStyle.copyWith(color: purple)),
+              const SizedBox(height: 10),
+              HeatMapPanel(
+                cleanDays: recovery.cleanDays,
+                events: recovery.events,
               ),
-              const SizedBox(height: 18),
-              ProgressHeatMap(cleanDays: recovery.cleanDays),
               const SizedBox(height: 14),
               Row(
                 children: [
@@ -102,6 +133,17 @@ class ProgressScreen extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 14),
+        MoneyChartCard(
+          points: cumulativeMoneySeries(
+            events: recovery.events,
+            dailySpend: recovery.dailySpend,
+            now: DateTime.now(),
+          ),
+          dailySpend: recovery.dailySpend,
+          onSetSpend: () => showSpendDialog(context, ref),
+          costByType: costByType,
+        ),
+        const SizedBox(height: 14),
         CravingTimelineCard(points: timeline),
         const SizedBox(height: 14),
         WeeklySummaryCard(summary: weekly),
@@ -112,16 +154,34 @@ class ProgressScreen extends ConsumerWidget {
           color: magenta,
         ),
         const SizedBox(height: 10),
-        ActionableInsightsPanel(insights: actions, onAction: runAction),
+        ActionableInsightsPanel(
+          insights: actions,
+          onAction: runAction,
+          onDismiss: (insight) => saveAction(
+            context,
+            () => ref
+                .read(recoveryProvider)
+                .dismissInsight(insight.id, insight.evidenceKey),
+          ),
+          dismissedCount: hidden,
+          onRestore: () => saveAction(
+            context,
+            () => ref.read(recoveryProvider).restoreDismissedInsights(),
+          ),
+        ),
+        const SizedBox(height: 12),
+        RelapseTypeCard(stats: typeStats),
         const SizedBox(height: 20),
         _SectionLabel(glyph: '⌁', label: 'PATTERN RECOGNITION', color: magenta),
         const SizedBox(height: 10),
         InsightBreakdownCard(
           title: 'TRIGGER SIGNATURES',
-          emptyMessage: 'Log a craving to identify repeat trigger signatures.',
+          emptyMessage:
+              'Log a craving or tag a relapse to identify repeat trigger signatures.',
           entries: triggers,
           accent: magenta,
           maxVisible: 5,
+          totalLabel: '${signals.length} SIGNALS',
         ),
         const SizedBox(height: 12),
         InsightBreakdownCard(
@@ -129,6 +189,13 @@ class ProgressScreen extends ConsumerWidget {
           emptyMessage: 'Time-band exposure will appear after your first log.',
           entries: timeBands,
           accent: cyan,
+          totalLabel: '${signals.length} SIGNALS',
+          footnote: windowShare.total == 0
+              ? null
+              : 'YOUR WINDOW ${recovery.riskWindow.label} // '
+                    '${windowShare.inWindow} OF ${windowShare.total} '
+                    '(${windowShare.percent}%)'
+                    '${windowShare.total < minimumSignalsForPattern ? ' // LOW DATA' : ''}',
         ),
         const SizedBox(height: 12),
         SosCompletionCard(summary: sos),

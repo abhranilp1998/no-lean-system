@@ -1,19 +1,52 @@
 import 'package:uuid/uuid.dart';
 
+import 'dose_units.dart';
 import 'relapse_log_entry.dart';
 
 enum RecoveryEventType {
   daySummary, // Legacy date-only fact; occurrence count/time were not recorded.
   recoveryStart, // Counter baseline. This is not evidence of a relapse.
   pledge, // Daily "mark today clean" / "I WILL NOT BUY LEAN TODAY"
-  craving, // Craving logged — metadata: {intensity, trigger, note}
+  craving, // Craving logged — metadata: {intensity, trigger, note, stress?}
   sosStart, // SOS breathing session started
   sosComplete, // SOS breathing session completed — metadata: {durationSeconds, debrief}
-  relapse, // Relapse recorded — metadata: {postSos, streakLost}
+  relapse, // Relapse recorded — metadata: {postSos, streakLost, relapseType, note, quantity?, amount?, unit?, amountMl?, bottleMl?, cost?, stress?}
   cleanCheckIn, // "I'm safe" from notification action
-  milestone, // Auto-generated when streak hits a milestone — metadata: {days}
+  milestone, // Recorded by RecoveryController.syncMilestones when the streak reaches one — metadata: {days, label, source: 'auto'}
   settingsChange, // Settings mutation — metadata: {field, from, to}
+  codeSession, // Code Instead block — metadata: {taskId, task, plannedSeconds, durationSeconds, completed, source}
+  zoneEntry, // Opt-in danger-zone visit — metadata: {zoneId, zoneName, source}. Never coordinates.
+  cravingCheck, // 15-minute recheck of a craving — metadata: {cravingId, intensity 0-10, outcome}
+  appUnlock, // Temporary unlock of a locked app — metadata: {packageName, appLabel, reason, method, waitSeconds, unlockMinutes, paymentApp, zoneName?}. Never coordinates.
 }
+
+/// Reasons and methods accepted on `appUnlock` events (see
+/// `app_lock/domain/exit_plan.dart`).
+const appUnlockReasons = {'payment', 'work', 'navigation', 'urgent', 'other'};
+const appUnlockMethods = {'budget', 'pin', 'longWait'};
+
+/// How a craving changed by the time it was rechecked.
+const cravingCheckOutcomes = {'gone', 'eased', 'same', 'stronger'};
+
+/// Derives the recheck outcome from the original and current intensity.
+String cravingCheckOutcome(int original, int current) {
+  if (current <= 0) return 'gone';
+  if (current < original) return 'eased';
+  if (current > original) return 'stronger';
+  return 'same';
+}
+
+/// Location keys that must never be stored on a zone entry.
+const _locationKeys = {
+  'latitude',
+  'longitude',
+  'lat',
+  'lng',
+  'lon',
+  'accuracy',
+  'accuracyMeters',
+  'radiusMeters',
+};
 
 /// An immutable append-only event representing state changes in the recovery journey.
 class RecoveryEvent {
@@ -137,6 +170,25 @@ class RecoveryEvent {
         result['intensity'] = intensity.round();
         result['trigger'] = trigger.trim();
         result['note'] = (note as String?)?.trim() ?? '';
+        _validateStress(result);
+      case RecoveryEventType.cravingCheck:
+        final cravingId = result['cravingId'];
+        final intensity = result['intensity'];
+        final outcome = result['outcome'];
+        if (cravingId is! String || cravingId.trim().isEmpty) {
+          throw const FormatException('Craving check needs a craving ID.');
+        }
+        if (intensity is! num || intensity < 0 || intensity > 10) {
+          throw const FormatException(
+            'Craving check intensity must be between 0 and 10.',
+          );
+        }
+        if (outcome is! String || !cravingCheckOutcomes.contains(outcome)) {
+          throw const FormatException(
+            'Craving check outcome is not supported.',
+          );
+        }
+        result['intensity'] = intensity.round();
       case RecoveryEventType.sosComplete:
         final startId = result['startId'];
         final debrief = result['debrief'];
@@ -196,6 +248,18 @@ class RecoveryEvent {
             result['quantity'] = normalized;
           }
         }
+        _validateDose(result);
+        _validateStress(result);
+        final cost = result['cost'];
+        if (cost != null) {
+          if (cost is! num ||
+              !cost.isFinite ||
+              cost < 0 ||
+              cost > maxRelapseCost) {
+            throw const FormatException('Relapse cost must be 0 or more.');
+          }
+          result['cost'] = cost.toDouble();
+        }
         if (contextTags is List) {
           final normalized = contextTags
               .cast<String>()
@@ -215,6 +279,90 @@ class RecoveryEvent {
           throw const FormatException('Milestone days must be non-negative.');
         }
         if (days is num) result['days'] = days.round();
+      case RecoveryEventType.codeSession:
+        final taskId = result['taskId'];
+        final task = result['task'];
+        final planned = result['plannedSeconds'];
+        final duration = result['durationSeconds'];
+        final completed = result['completed'];
+        if (taskId is! String || taskId.trim().isEmpty) {
+          throw const FormatException('Code session task ID is required.');
+        }
+        if (task != null && task is! String) {
+          throw const FormatException('Code session task must be text.');
+        }
+        if (planned is! num || planned <= 0) {
+          throw const FormatException(
+            'Code session planned length must be positive.',
+          );
+        }
+        if (duration is! num || duration < 0) {
+          throw const FormatException(
+            'Code session duration must be non-negative.',
+          );
+        }
+        if (completed is! bool) {
+          throw const FormatException(
+            'Code session completed must be true or false.',
+          );
+        }
+        result['taskId'] = taskId.trim();
+        result['plannedSeconds'] = planned.round();
+        result['durationSeconds'] = duration.round();
+      case RecoveryEventType.zoneEntry:
+        final zoneId = result['zoneId'];
+        final zoneName = result['zoneName'];
+        if (zoneId is! String || zoneId.trim().isEmpty) {
+          throw const FormatException('Zone entry needs a zone ID.');
+        }
+        if (zoneName is! String || zoneName.trim().isEmpty) {
+          throw const FormatException('Zone entry needs a zone name.');
+        }
+        // Privacy invariant: a zone entry is a name and a time, nothing more.
+        result.removeWhere((key, _) => _locationKeys.contains(key));
+        result['zoneName'] = zoneName.trim();
+      case RecoveryEventType.appUnlock:
+        final packageName = result['packageName'];
+        final label = result['appLabel'];
+        final reason = result['reason'];
+        final method = result['method'];
+        final minutes = result['unlockMinutes'];
+        final wait = result['waitSeconds'];
+        final zoneName = result['zoneName'];
+        if (packageName is! String || packageName.trim().isEmpty) {
+          throw const FormatException('App unlock needs a package name.');
+        }
+        if (label != null && label is! String) {
+          throw const FormatException('App unlock label must be text.');
+        }
+        if (reason is! String || !appUnlockReasons.contains(reason)) {
+          throw const FormatException('App unlock reason is not supported.');
+        }
+        if (method is! String || !appUnlockMethods.contains(method)) {
+          throw const FormatException('App unlock method is not supported.');
+        }
+        if (minutes is! num || minutes < 1 || minutes > 60) {
+          throw const FormatException('App unlock must last 1-60 minutes.');
+        }
+        if (wait != null && (wait is! num || wait < 0)) {
+          throw const FormatException('App unlock wait must be 0 or more.');
+        }
+        if (zoneName != null && zoneName is! String) {
+          throw const FormatException('App unlock zone must be text.');
+        }
+        result.removeWhere((key, _) => _locationKeys.contains(key));
+        result['packageName'] = packageName.trim();
+        result['appLabel'] = (label as String?)?.trim() ?? packageName.trim();
+        result['unlockMinutes'] = minutes.round();
+        if (wait is num) result['waitSeconds'] = wait.round();
+        result['paymentApp'] = result['paymentApp'] == true;
+        if (zoneName is String) {
+          if (zoneName.trim().isEmpty) {
+            result.remove('zoneName');
+          } else {
+            result['zoneName'] = zoneName.trim();
+          }
+        }
       case RecoveryEventType.recoveryStart:
       case RecoveryEventType.pledge:
       case RecoveryEventType.sosStart:
@@ -223,6 +371,68 @@ class RecoveryEvent {
         break;
     }
     return result;
+  }
+
+  /// Optional 1-5 stress rating shared by cravings and relapses.
+  static void _validateStress(Map<String, dynamic> result) {
+    final stress = result['stress'];
+    if (stress == null) return;
+    if (stress is! num || stress < 1 || stress > 5) {
+      throw const FormatException('Stress must be between 1 and 5.');
+    }
+    result['stress'] = stress.round();
+  }
+
+  /// Structured dose: amount + unit as a pair, ml derived for volume units
+  /// and never for counts. A bottle dose keeps the ml stored at logging
+  /// time; it is only computed when an older writer left it out.
+  static void _validateDose(Map<String, dynamic> result) {
+    final amount = result['amount'];
+    final unitName = result['unit'];
+    if (amount == null && unitName == null) {
+      result
+        ..remove('amountMl')
+        ..remove('bottleMl');
+      return;
+    }
+    final unit = DoseUnitInfo.fromName(unitName);
+    if (unit == null) {
+      throw const FormatException('Dose unit is not supported.');
+    }
+    if (amount is! num || !amount.isFinite || amount <= 0) {
+      throw const FormatException('Dose amount must be greater than zero.');
+    }
+    result['amount'] = amount.toDouble();
+    final source = result['amountSource'];
+    if (source != null && source is! String) {
+      throw const FormatException('Dose source must be text.');
+    }
+    switch (unit) {
+      case DoseUnit.ml:
+      case DoseUnit.litre:
+        result['amountMl'] = toMl(amount.toDouble(), unit, bottleMl: 0);
+        result.remove('bottleMl');
+      case DoseUnit.bottle:
+        final bottleMl = result['bottleMl'];
+        final amountMl = result['amountMl'];
+        if (bottleMl != null &&
+            (bottleMl is! num || !isValidBottleMl(bottleMl))) {
+          throw const FormatException('Bottle size must be 10-2000 ml.');
+        }
+        if (amountMl is num && amountMl.isFinite && amountMl > 0) {
+          result['amountMl'] = amountMl.toDouble();
+        } else if (amountMl == null && bottleMl is num) {
+          result['amountMl'] = amount * bottleMl;
+        } else {
+          throw const FormatException('Bottle dose needs its ml value.');
+        }
+        if (bottleMl is num) result['bottleMl'] = bottleMl.toDouble();
+      case DoseUnit.drink:
+      case DoseUnit.tablet:
+        result
+          ..remove('amountMl')
+          ..remove('bottleMl');
+    }
   }
 
   /// Serializes this event to JSON.

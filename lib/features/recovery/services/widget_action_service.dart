@@ -7,7 +7,7 @@ class WidgetActionService {
 
   static final instance = WidgetActionService._();
   static const _channel = MethodChannel('no_lean/widget_actions');
-  static const supportedActions = {'sos', 'craving', 'relapse'};
+  static const supportedActions = {'sos', 'craving', 'relapse', 'code'};
 
   final _actions = StreamController<String>.broadcast();
   bool _initialized = false;

@@ -1,12 +1,41 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Exact risk-window alerts when the user allows them; the app falls back
+         to inexact alarms otherwise. USE_EXACT_ALARM is deliberately not used. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Danger zones: foreground distance checks while the app is open. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- Opt-in background danger-zone alerts (native_geofence). Requested only
+         after the in-app disclosure screen. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Lets the danger-zone alert request a full-screen intent. Android 14+
+         only honours it when the user/Play allows; otherwise heads-up. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- Optional OpenStreetMap street tiles on the danger-zone map. Everything
+         else, including zones and alerts, works without network. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- App lock for other apps (opt-in, behind the in-app disclosure page).
+         Usage access is granted by the user on the system "Usage access"
+         screen; it is a protected permission and needs a Play Console
+         declaration. No AccessibilityService is used on purpose. -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+    <!-- Lets the lock service bring NO LEAN's blocking screen to the front
+         (Android 10+ background activity start rule). Granted by the user
+         on "Display over other apps"; NO LEAN never draws overlays. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"
-        android:icon="@drawable/no_lean_icon"
+        android:icon="@mipmap/no_lean_launcher"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules">
@@ -45,6 +74,85 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/no_lean_widget_info" />
         </receiver>
+        <!-- Extra sizes. Boot/time changes reach the 4x2 receiver, which
+             refreshes every size. -->
+        <receiver
+            android:name=".NoLeanSmallWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN 2x1">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/no_lean_widget_small_info" />
+        </receiver>
+        <receiver
+            android:name=".NoLeanLargeWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN 4x3">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/no_lean_widget_large_info" />
+        </receiver>
+        <!-- Required by flutter_local_notifications 16+ to deliver scheduled
+             notifications and restore them after a reboot or app update. -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
+        <!-- Handles notification actions that do not open the app, such as the
+             one-tap "I'M LEAVING" dismissal on danger-zone alerts. -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
+        <!-- native_geofence: OS geofence events, re-registration after reboot,
+             and its (unused unless promoted) foreground service. -->
+        <receiver
+            android:name="com.chunkytofustudios.native_geofence.receivers.NativeGeofenceBroadcastReceiver"
+            android:exported="true" />
+        <receiver
+            android:name="com.chunkytofustudios.native_geofence.receivers.NativeGeofenceRebootBroadcastReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name="com.chunkytofustudios.native_geofence.NativeGeofenceForegroundService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
+        <!-- App lock: foreground service that watches which app is in front
+             (UsageStatsManager) while the lock is on. specialUse: no other
+             foreground service type fits a user-requested app blocker. -->
+        <service
+            android:name=".AppLockService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled app lock for addiction recovery: detects when an app the user chose to lock is opened and shows a blocking screen with an emergency exit." />
+        </service>
+        <receiver
+            android:name=".AppLockBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -60,6 +168,35 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- App lock: list launchable apps to pick from (no
+             QUERY_ALL_PACKAGES), and resolve the never-lockable home screen,
+             dialer, map and settings apps on this device. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.DIAL" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="geo" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.SETTINGS" />
         </intent>
     </queries>
 </manifest>

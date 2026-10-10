@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/services/app_feedback.dart';
 import '../core/theme/app_theme.dart';
+import '../features/app_lock/application/app_lock_host.dart';
 import '../features/recovery/application/recovery_provider.dart';
+import '../features/zones/application/position_status_host.dart';
 import 'shell.dart';
 import '../features/recovery/presentation/recovery_startup_screen.dart';
 
@@ -76,7 +78,9 @@ class NoLeanApp extends ConsumerWidget {
         }
         return result;
       },
-      home: recovery.isLoaded ? const Shell() : const RecoveryStartupScreen(),
+      home: recovery.isLoaded
+          ? const PositionStatusHost(child: AppLockHost(child: Shell()))
+          : const RecoveryStartupScreen(),
     );
   }
 }

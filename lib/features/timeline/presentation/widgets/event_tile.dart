@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/utils/formatters.dart';
 import '../../../../core/services/app_notice.dart';
 import '../../../../core/widgets/glass_card.dart';
 import '../../../recovery/application/recovery_controller.dart';
 import '../../../recovery/application/recovery_provider.dart';
+import '../../../recovery/domain/dose_units.dart';
 import '../../../recovery/domain/recovery_event.dart';
 import '../../../recovery/domain/relapse_log_entry.dart';
 import '../../../recovery/presentation/relapse_auth_dialog.dart';
@@ -69,7 +71,7 @@ class EventTile extends ConsumerWidget {
                 ],
               ),
             ),
-            if (event.type != RecoveryEventType.recoveryStart)
+            if (_ActionsMenu.isEditable(event) || _ActionsMenu.canDelete(event))
               _ActionsMenu(event: event),
           ],
         ),
@@ -105,6 +107,35 @@ class EventTile extends ConsumerWidget {
         return ('MILESTONE', Icons.emoji_events, Colors.amber);
       case RecoveryEventType.settingsChange:
         return ('SETTING CHANGED', Icons.tune, Colors.white54);
+      case RecoveryEventType.zoneEntry:
+        return (
+          'ZONE ENTERED // ${event.metadata['zoneName']}',
+          Icons.place_outlined,
+          red,
+        );
+      case RecoveryEventType.cravingCheck:
+        return (
+          'CRAVING RECHECK // ${'${event.metadata['outcome']}'.toUpperCase()}',
+          Icons.update,
+          magenta,
+        );
+      case RecoveryEventType.appUnlock:
+        final zone = event.metadata['zoneName'];
+        return (
+          'APP UNLOCKED // ${event.metadata['appLabel']} // '
+              '${'${event.metadata['reason']}'.toUpperCase()}'
+              '${zone is String ? ' // IN $zone' : ''}',
+          Icons.lock_open,
+          Colors.amber,
+        );
+      case RecoveryEventType.codeSession:
+        return (
+          event.metadata['completed'] == true
+              ? 'CODE BLOCK DONE'
+              : 'CODE BLOCK STOPPED',
+          Icons.code,
+          purple,
+        );
     }
   }
 
@@ -132,6 +163,12 @@ class _RelapseEventCard extends StatelessWidget {
     final note = event.metadata['note'] as String?;
     final quantity = event.metadata['quantity'] as String?;
     final attemptedSos = event.metadata['attemptedSos'] as bool?;
+    final dose = DoseAmount.fromMetadata(event.metadata);
+    final showQuantity =
+        quantity?.isNotEmpty == true &&
+        (dose == null || event.metadata['amountSource'] != 'parsed');
+    final cost = event.metadata['cost'];
+    final stress = event.metadata['stress'];
     final streakLost = event.metadata['streakLost'];
     final contextTags = switch (event.metadata['contextTags']) {
       final List values => values.whereType<String>().toList(),
@@ -143,6 +180,9 @@ class _RelapseEventCard extends StatelessWidget {
       label: [
         'Relapse recorded $formattedDate.',
         if (relapseType != null) 'Type ${relapseType.label}.',
+        if (dose != null) 'Amount ${dose.display}.',
+        if (cost is num) 'Cost ${money(cost)}.',
+        if (stress is num) 'Stress $stress of 5.',
         if (attemptedSos != null)
           attemptedSos ? 'SOS was attempted.' : 'SOS was not attempted.',
         if (contextTags.isNotEmpty)
@@ -242,10 +282,25 @@ class _RelapseEventCard extends StatelessWidget {
                                     ? 'SOS ATTEMPTED'
                                     : 'NO SOS ATTEMPT',
                               ),
-                            if (quantity?.isNotEmpty == true)
+                            if (dose != null)
+                              _RelapseFact(
+                                icon: Icons.science_outlined,
+                                label: dose.display.toUpperCase(),
+                              ),
+                            if (showQuantity)
                               _RelapseFact(
                                 icon: Icons.straighten,
                                 label: quantity!,
+                              ),
+                            if (cost is num)
+                              _RelapseFact(
+                                icon: Icons.currency_rupee,
+                                label: money(cost),
+                              ),
+                            if (stress is num)
+                              _RelapseFact(
+                                icon: Icons.speed,
+                                label: 'STRESS $stress/5',
                               ),
                             if (streakLost != null)
                               _RelapseFact(
@@ -320,6 +375,10 @@ class _MetadataView extends StatelessWidget {
               'startId',
               'date',
               'clean',
+              'taskId',
+              'zoneId',
+              'plannedSeconds',
+              'cravingId',
             }.contains(e.key),
           )
           .map((e) {
@@ -358,12 +417,21 @@ class _ActionsMenu extends ConsumerWidget {
   const _ActionsMenu({required this.event});
   final RecoveryEvent event;
 
+  static bool isEditable(RecoveryEvent event) =>
+      event.type == RecoveryEventType.craving ||
+      event.type == RecoveryEventType.sosComplete;
+
+  /// Auto milestones are facts derived from the streak; deleting one would
+  /// only see it recorded again.
+  static bool canDelete(RecoveryEvent event) =>
+      event.type != RecoveryEventType.recoveryStart &&
+      !(event.type == RecoveryEventType.milestone &&
+          event.metadata['source'] == 'auto');
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isEditable =
-        event.type == RecoveryEventType.craving ||
-        event.type == RecoveryEventType.sosComplete;
-    final canDelete = event.type != RecoveryEventType.recoveryStart;
+    final isEditable = _ActionsMenu.isEditable(event);
+    final canDelete = _ActionsMenu.canDelete(event);
 
     return PopupMenuButton<String>(
       icon: const Icon(Icons.more_vert, color: muted, size: 20),

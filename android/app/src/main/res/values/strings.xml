@@ -16,4 +16,14 @@
         <item quantity="other">%d DAYS CLEAN</item>
     </plurals>
     <string name="widget_action_relapse">LOG RELAPSES</string>
+    <string name="widget_action_code">CODE INSTEAD</string>
+    <string name="widget_description_small">Clean-time counter with one-tap SOS</string>
+    <string name="widget_description_large">Recovery timer with SOS, craving, relapse logging and Code Instead</string>
+    <!-- Privacy mode: nothing here may reveal what the app tracks. -->
+    <string name="widget_title_private">QUICK ACCESS</string>
+    <string name="widget_neutral">Tap to open</string>
+    <string name="widget_action_sos_private">HELP</string>
+    <string name="widget_action_craving_private">NOTE</string>
+    <string name="widget_action_relapse_private">RECORD</string>
+    <string name="widget_action_code_private">FOCUS</string>
 </resources>

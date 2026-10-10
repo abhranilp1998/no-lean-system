@@ -9,17 +9,28 @@ import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../domain/craving_entry.dart';
+import '../domain/dose_units.dart';
+import '../domain/quantity_upgrade.dart';
 import '../domain/legacy_recovery_migration.dart';
 import '../services/recovery_state_store.dart';
 import '../domain/effect_intensity.dart';
 import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
 import '../domain/relapse_log_entry.dart';
+import '../domain/milestones.dart';
+import '../domain/notification_policy.dart';
+import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
 import '../domain/sos_session.dart';
 import '../services/home_widget_service.dart';
 import '../services/notification_service.dart';
 import '../services/relapse_lock_service.dart';
+import '../../app_lock/domain/exit_plan.dart';
+import '../../app_lock/domain/locked_app.dart';
+import '../../zones/domain/danger_zone.dart';
+import '../../zones/domain/zone_entry.dart';
+import '../../zones/services/geofence_gateway.dart';
+import '../../zones/services/zone_entry_inbox.dart';
 
 const defaultReasons = <String>[
   'I am done financing a habit that steals my evenings.',
@@ -44,7 +55,7 @@ enum ProtectedActionResult {
 extension ProtectedActionResultMessage on ProtectedActionResult {
   String get failureMessage => switch (this) {
     ProtectedActionResult.lockedOut =>
-      'Too many incorrect PIN attempts. PIN entry is paused for 5 minutes.',
+      'Too many incorrect PIN attempts. PIN entry is paused: 5 minutes, then 15, then 60 on repeat lockouts. Biometrics still work.',
     ProtectedActionResult.denied =>
       'Authentication failed. Nothing was changed.',
     ProtectedActionResult.authenticationRequired =>
@@ -67,15 +78,43 @@ class RecoveryController extends ChangeNotifier {
     RelapseLockGateway? relapseLock,
     RecoveryStateStore? store,
     DateTime Function()? now,
-  }) : _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
+    GeofenceGateway? geofences,
+    ZoneEntryInbox? zoneInbox,
+    Future<bool> Function(DateTime at)? scheduleCravingCheck,
+    Future<void> Function()? cancelCravingCheck,
+  }) : _scheduleCravingCheck =
+           scheduleCravingCheck ??
+           ((at) => NotificationService.instance.scheduleCravingCheck(at: at)),
+       _cancelCravingCheck =
+           cancelCravingCheck ??
+           NotificationService.instance.cancelCravingCheck,
+       _zoneInbox = zoneInbox ?? const NoopZoneEntryInbox(),
+       _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
        _store = store ?? PreferencesRecoveryStateStore(),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _geofences = geofences ?? const NoopGeofenceGateway();
 
-  static const stateVersion = 7;
+  /// v8 adds `riskWindowLock` and `appLockPending`; v9 adds `zones`,
+  /// `zoneMonitoring` and `backgroundGeofencing`; v10 adds the privacy and
+  /// notification preferences (`streetTiles`, ...); v11 adds the opt-in
+  /// `zoneHistory` flag and `zoneEntry` events. Older states need no
+  /// transformation: missing keys take the safe defaults below.
+  /// v12 adds `bottleMl`, `insightPreferences`, `cravingCheck` events and
+  /// structured dose/cost/stress relapse metadata. Loading an older state
+  /// converts free-text quantities that parse exactly (text is kept).
+  /// v13 adds `appLockPolicy` (locking other apps) and `appUnlock` events.
+  /// Older states load with the lock off.
+  static const stateVersion = 13;
+
+  final Future<bool> Function(DateTime at) _scheduleCravingCheck;
+  final Future<void> Function() _cancelCravingCheck;
+
+  final ZoneEntryInbox _zoneInbox;
 
   final RelapseLockGateway _relapseLock;
   final RecoveryStateStore _store;
   final DateTime Function() _now;
+  final GeofenceGateway _geofences;
   Future<void>? _loadFuture;
   Future<void> _writeQueue = Future.value();
   Map<String, dynamic> _extraState = {};
@@ -109,6 +148,13 @@ class RecoveryController extends ChangeNotifier {
   Map<String, bool> cleanDays = {};
 
   double dailySpend = 0;
+
+  /// Size of one "bottle" for dose logging (ml). Applies to new entries
+  /// only; stored doses keep the ml they were logged with.
+  double bottleMl = defaultBottleMl;
+
+  /// Insights dismissed "until the evidence changes": id -> evidenceKey.
+  Map<String, String> dismissedInsights = {};
   List<String> reasons = List<String>.from(defaultReasons);
   List<String> reminderMessages = List<String>.from(defaultReminderMessages);
   RiskWindow riskWindow = const RiskWindow.defaultWindow();
@@ -122,6 +168,47 @@ class RecoveryController extends ChangeNotifier {
   bool hapticFeedback = true;
   FeedbackSoundEffect feedbackSound = FeedbackSoundEffect.neonPulse;
   bool requirePinAfterRelapse = false;
+
+  /// Auto-locks the app inside [riskWindow] when a PIN exists.
+  bool riskWindowLock = true;
+
+  /// Set when a relapse is logged; the app stays locked until authenticated.
+  bool appLockPending = false;
+
+  /// User-defined danger zones (state v9+).
+  List<DangerZone> zones = [];
+
+  /// In-app distance checks while NO LEAN is open (opt-in).
+  bool zoneMonitoring = false;
+
+  /// Online OSM street tiles on the zone map. Off = grid only, no requests.
+  bool streetTiles = true;
+
+  /// Always-on "Position status" notification while the app is open.
+  /// Default on. Added without a state-version bump on purpose: a missing
+  /// key reads as the default and unknown keys survive in older builds via
+  /// `_extraState`, so states stay readable in both directions.
+  bool positionNotification = true;
+
+  /// Locking other apps (state v13+). Off until the user turns it on;
+  /// never restored by an import.
+  AppLockPolicy appLockPolicy = const AppLockPolicy();
+
+  /// Opt-in zone visit log (name + time only). Default off for privacy.
+  bool zoneHistory = false;
+
+  /// Highest milestone reached since the UI last celebrated. Not persisted:
+  /// the milestone events themselves are the record.
+  int? pendingCelebration;
+
+  /// Home widget privacy: neutral text, no counter, streak or risk state.
+  bool widgetPrivacy = false;
+
+  /// Quiet hours and lock-screen privacy for notifications.
+  NotificationPrefs notificationPrefs = const NotificationPrefs();
+
+  /// OS geofencing while the app is closed (opt-in, needs background location).
+  bool backgroundGeofencing = false;
   EffectIntensity intensity = EffectIntensity.standard;
   DashboardNoticeStyle dashboardNoticeStyle = DashboardNoticeStyle.edgeRail;
   bool isLoaded = false;
@@ -140,6 +227,8 @@ class RecoveryController extends ChangeNotifier {
                 trigger: e.metadata['trigger'] as String? ?? 'Other',
                 note: e.metadata['note'] as String? ?? '',
                 createdAt: e.timestamp,
+                stress: e.metadata['stress'] as int?,
+                id: e.id,
               ),
             )
             .toList()
@@ -245,6 +334,10 @@ class RecoveryController extends ChangeNotifier {
         }
       }
       _restoreSettings(map);
+      if (stored != null && version is int && version < 12) {
+        events = upgradeQuantityText(events);
+      }
+      zones = DangerZone.decodeList(map['zones']);
       relapseCooldownUntil = DateTime.tryParse(
         map['relapseCooldownUntil']?.toString() ?? '',
       );
@@ -268,6 +361,7 @@ class RecoveryController extends ChangeNotifier {
       _notify();
       unawaited(syncWidget());
       unawaited(_syncRiskNotifications());
+      unawaited(_syncGeofences());
     } catch (_) {
       isLoaded = false;
       loadStatus = RecoveryLoadStatus.error;
@@ -331,6 +425,18 @@ class RecoveryController extends ChangeNotifier {
     if (spend is num && spend.isFinite && spend >= 0) {
       dailySpend = spend.toDouble();
     }
+    final bottle = map['bottleMl'];
+    if (bottle is num && isValidBottleMl(bottle)) {
+      bottleMl = bottle.toDouble();
+    }
+    final insightPrefs = map['insightPreferences'];
+    if (insightPrefs is Map && insightPrefs['dismissed'] is Map) {
+      dismissedInsights = {
+        for (final entry in (insightPrefs['dismissed'] as Map).entries)
+          if (entry.key is String && entry.value is String)
+            entry.key as String: entry.value as String,
+      };
+    }
     reasons = _decodeStrings(map['reasons'], reasons);
     reminderMessages = _decodeStrings(
       map['reminderMessages'],
@@ -370,6 +476,33 @@ class RecoveryController extends ChangeNotifier {
     requirePinAfterRelapse = map.containsKey('requirePinAfterRelapse')
         ? map['requirePinAfterRelapse'] != false
         : requirePinAfterRelapse;
+    riskWindowLock = map.containsKey('riskWindowLock')
+        ? map['riskWindowLock'] != false
+        : riskWindowLock;
+    appLockPending = map.containsKey('appLockPending')
+        ? map['appLockPending'] != false
+        : appLockPending;
+    zoneMonitoring = flag('zoneMonitoring', zoneMonitoring);
+    streetTiles = flag('streetTiles', streetTiles);
+    positionNotification = flag('positionNotification', positionNotification);
+    if (map.containsKey('appLockPolicy')) {
+      appLockPolicy = AppLockPolicy.fromJson(map['appLockPolicy']);
+    }
+    // Opt-in data collection: only an explicit true turns it on.
+    if (map.containsKey('zoneHistory')) {
+      zoneHistory = map['zoneHistory'] == true;
+    }
+    // Privacy flag: once present, anything but an explicit false stays private.
+    if (map.containsKey('widgetPrivacy')) {
+      widgetPrivacy = map['widgetPrivacy'] != false;
+    }
+    if (map.containsKey('quietHoursEnabled') ||
+        map.containsKey('quietHours') ||
+        map.containsKey('hideSensitiveNotifications')) {
+      notificationPrefs = NotificationPrefs.fromState(map);
+    }
+    NotificationService.instance.prefs = notificationPrefs;
+    backgroundGeofencing = flag('backgroundGeofencing', backgroundGeofencing);
     feedbackSound = FeedbackSoundEffect.values.firstWhere(
       (v) => v.name == map['feedbackSound'],
       orElse: () => feedbackSound,
@@ -427,35 +560,25 @@ class RecoveryController extends ChangeNotifier {
   double get moneySaved => math.max(0, cleanDuration.inHours / 24) * dailySpend;
   bool get isRiskWindow => riskWindow.contains(_now());
   bool get isPeakHourLockActive => peakHourLock && isRiskWindow;
+
+  /// The risk-window wall needs a credential; without a PIN nothing can lock.
+  bool get riskWindowWallArmed => requirePinAfterRelapse && riskWindowLock;
+
+  /// True after a relapse was logged with the lock enabled, until unlocked.
+  bool get relockPending => requirePinAfterRelapse && appLockPending;
   RiskWindowEvidence get riskWindowEvidence =>
       computeRiskWindowEvidence(events, riskWindow);
 
-  List<String> get riskNotificationMessages {
-    final evidence = riskWindowEvidence;
-    final messages = <String>[];
-    if (evidence.peakHour case final hour?) {
-      messages.add(
-        'YOUR LOGS FLAG ${hour.toString().padLeft(2, '0')}:00. DO NOT BUY. OPEN SOS BEFORE THE LOOP STARTS.',
-      );
-    }
-    if (evidence.signalCount > 0) {
-      messages.add(
-        '${evidence.signalCount} OF YOUR LOGGED RISK SIGNALS HIT INSIDE ${riskWindow.label}. THIS WINDOW IS DATA, NOT A VIBE.',
-      );
-    }
-    if (evidence.dominantTrigger case final trigger?) {
-      messages.add(
-        '${trigger.toUpperCase()} LEADS YOUR PEAK-HOUR TRIGGER DATA. PLAN FOR IT. DO NOT IMPROVISE.',
-      );
-    }
-    messages.add(
-      '${formatDuration(cleanDuration, compact: true)} CLEAN // ${money(moneySaved)} KEPT. DO NOT HAND IT BACK TONIGHT.',
-    );
-    return [
-      ...messages.take(3),
-      ...reminderMessages,
-    ].take(4).toList(growable: false);
-  }
+  /// Daily risk-window alerts built only from the user's own logged data.
+  List<RiskAlert> get riskAlertPlan => buildRiskAlertPlan(
+    window: riskWindow,
+    facts: computeRiskAlertFacts(
+      events: events,
+      window: riskWindow,
+      cleanSince: lastDose,
+    ),
+    userMessages: reminderMessages,
+  );
 
   Map<String, dynamic> _snapshot() => {
     ..._extraState,
@@ -466,6 +589,8 @@ class RecoveryController extends ChangeNotifier {
     'relapseCooldownEventId': relapseCooldownEventId,
     'cooldownMinutes': cooldownMinutes,
     'dailySpend': dailySpend,
+    'bottleMl': bottleMl,
+    'insightPreferences': {'dismissed': dismissedInsights},
     'reasons': reasons,
     'reminderMessages': reminderMessages,
     'riskWindow': riskWindow.toJson(),
@@ -479,6 +604,17 @@ class RecoveryController extends ChangeNotifier {
     'hapticFeedback': hapticFeedback,
     'feedbackSound': feedbackSound.name,
     'requirePinAfterRelapse': requirePinAfterRelapse,
+    'riskWindowLock': riskWindowLock,
+    'appLockPending': appLockPending,
+    'zones': zones.map((zone) => zone.toJson()).toList(),
+    'zoneMonitoring': zoneMonitoring,
+    'streetTiles': streetTiles,
+    'positionNotification': positionNotification,
+    'zoneHistory': zoneHistory,
+    'appLockPolicy': appLockPolicy.toJson(),
+    'widgetPrivacy': widgetPrivacy,
+    ...notificationPrefs.toJson(),
+    'backgroundGeofencing': backgroundGeofencing,
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
   };
@@ -487,6 +623,7 @@ class RecoveryController extends ChangeNotifier {
     _extraState = Map.from(map);
     events = _decodeCurrentEvents(map['events']);
     _restoreSettings(map);
+    zones = DangerZone.decodeList(map['zones']);
     relapseCooldownUntil = DateTime.tryParse(
       map['relapseCooldownUntil']?.toString() ?? '',
     );
@@ -520,9 +657,15 @@ class RecoveryController extends ChangeNotifier {
             jsonEncode(before['reminderMessages']) !=
                 jsonEncode(next['reminderMessages']) ||
             before['dailySpend'] != next['dailySpend'] ||
+            before['hideSensitiveNotifications'] !=
+                next['hideSensitiveNotifications'] ||
             (before['events'] as List).length !=
                 (next['events'] as List).length) {
           unawaited(_syncRiskNotifications());
+        }
+        if (jsonEncode(before['zones']) != jsonEncode(next['zones']) ||
+            before['backgroundGeofencing'] != next['backgroundGeofencing']) {
+          unawaited(_syncGeofences());
         }
         unawaited(syncWidget());
         _notify();
@@ -552,6 +695,68 @@ class RecoveryController extends ChangeNotifier {
     events.add(event);
     _sortAndRecompute();
   });
+
+  /// Records a finished or stopped Code Instead block. Validation lives in
+  /// [RecoveryEvent.validateMetadata]; the UI decides what is worth keeping.
+  Future<void> recordCodeSession({
+    required Map<String, Object> metadata,
+    required DateTime at,
+  }) => appendEvent(
+    RecoveryEvent.create(
+      type: RecoveryEventType.codeSession,
+      timestamp: at,
+      metadata: metadata,
+    ),
+  );
+
+  /// Records every milestone the current streak has reached but not yet
+  /// logged, each stamped at the moment it was reached (last dose + N days),
+  /// and queues one celebration for the highest. Cheap when nothing is due,
+  /// so the shell can call it on a timer.
+  Future<int?> syncMilestones() async {
+    if (!isLoaded) return null;
+    if (dueMilestones(
+      events: events,
+      lastDose: lastDose,
+      now: _now(),
+    ).isEmpty) {
+      return null;
+    }
+    final reached = await _transaction(() {
+      final due = dueMilestones(
+        events: events,
+        lastDose: lastDose,
+        now: _now(),
+      );
+      if (due.isEmpty) return null;
+      for (final milestone in due) {
+        events.add(
+          RecoveryEvent.create(
+            type: RecoveryEventType.milestone,
+            timestamp: lastDose.add(Duration(days: milestone.days)),
+            metadata: {
+              'days': milestone.days,
+              'label': milestone.label,
+              'source': 'auto',
+            },
+          ),
+        );
+      }
+      _sortAndRecompute();
+      return due.last.days;
+    });
+    if (reached != null) {
+      pendingCelebration = reached;
+      _notify();
+    }
+    return reached;
+  }
+
+  void consumeCelebration() {
+    if (pendingCelebration == null) return;
+    pendingCelebration = null;
+    _notify();
+  }
 
   Future<void> clearRelapseCooldown(String reason) => _transaction(() async {
     if (relapseCooldownUntil == null && relapseCooldownEventId == null) return;
@@ -638,6 +843,7 @@ class RecoveryController extends ChangeNotifier {
 
   Future<ProtectedActionResult> mergeImportedEvents(
     List<RecoveryEvent> importedEvents, {
+    List<DangerZone> importedZones = const [],
     Map<String, dynamic>? preferences,
     bool restorePreferences = false,
     String? pin,
@@ -653,10 +859,34 @@ class RecoveryController extends ChangeNotifier {
     for (final event in importedEvents) {
       if (existingIds.add(event.id)) events.add(event);
     }
+    final zoneIds = zones.map((zone) => zone.id).toSet();
+    final newZones = importedZones
+        .where((zone) => zoneIds.add(zone.id))
+        .toList();
+    if (zones.length + newZones.length > DangerZone.maxZones) {
+      throw StateError(
+        'This backup would exceed ${DangerZone.maxZones} danger zones.',
+      );
+    }
+    zones = [...zones, ...newZones];
     if (restorePreferences && preferences != null) {
       _restoreSettings(
         Map<String, dynamic>.from(preferences)
           ..remove('requirePinAfterRelapse')
+          ..remove('riskWindowLock')
+          ..remove('appLockPending')
+          ..remove('zones')
+          ..remove('zoneMonitoring')
+          ..remove('streetTiles')
+          ..remove('positionNotification')
+          ..remove('zoneHistory')
+          ..remove('appLockPolicy')
+          ..remove('widgetPrivacy')
+          ..remove('quietHoursEnabled')
+          ..remove('quietHours')
+          ..remove('hideSensitiveNotifications')
+          ..remove('backgroundGeofencing')
+          ..remove('insightPreferences')
           ..remove('pin'),
       );
     }
@@ -667,6 +897,7 @@ class RecoveryController extends ChangeNotifier {
 
   Map<String, dynamic> get portablePreferences => {
     'dailySpend': dailySpend,
+    'bottleMl': bottleMl,
     'reasons': reasons,
     'reminderMessages': reminderMessages,
     'riskWindow': riskWindow.toJson(),
@@ -688,14 +919,77 @@ class RecoveryController extends ChangeNotifier {
     await appendEvent(RecoveryEvent.create(type: RecoveryEventType.pledge));
   }
 
-  Future<void> recordCraving(CravingEntry entry) async {
+  /// Logs a craving and schedules the 15-minute recheck prompt (unless it
+  /// would land in quiet hours). Returns the new event id.
+  Future<String> recordCraving(CravingEntry entry) async {
+    final event = RecoveryEvent.create(
+      type: RecoveryEventType.craving,
+      timestamp: entry.createdAt,
+      metadata: entry.toJson()..remove('id'),
+    );
+    await appendEvent(event);
+    final due = event.timestamp.add(cravingCheckDelay);
+    if (due.isAfter(_now())) {
+      try {
+        await _scheduleCravingCheck(due);
+      } catch (_) {
+        /* Notifications never block local history. */
+      }
+    }
+    return event.id;
+  }
+
+  static const cravingCheckDelay = Duration(minutes: 15);
+
+  /// A recheck is offered for this long after the craving.
+  static const cravingCheckExpiry = Duration(hours: 6);
+
+  /// The newest craving that is due for a recheck: at least 15 minutes old,
+  /// under 6 hours old, and not yet rechecked. Older cravings are not
+  /// nagged about.
+  RecoveryEvent? get pendingCravingCheck {
+    final now = _now();
+    final checked = {
+      for (final e in events)
+        if (e.type == RecoveryEventType.cravingCheck) e.metadata['cravingId'],
+    };
+    final latest = events
+        .where((e) => e.type == RecoveryEventType.craving)
+        .lastOrNull;
+    if (latest == null || checked.contains(latest.id)) return null;
+    final age = now.difference(latest.timestamp);
+    if (age < cravingCheckDelay || age > cravingCheckExpiry) return null;
+    return latest;
+  }
+
+  /// Records how a craving feels on recheck (0 = gone). The outcome is
+  /// derived from the original intensity.
+  Future<void> recordCravingCheck({
+    required String cravingId,
+    required int intensity,
+  }) async {
+    final craving = events
+        .where((e) => e.id == cravingId && e.type == RecoveryEventType.craving)
+        .firstOrNull;
+    if (craving == null) throw StateError('Craving not found.');
+    final original = craving.metadata['intensity'] as int;
     await appendEvent(
       RecoveryEvent.create(
-        type: RecoveryEventType.craving,
-        timestamp: entry.createdAt,
-        metadata: entry.toJson(),
+        type: RecoveryEventType.cravingCheck,
+        timestamp: _now(),
+        metadata: {
+          'cravingId': cravingId,
+          'intensity': intensity.clamp(0, 10),
+          'outcome': cravingCheckOutcome(original, intensity.clamp(0, 10)),
+          'originalIntensity': original,
+        },
       ),
     );
+    try {
+      await _cancelCravingCheck();
+    } catch (_) {
+      /* Optional. */
+    }
   }
 
   Future<ProtectedActionResult> recordRelapse({
@@ -806,6 +1100,8 @@ class RecoveryController extends ChangeNotifier {
         relapseCooldownUntil = deadline;
         relapseCooldownEventId = latest.id;
       }
+      // Re-lock after every newly saved relapse so the next move is deliberate.
+      if (requirePinAfterRelapse) appLockPending = true;
       return ProtectedActionResult.completed;
     });
   }
@@ -905,12 +1201,314 @@ class RecoveryController extends ChangeNotifier {
     }
   }
 
+  DangerZone? zoneById(String id) =>
+      zones.where((zone) => zone.id == id).firstOrNull;
+
+  Future<DangerZone> addZone({
+    required String name,
+    required double latitude,
+    required double longitude,
+    double radiusMeters = DangerZone.defaultRadiusMeters,
+  }) => _transaction(() async {
+    if (zones.length >= DangerZone.maxZones) {
+      throw StateError('You can keep up to ${DangerZone.maxZones} zones.');
+    }
+    final zone = DangerZone(
+      id: const Uuid().v4(),
+      name: name.trim(),
+      latitude: latitude,
+      longitude: longitude,
+      radiusMeters: radiusMeters,
+      createdAt: _now(),
+    )..validate();
+    zones = [...zones, zone];
+    return zone;
+  });
+
+  /// Renaming or widening a zone is free; shrinking it weakens protection
+  /// and therefore authenticates like other protective changes.
+  Future<ProtectedActionResult> updateZone(
+    String id, {
+    String? name,
+    double? radiusMeters,
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    final index = zones.indexWhere((zone) => zone.id == id);
+    if (index == -1) return ProtectedActionResult.denied;
+    final current = zones[index];
+    if (radiusMeters != null && radiusMeters < current.radiusMeters) {
+      final authorization = await _authorizeProtectedAction(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        reason: 'Authenticate to shrink a danger zone.',
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+    }
+    final next = current.copyWith(name: name, radiusMeters: radiusMeters);
+    zones = [...zones]..[index] = next;
+    return ProtectedActionResult.completed;
+  });
+
+  Future<ProtectedActionResult> deleteZone(
+    String id, {
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    if (zoneById(id) == null) return ProtectedActionResult.denied;
+    final authorization = await _authorizeProtectedAction(
+      pin: pin,
+      tryBiometrics: tryBiometrics,
+      reason: 'Authenticate to delete a danger zone.',
+    );
+    if (authorization != ProtectedActionResult.completed) return authorization;
+    zones = zones.where((zone) => zone.id != id).toList();
+    return ProtectedActionResult.completed;
+  });
+
+  /// Location monitoring is a privacy choice: switching it off never needs
+  /// authentication, so the user can always stop location use in one tap.
+  Future<void> setZoneMonitoring(bool enabled) => _transaction(() async {
+    zoneMonitoring = enabled;
+  });
+
+  Future<void> setBackgroundGeofencing(bool enabled) => _transaction(() async {
+    backgroundGeofencing = enabled;
+  });
+
+  /// Opt-in zone visit log; a privacy choice, so never behind auth.
+  Future<void> setZoneHistory(bool enabled) => _transaction(() async {
+    zoneHistory = enabled;
+  });
+
+  int get zoneEntryCount =>
+      events.where((e) => e.type == RecoveryEventType.zoneEntry).length;
+
+  bool _isDuplicateEntry(ZoneEntry entry) => events.any(
+    (e) =>
+        e.type == RecoveryEventType.zoneEntry &&
+        e.metadata['zoneId'] == entry.zoneId &&
+        e.timestamp.difference(entry.at).abs() < zoneEntryDedupWindow,
+  );
+
+  /// Records a zone entry when zone history is on. Returns whether it was
+  /// recorded (off, or a duplicate of a recent entry, records nothing).
+  Future<bool> recordZoneEntry(ZoneEntry entry) => _transaction(() async {
+    if (!zoneHistory || _isDuplicateEntry(entry)) return false;
+    events.add(
+      RecoveryEvent.create(
+        type: RecoveryEventType.zoneEntry,
+        timestamp: entry.at,
+        metadata: entry.metadata,
+      ),
+    );
+    _sortAndRecompute();
+    return true;
+  });
+
+  /// Imports entries the background geofence left in the inbox. With zone
+  /// history off they are discarded, never stored.
+  Future<int> importZoneInbox() async {
+    if (!isLoaded) return 0;
+    final pending = await _zoneInbox.drain();
+    var added = 0;
+    if (pending.isNotEmpty) {
+      added = await _transaction(() async {
+        if (!zoneHistory) return 0;
+        var count = 0;
+        for (final entry in pending) {
+          if (_isDuplicateEntry(entry)) continue;
+          events.add(
+            RecoveryEvent.create(
+              type: RecoveryEventType.zoneEntry,
+              timestamp: entry.at,
+              metadata: entry.metadata,
+            ),
+          );
+          count++;
+        }
+        if (count > 0) _sortAndRecompute();
+        return count;
+      });
+    }
+    await _zoneInbox.acknowledge();
+    return added;
+  }
+
+  /// Deletes every recorded zone entry. Privacy control: no auth.
+  Future<int> clearZoneHistory() => _transaction(() async {
+    final before = events.length;
+    events.removeWhere((e) => e.type == RecoveryEventType.zoneEntry);
+    _sortAndRecompute();
+    return before - events.length;
+  });
+
+  /// Quiet hours mute non-critical notifications only; risk-window and
+  /// danger-zone alerts always come through.
+  Future<void> setQuietHours({required bool enabled, RiskWindow? window}) =>
+      _transaction(() async {
+        final next = window ?? notificationPrefs.quietHours;
+        if (next.startMinutes == next.endMinutes) {
+          throw ArgumentError('Quiet hours need a start and end that differ.');
+        }
+        notificationPrefs = NotificationPrefs(
+          quietHoursEnabled: enabled,
+          quietHours: next,
+          hideSensitive: notificationPrefs.hideSensitive,
+        );
+        NotificationService.instance.prefs = notificationPrefs;
+      });
+
+  /// Home widget privacy; never needs authentication. The widget refreshes
+  /// after the commit like every other change.
+  Future<void> setWidgetPrivacy(bool enabled) =>
+      _transaction(() async => widgetPrivacy = enabled);
+
+  /// Lock-screen privacy; never needs authentication.
+  Future<void> setHideSensitiveNotifications(bool hide) =>
+      _transaction(() async {
+        notificationPrefs = NotificationPrefs(
+          quietHoursEnabled: notificationPrefs.quietHoursEnabled,
+          quietHours: notificationPrefs.quietHours,
+          hideSensitive: hide,
+        );
+        NotificationService.instance.prefs = notificationPrefs;
+      });
+
+  /// Network privacy choice; never needs authentication.
+  Future<void> setStreetTiles(bool enabled) => _transaction(() async {
+    streetTiles = enabled;
+  });
+
+  /// Always-on position notification; never needs authentication.
+  Future<void> setPositionNotification(bool enabled) =>
+      _transaction(() async => positionNotification = enabled);
+
+  /// Saves a new app-lock policy. Tightening is free; loosening it (turning
+  /// it off, removing an app, a weaker schedule, a bigger budget, a new
+  /// payment app) needs the relapse lock, like deleting a danger zone.
+  Future<ProtectedActionResult> updateAppLockPolicy(
+    AppLockPolicy next, {
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    final clean = next.sanitized();
+    if (clean.isLooserThan(appLockPolicy)) {
+      final authorization = await _authorizeProtectedAction(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        reason: 'Authenticate to loosen the app lock.',
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+    }
+    if (clean.enabled != appLockPolicy.enabled) {
+      events.add(
+        RecoveryEvent.create(
+          type: RecoveryEventType.settingsChange,
+          metadata: {'setting': 'appLock', 'newValue': '${clean.enabled}'},
+        ),
+      );
+    }
+    appLockPolicy = clean;
+    return ProtectedActionResult.completed;
+  });
+
+  /// "I need this app" unlocks spent from today's budget.
+  int get appUnlocksUsedToday => unlocksUsedOn(events, _now());
+
+  int get appUnlocksLeftToday =>
+      math.max(0, appLockPolicy.dailyUnlockBudget - appUnlocksUsedToday);
+
+  /// Whether the exit plan can fall back to the PIN once the budget is used.
+  bool get appUnlockPinConfigured => requirePinAfterRelapse;
+
+  /// PIN/biometric check for the exit plan once the daily budget is spent.
+  /// Same PIN and lockout rules as every other protected action.
+  Future<ProtectedActionResult> authorizeAppUnlock({
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _authorizeProtectedAction(
+    pin: pin,
+    tryBiometrics: tryBiometrics,
+    reason: 'Authenticate to open this app for 5 minutes.',
+  );
+
+  /// Logs a temporary unlock on the timeline (reason, app, zone).
+  Future<void> recordAppUnlock(Map<String, Object> metadata, {DateTime? at}) =>
+      appendEvent(
+        RecoveryEvent.create(
+          type: RecoveryEventType.appUnlock,
+          timestamp: at ?? _now(),
+          metadata: metadata,
+        ),
+      );
+
+  Future<void> _syncGeofences() async {
+    try {
+      if (backgroundGeofencing && zones.isNotEmpty) {
+        await _geofences.sync(zones);
+      } else {
+        await _geofences.clear();
+      }
+    } catch (_) {
+      /* Geofencing is optional; local history never depends on it. */
+    }
+  }
+
   Future<void> enableRelapseLock(String pin) => _transaction(() async {
     if (!RegExp(r'^\d{4,8}$').hasMatch(pin)) {
       throw ArgumentError.value(pin, 'pin', 'PIN must contain 4–8 digits.');
     }
     await _relapseLock.savePin(pin);
     requirePinAfterRelapse = true;
+    // The risk-window wall is on by default whenever a PIN exists.
+    riskWindowLock = true;
+  });
+
+  /// Clears an app lock (risk window or post-relapse) after authentication.
+  Future<ProtectedActionResult> unlockApp({
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    final authorization = await _authorizeProtectedAction(
+      pin: pin,
+      tryBiometrics: tryBiometrics,
+      reason: 'Authenticate to unlock NO LEAN.',
+    );
+    if (authorization != ProtectedActionResult.completed) return authorization;
+    appLockPending = false;
+    return ProtectedActionResult.completed;
+  });
+
+  /// Enabling the risk-window wall is free; disabling it must authenticate.
+  Future<ProtectedActionResult> setRiskWindowLock(
+    bool enabled, {
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    if (enabled == riskWindowLock) return ProtectedActionResult.completed;
+    if (!enabled) {
+      final authorization = await _authorizeProtectedAction(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        reason: 'Authenticate to turn off the risk-window lock.',
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+    }
+    riskWindowLock = enabled;
+    events.add(
+      RecoveryEvent.create(
+        type: RecoveryEventType.settingsChange,
+        metadata: {'setting': 'riskWindowLock', 'newValue': '$enabled'},
+      ),
+    );
+    return ProtectedActionResult.completed;
   });
 
   Future<ProtectedActionResult> disableRelapseLock({
@@ -928,6 +1526,7 @@ class RecoveryController extends ChangeNotifier {
       }
 
       requirePinAfterRelapse = false;
+      appLockPending = false;
       return ProtectedActionResult.completed;
     });
     if (result == ProtectedActionResult.completed) {
@@ -972,8 +1571,76 @@ class RecoveryController extends ChangeNotifier {
     dailySpend = math.max(0, value);
   });
 
-  Future<void> updateRiskWindow(RiskWindow value) => _transaction(() async {
+  /// Changes the bottle size for *new* dose entries. Past entries keep the
+  /// ml they were stored with.
+  Future<void> updateBottleMl(double value) => _transaction(() async {
+    if (!isValidBottleMl(value)) {
+      throw ArgumentError('Bottle size must be 10-2000 ml.');
+    }
+    if (value == bottleMl) return;
+    final previous = bottleMl;
+    bottleMl = value;
+    events.add(
+      RecoveryEvent.create(
+        type: RecoveryEventType.settingsChange,
+        metadata: {
+          'setting': 'bottleMl',
+          'from': previous,
+          'newValue': value.toString(),
+        },
+      ),
+    );
+  });
+
+  /// Hides an insight until its evidence key changes.
+  Future<void> dismissInsight(String id, String evidenceKey) =>
+      _transaction(() async {
+        dismissedInsights = {...dismissedInsights, id: evidenceKey};
+      });
+
+  /// Brings every dismissed insight back.
+  Future<void> restoreDismissedInsights() => _transaction(() async {
+    dismissedInsights = {};
+  });
+
+  /// Removing protected minutes authenticates for either wall using this
+  /// window. Expanding it keeps every protected minute and remains free.
+  Future<ProtectedActionResult> updateRiskWindow(
+    RiskWindow value, {
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    if (value.startMinutes == riskWindow.startMinutes &&
+        value.endMinutes == riskWindow.endMinutes) {
+      return ProtectedActionResult.completed;
+    }
+    final protectsApps =
+        appLockPolicy.armed &&
+        appLockPolicy.schedule == AppLockSchedule.riskWindow;
+    if ((riskWindowWallArmed || protectsApps) && !value.covers(riskWindow)) {
+      final authorization = await _authorizeProtectedAction(
+        reason: 'Authenticate to remove protected hours from the risk window.',
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+    }
+    final previous = riskWindow.label;
     riskWindow = value;
+    events.add(
+      RecoveryEvent.create(
+        type: RecoveryEventType.settingsChange,
+        timestamp: _now(),
+        metadata: {
+          'setting': 'riskWindow',
+          'from': previous,
+          'newValue': value.label,
+        },
+      ),
+    );
+    return ProtectedActionResult.completed;
   });
 
   Future<void> updatePostSosWindow(int minutes) => _transaction(() async {
@@ -1089,11 +1756,14 @@ class RecoveryController extends ChangeNotifier {
     }
   });
 
+  /// Reschedules alerts, e.g. after the user grants exact alarms.
+  Future<void> resyncRiskNotifications() => _syncRiskNotifications();
+
   Future<void> _syncRiskNotifications() async {
     try {
       if (riskReminders) {
         await NotificationService.instance.scheduleRiskWindow(
-          riskNotificationMessages,
+          riskAlertPlan,
           riskWindow: riskWindow,
         );
       } else {
@@ -1112,5 +1782,6 @@ class RecoveryController extends ChangeNotifier {
     hasPledgedToday:
         lastPledge != null &&
         dateKey(lastPledge!.toLocal()) == dateKey(DateTime.now()),
+    privacy: widgetPrivacy,
   );
 }

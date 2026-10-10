@@ -8,6 +8,7 @@ import 'package:no_lean/features/recovery/domain/recovery_event.dart';
 import 'package:no_lean/features/recovery/presentation/relapse_log_sheet.dart';
 
 import 'support/recovery_fakes.dart';
+import 'support/relapse_form.dart';
 
 Future<RecoveryController> pumpForm(
   WidgetTester tester,
@@ -82,9 +83,8 @@ void main() {
     (tester) async {
       final store = MemoryRecoveryStore();
       final c = await pumpForm(tester, store);
-      await tester.drag(find.byType(ListView), const Offset(0, -700));
-      await tester.pumpAndSettle();
       final addEvent = find.text('ADD ANOTHER EVENT');
+      await revealInRelapseSheet(tester, addEvent);
       await tester.tap(addEvent);
       await tester.pump();
       await _enterRelapseNote(tester, 0, 'Bought after the work trigger hit.');
@@ -223,6 +223,6 @@ Future<void> _enterRelapseNote(
   String value,
 ) async {
   final note = find.byKey(ValueKey('relapse-note-$index'));
-  await tester.ensureVisible(note);
+  await revealInRelapseSheet(tester, note);
   await tester.enterText(note, value);
 }

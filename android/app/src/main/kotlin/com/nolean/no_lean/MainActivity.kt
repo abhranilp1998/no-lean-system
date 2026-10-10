@@ -1,7 +1,5 @@
 package com.nolean.no_lean
 
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
 import android.content.Intent
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -17,6 +15,8 @@ class MainActivity : FlutterFragmentActivity() {
     private val feedbackHandler = Handler(Looper.getMainLooper())
     private var feedbackTone: ToneGenerator? = null
     private var widgetActionChannel: MethodChannel? = null
+    private var appLockChannel: AppLockChannel? = null
+    private var documentExportChannel: DocumentExportChannel? = null
     private val actionPreferences by lazy { getSharedPreferences("no_lean_widget_actions", MODE_PRIVATE) }
     private val releaseFeedbackTone = Runnable {
         feedbackTone?.release()
@@ -30,6 +30,8 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        appLockChannel = AppLockChannel(this, flutterEngine.dartExecutor.binaryMessenger)
+        documentExportChannel = DocumentExportChannel(this, flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "no_lean/widget").setMethodCallHandler { call, result ->
             if (call.method == "update") {
                 val cleanTime = call.argument<String>("cleanTime") ?: "0d 00h 00m"
@@ -37,22 +39,25 @@ class MainActivity : FlutterFragmentActivity() {
                 val isRiskWindow = call.argument<Boolean>("isRiskWindow") ?: false
                 val hasPledgedToday = call.argument<Boolean>("hasPledgedToday") ?: false
                 val lastDoseEpochMillis = call.argument<Number>("lastDoseEpochMillis")?.toLong()
+                val privacy = call.argument<Boolean>("privacy") ?: false
                 val editor = getSharedPreferences(NoLeanWidgetProvider.PREFERENCES_NAME, MODE_PRIVATE).edit()
                     .putString("clean_time", cleanTime)
                     .putString("streak_days", streak)
                     .putBoolean(NoLeanWidgetProvider.KEY_IS_RISK_WINDOW, isRiskWindow)
                     .putBoolean(NoLeanWidgetProvider.KEY_HAS_PLEDGED_TODAY, hasPledgedToday)
+                    .putBoolean(NoLeanWidgetProvider.KEY_PRIVACY, privacy)
 
                 // Keep the legacy strings above so widgets created before this upgrade still
                 // have content. New versions calculate elapsed time from this source of truth.
-                if (lastDoseEpochMillis != null && lastDoseEpochMillis > 0L) {
+                if (privacy) {
+                    // Privacy mode keeps no recovery data at rest for the widget.
+                    editor.remove(NoLeanWidgetProvider.KEY_LAST_DOSE_EPOCH_MILLIS)
+                } else if (lastDoseEpochMillis != null && lastDoseEpochMillis > 0L) {
                     editor.putLong(NoLeanWidgetProvider.KEY_LAST_DOSE_EPOCH_MILLIS, lastDoseEpochMillis)
                 }
                 editor.apply()
 
-                val manager = AppWidgetManager.getInstance(this)
-                val component = ComponentName(this, NoLeanWidgetProvider::class.java)
-                NoLeanWidgetProvider().onUpdate(this, manager, manager.getAppWidgetIds(component))
+                NoLeanWidgetProvider.updateAllWidgets(this)
                 result.success(null)
             } else {
                 result.notImplemented()
@@ -93,10 +98,20 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (documentExportChannel?.onActivityResult(requestCode, resultCode, data) == true) return
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         enqueueWidgetAction(intent)
+        if (intent.getBooleanExtra(EXTRA_APP_BLOCK, false)) {
+            // The request itself is queued by AppLockService; Dart drains it.
+            intent.removeExtra(EXTRA_APP_BLOCK)
+            appLockChannel?.notifyBlocksAvailable()
+        }
     }
 
     private fun readPendingActions(): MutableList<String> {
@@ -120,7 +135,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun widgetActionFrom(intent: Intent?): String? {
         return when (val action = intent?.getStringExtra(EXTRA_WIDGET_ACTION)) {
-            WIDGET_ACTION_SOS, WIDGET_ACTION_CRAVING, WIDGET_ACTION_RELAPSE -> action
+            WIDGET_ACTION_SOS, WIDGET_ACTION_CRAVING, WIDGET_ACTION_RELAPSE, WIDGET_ACTION_CODE -> action
             else -> null
         }
     }
@@ -157,13 +172,19 @@ class MainActivity : FlutterFragmentActivity() {
         feedbackTone = null
         widgetActionChannel?.setMethodCallHandler(null)
         widgetActionChannel = null
+        appLockChannel?.dispose()
+        appLockChannel = null
+        documentExportChannel?.dispose()
+        documentExportChannel = null
         super.onDestroy()
     }
 
     companion object {
         const val EXTRA_WIDGET_ACTION = "com.nolean.no_lean.extra.WIDGET_ACTION"
+        const val EXTRA_APP_BLOCK = "com.nolean.no_lean.extra.APP_BLOCK"
         const val WIDGET_ACTION_SOS = "sos"
         const val WIDGET_ACTION_CRAVING = "craving"
         const val WIDGET_ACTION_RELAPSE = "relapse"
+        const val WIDGET_ACTION_CODE = "code"
     }
 }

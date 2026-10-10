@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Resources referenced only by name from Dart (flutter_local_notifications
+     resolves the small icon at runtime), so the release resource shrinker
+     cannot see them. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_no_lean" />

@@ -139,9 +139,10 @@ class SecureRelapseLockService implements RelapseLockGateway {
     RelapsePinHasher? pinHasher,
     DateTime Function()? now,
     this.maximumFailedAttempts = 5,
-    this.lockoutDuration = const Duration(minutes: 5),
+    this.lockoutSchedule = defaultLockoutSchedule,
   }) : assert(storage == null || lockStorage == null),
        assert(maximumFailedAttempts > 0),
+       assert(lockoutSchedule.isNotEmpty),
        _storage = lockStorage ?? SecureRelapseLockStorage(storage),
        _pinHasher = pinHasher ?? RelapsePinHasher(),
        _now = now ?? DateTime.now,
@@ -152,13 +153,27 @@ class SecureRelapseLockService implements RelapseLockGateway {
   static const _pinKey = 'relapse_lock_pin';
   static const _failedAttemptsKey = 'relapse_lock_failed_attempts';
   static const _lockedUntilKey = 'relapse_lock_locked_until';
+  static const _lockoutLevelKey = 'relapse_lock_lockout_level';
+
+  /// Each consecutive lockout lasts longer. The level survives restarts and
+  /// expiry; only a verified PIN, a new PIN or clearing the lock resets it.
+  static const defaultLockoutSchedule = <Duration>[
+    Duration(minutes: 5),
+    Duration(minutes: 15),
+    Duration(minutes: 60),
+  ];
 
   final RelapseLockStorage _storage;
   final RelapsePinHasher _pinHasher;
   final DateTime Function() _now;
   final LocalAuthentication _localAuthentication;
   final int maximumFailedAttempts;
-  final Duration lockoutDuration;
+  final List<Duration> lockoutSchedule;
+
+  /// Duration applied to the lockout with [level] (1-based); levels past the
+  /// end of the schedule reuse its longest step.
+  Duration lockoutDurationForLevel(int level) =>
+      lockoutSchedule[(level - 1).clamp(0, lockoutSchedule.length - 1)];
 
   @override
   Future<bool> hasPin() async => (await _storage.read(_pinKey)) != null;
@@ -167,12 +182,14 @@ class SecureRelapseLockService implements RelapseLockGateway {
   Future<void> savePin(String pin) async {
     await _storage.write(_pinKey, await _hashPin(pin));
     await _clearFailures();
+    await _storage.delete(_lockoutLevelKey);
   }
 
   @override
   Future<void> clearPin() async {
     await _storage.delete(_pinKey);
     await _clearFailures();
+    await _storage.delete(_lockoutLevelKey);
   }
 
   @override
@@ -193,14 +210,18 @@ class SecureRelapseLockService implements RelapseLockGateway {
         await _storage.write(_pinKey, await _hashPin(pin));
       }
       await _clearFailures();
+      await _storage.delete(_lockoutLevelKey);
       return PinVerificationResult.verified;
     }
 
     final attempts =
         (int.tryParse(await _storage.read(_failedAttemptsKey) ?? '') ?? 0) + 1;
     if (attempts >= maximumFailedAttempts) {
-      final lockedUntil = _now().add(lockoutDuration);
+      final level =
+          (int.tryParse(await _storage.read(_lockoutLevelKey) ?? '') ?? 0) + 1;
+      final lockedUntil = _now().add(lockoutDurationForLevel(level));
       await _storage.write(_failedAttemptsKey, '0');
+      await _storage.write(_lockoutLevelKey, level.toString());
       await _storage.write(_lockedUntilKey, lockedUntil.toIso8601String());
       return PinVerificationResult.lockedOut;
     }
@@ -208,11 +229,20 @@ class SecureRelapseLockService implements RelapseLockGateway {
     return PinVerificationResult.denied;
   }
 
+  /// When PIN entry is paused, the moment it becomes available again.
+  Future<DateTime?> lockedOutUntil() async {
+    final encoded = await _storage.read(_lockedUntilKey);
+    final lockedUntil = encoded == null ? null : DateTime.tryParse(encoded);
+    if (lockedUntil == null || !_now().isBefore(lockedUntil)) return null;
+    return lockedUntil;
+  }
+
   Future<bool> _isLockedOut() async {
     final encoded = await _storage.read(_lockedUntilKey);
     final lockedUntil = encoded == null ? null : DateTime.tryParse(encoded);
     if (lockedUntil == null) return false;
     if (_now().isBefore(lockedUntil)) return true;
+    // Expiry clears the attempt counter but keeps the escalation level.
     await _clearFailures();
     return false;
   }

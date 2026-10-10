@@ -7,28 +7,66 @@ import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/presentation/backup_preview_sheet.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
 import '../../recovery/services/backup_service.dart';
+import '../../recovery/services/android_document_export.dart';
 
+/// Saves a JSON backup. Cancelling the Save screen shows nothing: no error
+/// and no false "ready" notice.
 Future<void> exportRecoveryData(
   BuildContext context,
-  RecoveryController recovery,
-) async {
+  RecoveryController recovery, {
+  BackupService? service,
+}) async {
   try {
-    await BackupService().exportBackup(
+    final saved = await (service ?? BackupService()).exportBackup(
       recovery.events,
       preferences: recovery.portablePreferences,
+      zones: recovery.zones,
     );
-    if (context.mounted) {
+    if (saved && context.mounted) {
       AppNotice.show(
         context,
         'RECOVERY EXPORT READY // SECURE PIN EXCLUDED.',
         type: AppNoticeType.success,
       );
     }
-  } catch (_) {
+  } catch (error) {
     if (context.mounted) {
       AppNotice.show(
         context,
-        'EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
+        error is ExportSaveException
+            ? 'EXPORT FAILED // ${error.message}'
+            : error is FormatException
+            ? 'EXPORT FAILED // ${error.message}'
+            : 'EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
+        type: AppNoticeType.error,
+      );
+    }
+  }
+}
+
+Future<void> exportRecoveryCsv(
+  BuildContext context,
+  RecoveryController recovery, {
+  BackupService? service,
+}) async {
+  try {
+    final saved = await (service ?? BackupService()).exportEventsCsv(
+      recovery.events,
+    );
+    if (saved && context.mounted) {
+      AppNotice.show(
+        context,
+        'CSV READY // ${recovery.events.length} EVENTS. NOTES ARE INCLUDED: SHARE WITH CARE.',
+        type: AppNoticeType.success,
+      );
+    }
+  } catch (error) {
+    if (context.mounted) {
+      AppNotice.show(
+        context,
+        error is ExportSaveException
+            ? 'CSV EXPORT FAILED // ${error.message}'
+            : 'CSV EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
         type: AppNoticeType.error,
       );
     }
@@ -49,6 +87,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
       final recovery = ref.read(recoveryProvider);
       var result = await recovery.mergeImportedEvents(
         preview.events,
+        importedZones: preview.zones,
         preferences: preview.preferences,
         restorePreferences: choice.restorePreferences,
       );
@@ -61,6 +100,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
         if (pin == null) return;
         result = await recovery.mergeImportedEvents(
           preview.events,
+          importedZones: preview.zones,
           preferences: preview.preferences,
           restorePreferences: choice.restorePreferences,
           pin: pin,

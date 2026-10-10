@@ -49,5 +49,43 @@ void main() {
       expect(restored.startMinutes, window.startMinutes);
       expect(restored.endMinutes, window.endMinutes);
     });
+
+    test('coverage keeps every old minute, including overnight boundaries', () {
+      const evening = RiskWindow.defaultWindow();
+      expect(evening.covers(evening), isTrue);
+      expect(
+        const RiskWindow(startMinutes: 960, endMinutes: 1320).covers(evening),
+        isTrue,
+      );
+      expect(
+        const RiskWindow(startMinutes: 1080, endMinutes: 1260).covers(evening),
+        isFalse,
+      );
+      expect(
+        const RiskWindow(startMinutes: 1020, endMinutes: 1259).covers(evening),
+        isFalse,
+      );
+      expect(
+        const RiskWindow(startMinutes: 120, endMinutes: 180).covers(evening),
+        isFalse,
+      );
+      const overnight = RiskWindow(startMinutes: 1320, endMinutes: 120);
+      expect(
+        const RiskWindow(startMinutes: 1260, endMinutes: 180).covers(overnight),
+        isTrue,
+      );
+      expect(
+        const RiskWindow(startMinutes: 1380, endMinutes: 180).covers(overnight),
+        isFalse,
+      );
+      expect(
+        const RiskWindow(startMinutes: 0, endMinutes: 0).covers(overnight),
+        isTrue,
+      );
+      expect(
+        overnight.covers(const RiskWindow(startMinutes: 0, endMinutes: 0)),
+        isFalse,
+      );
+    });
   });
 }
