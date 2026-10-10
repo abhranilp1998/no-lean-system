@@ -18,6 +18,20 @@
     <!-- Optional OpenStreetMap street tiles on the danger-zone map. Everything
          else, including zones and alerts, works without network. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- TODO(app-lock): placeholder only; nothing below is declared yet.
+         Locking specific apps will need ONE of these approaches, each added
+         only together with an in-app disclosure and a Play Console
+         declaration (see lib/features/app_lock/services/app_lock_gateway.dart):
+         - UsageStats: android.permission.PACKAGE_USAGE_STATS (user grants
+           "Usage access" manually) + a foreground service
+           (FOREGROUND_SERVICE + a typed FOREGROUND_SERVICE_* permission on
+           Android 14+) that watches the foreground app;
+         - or an AccessibilityService (<service> with
+           android.permission.BIND_ACCESSIBILITY_SERVICE and an
+           accessibility-service config XML; strict Play policy).
+         Blocking UI: a full-screen blocking activity, or
+         SYSTEM_ALERT_WINDOW for an overlay. App picking on Android 11+:
+         a <queries> entry for launcher intents, not QUERY_ALL_PACKAGES. -->
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"

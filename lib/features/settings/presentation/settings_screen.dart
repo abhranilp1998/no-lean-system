@@ -9,6 +9,8 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/brand_header.dart';
 import '../../../core/widgets/glass_card.dart';
+import '../../app_lock/application/app_lock_providers.dart';
+import '../../app_lock/services/app_lock_gateway.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../services/biometric_service.dart';
 import '../services/recovery_export_service.dart';
@@ -207,6 +209,21 @@ class SettingsScreen extends ConsumerWidget {
                 context,
                 () => ref.read(recoveryProvider).setPositionNotification(value),
               ),
+            ),
+            // Placeholder: app locking is not implemented yet. Stays disabled
+            // until the gateway reports it as available.
+            // TODO(app-lock): open the app picker + policy editor.
+            SettingAction(
+              key: const ValueKey('settings-app-lock'),
+              icon: Icons.app_blocking_outlined,
+              title: 'App lock (coming soon)',
+              subtitle:
+                  ref.watch(appLockAvailabilityProvider).valueOrNull ==
+                      AppLockAvailability.available
+                  ? 'Block chosen apps during risky times'
+                  : 'Block chosen apps during risky times // not available yet',
+              color: muted,
+              onTap: null,
             ),
             SettingAction(
               icon: Icons.hourglass_bottom,

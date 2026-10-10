@@ -47,46 +47,58 @@ class SettingAction extends StatelessWidget {
   final String title;
   final String subtitle;
   final Color color;
-  final VoidCallback onTap;
+
+  /// Null renders a disabled, dimmed tile (e.g. "coming soon").
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: () {
-      AppFeedback.tap();
-      onTap();
-    },
-    borderRadius: BorderRadius.circular(14),
-    child: GlassCard(
-      accent: color,
-      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+  Widget build(BuildContext context) {
+    final tap = onTap;
+    final tile = InkWell(
+      onTap: tap == null
+          ? null
+          : () {
+              AppFeedback.tap();
+              tap();
+            },
+      borderRadius: BorderRadius.circular(14),
+      child: GlassCard(
+        accent: color,
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 10.5, color: muted),
-                ),
-              ],
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(fontSize: 10.5, color: muted),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Icon(Icons.chevron_right, color: muted, size: 18),
-        ],
+            Icon(
+              tap == null ? Icons.lock_clock_outlined : Icons.chevron_right,
+              color: muted,
+              size: 18,
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+    return tap == null ? Opacity(opacity: .5, child: tile) : tile;
+  }
 }
 
 class SettingToggle extends StatelessWidget {

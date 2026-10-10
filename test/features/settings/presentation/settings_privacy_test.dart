@@ -156,4 +156,19 @@ void main() {
     expect(container.read(recoveryProvider).positionNotification, isFalse);
     expect(find.textContaining('zone alerts still work'), findsOneWidget);
   });
+
+  testWidgets('app lock is a disabled "coming soon" placeholder', (
+    tester,
+  ) async {
+    await pumpSettings(tester);
+    final tile = find.byKey(const ValueKey('settings-app-lock'));
+    await tester.scrollUntilVisible(tile, 300);
+    await tester.pumpAndSettle();
+    expect(find.text('App lock (coming soon)'), findsOneWidget);
+    expect(find.textContaining('not available yet'), findsOneWidget);
+    final ink = tester.widget<InkWell>(
+      find.descendant(of: tile, matching: find.byType(InkWell)),
+    );
+    expect(ink.onTap, isNull);
+  });
 }

@@ -205,6 +205,17 @@ Read it before changing code.
 - SOS is staged (breathe → 5-4-3-2-1 → reasons → re-pledge). Leaving is held
   only for the first 15 s of breathing; completion is recorded at the pledge.
 
+## App lock for other apps (placeholder only, Oct 2026)
+
+- `lib/features/app_lock/`: `LockedApp`, `AppLockPolicy` (schedule off /
+  always / risk window / custom, `lockInsideDangerZones` hook),
+  `AppLockGateway` + `UnsupportedAppLockGateway` ("App lock is not available
+  yet."), providers in `application/app_lock_providers.dart`. Settings shows a
+  disabled "App lock (coming soon)" tile. Not persisted, no enforcement, and
+  no manifest permissions yet (only commented TODOs). Distinct from the
+  in-app PIN/biometric lock (`AppLockSession`). Real approach and Play policy
+  notes live in `app_lock_gateway.dart`.
+
 ## Shared UI and feedback
 
 - Use `AppNotice.show(...)` for user-facing transient messages. Do not create
