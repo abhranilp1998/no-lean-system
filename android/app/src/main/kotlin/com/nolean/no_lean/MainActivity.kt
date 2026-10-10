@@ -15,6 +15,7 @@ class MainActivity : FlutterFragmentActivity() {
     private val feedbackHandler = Handler(Looper.getMainLooper())
     private var feedbackTone: ToneGenerator? = null
     private var widgetActionChannel: MethodChannel? = null
+    private var appLockChannel: AppLockChannel? = null
     private val actionPreferences by lazy { getSharedPreferences("no_lean_widget_actions", MODE_PRIVATE) }
     private val releaseFeedbackTone = Runnable {
         feedbackTone?.release()
@@ -28,6 +29,7 @@ class MainActivity : FlutterFragmentActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        appLockChannel = AppLockChannel(this, flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "no_lean/widget").setMethodCallHandler { call, result ->
             if (call.method == "update") {
                 val cleanTime = call.argument<String>("cleanTime") ?: "0d 00h 00m"
@@ -98,6 +100,11 @@ class MainActivity : FlutterFragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         enqueueWidgetAction(intent)
+        if (intent.getBooleanExtra(EXTRA_APP_BLOCK, false)) {
+            // The request itself is queued by AppLockService; Dart drains it.
+            intent.removeExtra(EXTRA_APP_BLOCK)
+            appLockChannel?.notifyBlocksAvailable()
+        }
     }
 
     private fun readPendingActions(): MutableList<String> {
@@ -158,11 +165,14 @@ class MainActivity : FlutterFragmentActivity() {
         feedbackTone = null
         widgetActionChannel?.setMethodCallHandler(null)
         widgetActionChannel = null
+        appLockChannel?.dispose()
+        appLockChannel = null
         super.onDestroy()
     }
 
     companion object {
         const val EXTRA_WIDGET_ACTION = "com.nolean.no_lean.extra.WIDGET_ACTION"
+        const val EXTRA_APP_BLOCK = "com.nolean.no_lean.extra.APP_BLOCK"
         const val WIDGET_ACTION_SOS = "sos"
         const val WIDGET_ACTION_CRAVING = "craving"
         const val WIDGET_ACTION_RELAPSE = "relapse"

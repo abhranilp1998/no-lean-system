@@ -1,13 +1,24 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/app_lock_gateway.dart';
 
-/// TODO(app-lock): swap for the MethodChannel-backed gateway on Android.
+/// Android gets the real gateway; everything else (and tests by default)
+/// gets the unsupported one, which never blocks anything.
 final appLockGatewayProvider = Provider<AppLockGateway>(
-  (ref) => const UnsupportedAppLockGateway(),
+  (ref) => !kIsWeb && Platform.isAndroid
+      ? MethodChannelAppLockGateway()
+      : const UnsupportedAppLockGateway(),
 );
 
-/// Whether app locking can be used. The Settings tile reads this.
+/// Latest native health, refreshed by `AppLockHost` on start, resume and
+/// after every config push. Drives the settings status and the re-grant
+/// banner.
+final appLockStatusProvider = StateProvider<AppLockStatus?>((ref) => null);
+
+/// Whether app locking can be used.
 final appLockAvailabilityProvider = FutureProvider<AppLockAvailability>(
   (ref) => ref.watch(appLockGatewayProvider).availability(),
 );
