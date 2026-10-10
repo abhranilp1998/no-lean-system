@@ -123,6 +123,30 @@ void main() {
     });
 
     group('tolerant import', () {
+      test('distinguishes empty copies and saved share text', () {
+        for (final text in ['', '\uFEFF\u0000 \n']) {
+          expect(
+            () => service.validateBackupJson(text),
+            throwsA(
+              isA<FormatException>().having(
+                (e) => e.message,
+                'message',
+                contains('empty'),
+              ),
+            ),
+          );
+        }
+        expect(
+          () => service.validateBackupJson('NO LEAN recovery backup'),
+          throwsA(
+            isA<FormatException>().having(
+              (e) => e.message,
+              'message',
+              contains('share message'),
+            ),
+          ),
+        );
+      });
       String backup() => jsonEncode({
         'version': 1,
         'events': mockEvents.map((event) => event.toJson()).toList(),

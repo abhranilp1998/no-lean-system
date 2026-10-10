@@ -6,6 +6,7 @@ import 'package:no_lean/core/theme/app_theme.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
 import 'package:no_lean/features/recovery/services/backup_service.dart';
+import 'package:no_lean/features/recovery/services/android_document_export.dart';
 import 'package:no_lean/features/settings/services/recovery_export_service.dart';
 
 import '../../../support/recovery_fakes.dart';
@@ -121,6 +122,24 @@ void main() {
     expect(saver.fileName, endsWith('.csv'));
     expect(find.byType(SnackBar), findsNothing);
   });
+
+  testWidgets(
+    'failed document write suggests another destination without a ready notice',
+    (tester) async {
+      final context = await pumpHost(tester);
+      final saver = _FakeSaver(
+        error: const ExportSaveException('Try Downloads or another location.'),
+      );
+      await exportRecoveryData(
+        context,
+        recovery,
+        service: BackupService(saver: saver.call),
+      );
+      await tester.pump();
+      expect(find.textContaining('Try Downloads'), findsOneWidget);
+      expect(find.textContaining('READY'), findsNothing);
+    },
+  );
 
   test('exported JSON round-trips through import validation', () async {
     final events = [

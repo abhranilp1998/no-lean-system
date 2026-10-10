@@ -7,6 +7,7 @@ import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/presentation/backup_preview_sheet.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
 import '../../recovery/services/backup_service.dart';
+import '../../recovery/services/android_document_export.dart';
 
 /// Saves a JSON backup. Cancelling the Save screen shows nothing: no error
 /// and no false "ready" notice.
@@ -32,7 +33,9 @@ Future<void> exportRecoveryData(
     if (context.mounted) {
       AppNotice.show(
         context,
-        error is FormatException
+        error is ExportSaveException
+            ? 'EXPORT FAILED // ${error.message}'
+            : error is FormatException
             ? 'EXPORT FAILED // ${error.message}'
             : 'EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
         type: AppNoticeType.error,
@@ -57,11 +60,13 @@ Future<void> exportRecoveryCsv(
         type: AppNoticeType.success,
       );
     }
-  } catch (_) {
+  } catch (error) {
     if (context.mounted) {
       AppNotice.show(
         context,
-        'CSV EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
+        error is ExportSaveException
+            ? 'CSV EXPORT FAILED // ${error.message}'
+            : 'CSV EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
         type: AppNoticeType.error,
       );
     }

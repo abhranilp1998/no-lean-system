@@ -17,6 +17,7 @@ import '../domain/legacy_recovery_migration.dart';
 import '../domain/quantity_upgrade.dart';
 import '../domain/recovery_event.dart';
 import '../../zones/domain/danger_zone.dart';
+import 'android_document_export.dart';
 
 class BackupPreview {
   const BackupPreview({
@@ -51,9 +52,18 @@ typedef ExportSaver =
     });
 
 class BackupService {
-  BackupService({ExportSaver? saver}) : _saver = saver;
+  BackupService({
+    ExportSaver? saver,
+    Future<Directory> Function()? temporaryDirectory,
+    Future<ShareResult> Function(ShareParams)? share,
+  }) : _saver = saver,
+       _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
+       _share = share ?? SharePlus.instance.share;
 
   final ExportSaver? _saver;
+  final Future<Directory> Function() _temporaryDirectory;
+  final Future<ShareResult> Function(ShareParams) _share;
+  static int _exportSequence = 0;
 
   /// Format 4 adds `zones`; format 5 adds `codeSession` events; format 6 adds
   /// `zoneEntry` events; format 7 adds `cravingCheck` events, structured
@@ -109,7 +119,6 @@ class BackupService {
       fileName: 'nolean_backup_${_stamp()}.json',
       mimeType: 'application/json',
       extension: 'json',
-      shareText: 'NO LEAN recovery backup',
     );
   }
 
@@ -120,17 +129,16 @@ class BackupService {
     fileName: 'nolean_history_${_stamp()}.csv',
     mimeType: 'text/csv',
     extension: 'csv',
-    shareText: 'NO LEAN history (CSV)',
   );
 
-  String _stamp() => DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+  String _stamp() =>
+      '${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}_${_exportSequence++}';
 
   Future<bool> _shareText(
     String content, {
     required String fileName,
     required String mimeType,
     required String extension,
-    required String shareText,
   }) {
     final saver = _saver;
     if (saver != null) {
@@ -155,13 +163,18 @@ class BackupService {
     required String mimeType,
     required String extension,
   }) async {
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+    if (!kIsWeb && Platform.isAndroid) {
+      return const AndroidDocumentExport().save(
+        content,
+        fileName: fileName,
+        mimeType: mimeType,
+      );
+    }
+    if (!kIsWeb && Platform.isIOS) {
       // Save straight to a location the user picks (Downloads, Drive, ...)
-      // with the system "Save to" screen (Android: ACTION_CREATE_DOCUMENT,
-      // no storage permission needed on any version; iOS: document picker).
-      // The old share-sheet flow deleted the temp file as soon as the sheet
-      // closed, so slow targets saved nothing ("save failed") or only the
-      // share text. A null result means the user cancelled.
+      // with the iOS document picker.
+      // A null result means the user cancelled. Android uses a verified
+      // document write above rather than relying on the picker's URI alone.
       final bytes = Uint8List.fromList(utf8.encode(content));
       try {
         final path = await FilePicker.saveFile(
@@ -198,7 +211,7 @@ class BackupService {
     required String fileName,
     required String mimeType,
   }) async {
-    final root = await getTemporaryDirectory();
+    final root = await _temporaryDirectory();
     final dir = Directory('${root.path}/exports');
     if (await dir.exists()) {
       final cutoff = DateTime.now().subtract(const Duration(hours: 1));
@@ -212,9 +225,7 @@ class BackupService {
     }
     final file = File('${dir.path}/$fileName');
     await file.writeAsString(content, flush: true);
-    await SharePlus.instance.share(
-      ShareParams(files: [XFile(file.path, mimeType: mimeType)]),
-    );
+    await _share(ShareParams(files: [XFile(file.path, mimeType: mimeType)]));
   }
 
   /// Shares an export through the share sheet (for sending to a chat or
@@ -291,6 +302,17 @@ class BackupService {
   @visibleForTesting
   static String normalizeBackupText(String raw) {
     var text = raw.replaceAll('\uFEFF', '').replaceAll('\u0000', '').trim();
+    if (text.isEmpty) {
+      throw const FormatException(
+        'This file is empty. Export a new backup and save it to Downloads.',
+      );
+    }
+    if (text == 'NO LEAN recovery backup' || text == 'NO LEAN history (CSV)') {
+      throw const FormatException(
+        'This file contains only the share message. Export a new backup '
+        'and save the .json attachment to Downloads.',
+      );
+    }
     if (text.startsWith('{') && text.endsWith('}')) return text;
     final start = text.indexOf('{');
     final end = text.lastIndexOf('}');

@@ -16,6 +16,7 @@ class MainActivity : FlutterFragmentActivity() {
     private var feedbackTone: ToneGenerator? = null
     private var widgetActionChannel: MethodChannel? = null
     private var appLockChannel: AppLockChannel? = null
+    private var documentExportChannel: DocumentExportChannel? = null
     private val actionPreferences by lazy { getSharedPreferences("no_lean_widget_actions", MODE_PRIVATE) }
     private val releaseFeedbackTone = Runnable {
         feedbackTone?.release()
@@ -30,6 +31,7 @@ class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         appLockChannel = AppLockChannel(this, flutterEngine.dartExecutor.binaryMessenger)
+        documentExportChannel = DocumentExportChannel(this, flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "no_lean/widget").setMethodCallHandler { call, result ->
             if (call.method == "update") {
                 val cleanTime = call.argument<String>("cleanTime") ?: "0d 00h 00m"
@@ -94,6 +96,11 @@ class MainActivity : FlutterFragmentActivity() {
             val effect = call.argument<String>("effect") ?: "neonPulse"
             result.success(playFeedbackTone(effect))
         }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (documentExportChannel?.onActivityResult(requestCode, resultCode, data) == true) return
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -167,6 +174,8 @@ class MainActivity : FlutterFragmentActivity() {
         widgetActionChannel = null
         appLockChannel?.dispose()
         appLockChannel = null
+        documentExportChannel?.dispose()
+        documentExportChannel = null
         super.onDestroy()
     }
 
