@@ -8,12 +8,12 @@ Sources: `git log main..stillpoint-8`, `memory.md`, the code and the tests. Noth
 | Item | Status |
 |---|---|
 | Branch | `stillpoint-8` (pushed to GitHub). `main` is untouched. |
-| Scope | P0, P1, P2 and P3, 8 StillPoint-inspired features, always-on position notification, app-lock placeholders, import/export fixes |
-| Tests | **384 automated tests pass**. `flutter analyze`: no issues. `dart format`: clean |
+| Scope | P0, P1, P2 and P3, 8 StillPoint-inspired features, always-on position notification, **app lock for other apps with an emergency exit plan**, import/export fixes |
+| Tests | **430 automated tests pass**. `flutter analyze`: no issues. `dart format`: clean |
 | Release build | `flutter build apk --release --split-per-abi` succeeds (R8 on) |
 | App version | still `1.1.0+3`, the same as `main` (see Gaps found) |
 | Preview APK | [NO-LEAN-Preview.apk](https://github.com/abhranilp1998/no-lean-system/releases/download/preview-2026-10-09/NO-LEAN-Preview.apk). Separate app ID `com.nolean.no_lean.preview`, so it installs next to the original |
-| Real phone | **Not yet tested on a real phone.** Background geofence, street tiles, quiet hours and widgets have only been checked by automated tests |
+| Real phone | **Not yet tested on a real phone.** Background geofence, street tiles, quiet hours, widgets and the app lock service have only been checked by automated tests and a release build |
 
 The StillPoint repo was only used as a reference. Nothing in it was changed.
 
@@ -21,7 +21,7 @@ The StillPoint repo was only used as a reference. Nothing in it was changed.
 
 **What to merge:** `stillpoint-8` into `main`. **The reviewer does the merge, not us.** No agent has merged anything into `main` or pushed to it.
 
-**Commit range:** `bd3581a..stillpoint-8`, where `bd3581a` is the current `main` and the merge base. That is 47 commits including the one adding this document, from `e240a25` to the branch tip (full list in the Appendix). `main` is an ancestor of the branch, so this is a **clean fast-forward with no conflicts** (checked with `git merge-tree`).
+**Commit range:** `bd3581a..stillpoint-8`, where `bd3581a` is the current `main` and the merge base. That is 51 commits including the latest docs update, from `e240a25` to the branch tip (full list in the Appendix). `main` is an ancestor of the branch, so this is a **clean fast-forward with no conflicts** (checked with `git merge-tree`).
 
 **Pre-merge checks (run on the branch):**
 
@@ -29,17 +29,18 @@ The StillPoint repo was only used as a reference. Nothing in it was changed.
 flutter pub get
 dart format --output=none --set-exit-if-changed lib test
 flutter analyze            # expect: No issues found
-flutter test               # expect: 384 tests, all passed
+flutter test               # expect: 430 tests, all passed
 flutter build apk --release --split-per-abi
 ```
 
 **Risky areas to review closely:**
 
-1. **State migrations to v12** (`RecoveryController.load()` in `lib/features/recovery/application/recovery_controller.dart`). v8 adds the lock flags, v9 zones, v10 privacy, v11 zone history, and v12 doses, cost, stress and `bottleMl`, with free-text quantity conversion. Every stored version from v2 to v12 is covered by `test/features/recovery/services/compat_matrix_test.dart`.
-2. **Backup format 7** (`lib/features/recovery/services/backup_service.dart`). Formats 1–7 and raw state files from v2 to v12 import. A newer format is refused as a whole.
-3. **Notification channels** (`lib/features/recovery/services/notification_service.dart`): `risk_window_v2`, `danger_zone_v1`, `position_status_v1`, `code_timer_v1` and `craving_check_v1`. Android fixes a channel's importance once it is created, so changing any of these means creating a new channel ID.
+1. **State migrations to v13** (`RecoveryController.load()` in `lib/features/recovery/application/recovery_controller.dart`). v8 adds the lock flags, v9 zones, v10 privacy, v11 zone history, v12 doses, cost, stress and `bottleMl` (with free-text quantity conversion), and v13 the `appLockPolicy` and `appUnlock` events (older states load with the app lock off). Every stored version from v2 to v13 is covered by `test/features/recovery/services/compat_matrix_test.dart`.
+2. **Backup format 8** (`lib/features/recovery/services/backup_service.dart`). Formats 1–8 and raw state files from v2 to v13 import. A newer format is refused as a whole. The app-lock policy is never exported and an import never turns it on.
+3. **Notification channels** (`lib/features/recovery/services/notification_service.dart`): `risk_window_v2`, `danger_zone_v1`, `position_status_v1`, `code_timer_v1` and `craving_check_v1`; native (`AppLockService.kt`): `app_lock_service_v1` (min importance, neutral text) and `app_lock_block_v1` (fallback prompt). Android fixes a channel's importance once it is created, so changing any of these means creating a new channel ID.
 4. **Geofence** (`lib/features/zones/services/native_geofence_gateway.dart`, `zone_entry_inbox.dart`). This is a background isolate with an `@pragma('vm:entry-point')` callback. It only reads the state file and appends entries to `recovery/zone_entries.jsonl`.
-5. **Export/import changes**: the system Save screen, saved-or-cancelled results, and the tolerant decoder (see §3.10).
+5. **Export/import changes**: the system Save screen, saved-or-cancelled results, and the tolerant decoder (see §3.8 and §3.9).
+6. **App lock native code** (`android/app/src/main/kotlin/com/nolean/no_lean/AppLock*.kt`, manifest). A foreground service (type `specialUse`), new permissions (`PACKAGE_USAGE_STATS`, `SYSTEM_ALERT_WINDOW`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE`), a boot receiver and launcher `<queries>`. It compiles in the release build (R8 on) but has **not run on a real phone**. Review the fail-safe paths: any error, missing permission or malformed config means nothing is blocked.
 
 **Signing, before any release:**
 
@@ -102,11 +103,45 @@ flutter build apk --release --split-per-abi
 - It is on by default, with a toggle under Settings > Protection.
 - It never triggers or suppresses zone alerts.
 
-### 3.7 App-lock placeholders (intentional, no enforcement)
+### 3.7 App lock for other apps, with the emergency exit plan (state v13, backup format 8)
 
-- `lib/features/app_lock/` contains the model, schedules and a stand-in gateway that reports "not available yet".
-- Settings shows a disabled **App lock (coming soon)** tile.
-- No new permissions were added. The manifest only has comments for now.
+Replaces the placeholders. Settings > Protection > **App lock**.
+
+**What it does**
+
+- **Pick apps** from the installed launchable apps (a `<queries>` entry for the launcher intent, no `QUERY_ALL_PACKAGES`). Search, with never-lockable apps shown but greyed out.
+- **Schedules:** Always, Risk window (the existing 17:00–21:00 setting, end minute included, wraps midnight) or Danger zones only, plus **Also lock inside danger zones** (on by default).
+- **Enforcement (Android):** `AppLockService`, a lightweight foreground service, runs while the lock is on. Every ~1 s while the screen is on (and the lock is active) it reads the foreground app from `UsageStatsManager` events (`PACKAGE_USAGE_STATS`, granted by the user on Android's Usage access screen after NO LEAN's disclosure page). It slows to 3–5 s when the screen is off or no lock is active. When a locked app comes to the front it brings NO LEAN's **blocking screen** over it. **No AccessibilityService** is used.
+- **Danger zones in the service** use the phone's last known location (passive, network or GPS, at most 10 minutes old, accuracy within the zone radius, with exit hysteresis). The service never switches GPS on itself.
+- **Settings:** enable, choose apps, schedule, mark payment apps, set the unlock budget (0–10, default 3), permission status (Usage access, Display over other apps, service running) with a **Grant** button that goes through the disclosure page first.
+- **Loosening is protected:** turning it off, removing an app, a weaker schedule, a bigger budget or marking a locked app as a payment app needs the relapse PIN/biometrics (when a PIN is set). Tightening is always free.
+
+**The emergency exit plan (user instruction, mandatory)**
+
+The blocking screen always shows **SOS**, **CALL 112** and **GO HOME**, and Back goes home. It never consumes Home or Back and never draws over other apps, so the user is never trapped. Then:
+
+1. **I NEED THIS APP** → pick a reason: Payment, Work, Navigation, Urgent or Other.
+2. **Within the daily budget (default 3 a day):** a **30-second mindful wait** that shows the user's own reasons for quitting. Apps marked as **payment apps** (GPay, PhonePe, Paytm and BHIM are suggested by package name) take the **10-second quick path**.
+3. Then **that app only opens for 5 minutes** and locks again when the time is up.
+4. **Budget used up:** the existing PIN (or biometrics), with its 5/15/60-minute lockout rules.
+5. **Never a dead end:** with no PIN set, or while PIN entry is paused by a lockout, a **120-second wait** still opens the app.
+6. **Every unlock is logged** as an `appUnlock` timeline event (app, reason, method, wait, minutes, payment flag and the zone name when inside one; never coordinates). It is also in the CSV export (`zone` column + details).
+
+**Never lockable:** the phone dialer and in-call screens, emergency/SOS and cell broadcast apps, maps and navigation, NO LEAN itself (release and preview IDs), system settings and the permission controller, and every launcher. A fixed list in `never_lockable.dart` plus, on the phone, the default dialer, every home screen, and the apps that handle `tel:`, `geo:` and Settings (`AppLockProtected.kt`). They are filtered when saving, in the picker, and again by the service.
+
+**Fail-safe:** if Usage access is revoked the service stops itself within ~10 s and nothing is locked; if Android kills the service nothing is locked until NO LEAN is opened again (it restarts the service on every open/resume and after a reboot or update). In both cases the app shows an **APP LOCK PAUSED/STOPPED** banner with a **FIX** button. A missing "Display over other apps" permission falls back to a tap-to-open notification.
+
+**Privacy:** the service notification text is neutral ("NO LEAN // Focus guard on", or "Service running // Active" with hide sensitive on) and never names apps or zones. The fallback prompt respects hide sensitive. Which apps the user opens is never stored; only the unlocks they choose are logged.
+
+**Google Play policy (must be handled before a Play release):**
+
+- `PACKAGE_USAGE_STATS` is a protected permission. Play requires the "Usage access" core functionality to be declared and justified (here: a user-enabled app blocker for addiction recovery), and a prominent in-app disclosure (done: `app_lock_disclosure.dart`).
+- `SYSTEM_ALERT_WINDOW` ("Display over other apps") is needed because Android 10+ blocks background activity starts. NO LEAN never draws an overlay; it only starts its own activity. This is reviewed by Play and may need justification.
+- The `specialUse` foreground service type (Android 14+) needs a Play Console declaration; the manifest carries the `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` text.
+- An AccessibilityService was deliberately **not** used: Play's Accessibility API policy restricts non-accessibility uses and these are frequently rejected.
+- Sideloaded APKs (like the preview) are not affected by any of this.
+
+**Files:** `lib/features/app_lock/` (`domain/locked_app.dart`, `domain/never_lockable.dart`, `domain/exit_plan.dart`, `domain/native_config.dart`, `services/app_lock_gateway.dart`, `application/app_lock_host.dart`, `application/app_lock_providers.dart`, `presentation/app_block_screen.dart`, `presentation/app_lock_settings_screen.dart`, `presentation/app_picker_screen.dart`, `presentation/app_lock_disclosure.dart`, `presentation/app_lock_banner.dart`); `android/app/src/main/kotlin/com/nolean/no_lean/AppLockService.kt`, `AppLockConfig.kt`, `AppLockProtected.kt`, `AppLockChannel.kt`, `AppLockBootReceiver.kt`, `MainActivity.kt`; `AndroidManifest.xml`. The zone alert full-screen screen, its exit button and the scanlines are unchanged.
 
 ### 3.8 Import fixes
 
@@ -127,17 +162,17 @@ flutter build apk --release --split-per-abi
 
 | Contract | Current | Still accepted |
 |---|---|---|
-| Stored state (`recovery/current.json`) | v12 | v2–v12, migrated forward without data loss. Corrupt or unknown state opens a recovery screen and is never reset |
-| JSON backup format | 7 | formats 1–7, plus raw state files v2–v12. Newer formats are refused as a whole |
+| Stored state (`recovery/current.json`) | v13 | v2–v13, migrated forward without data loss (v12 → v13 adds the app lock, off). Corrupt or unknown state opens a recovery screen and is never reset |
+| JSON backup format | 8 | formats 1–8, plus raw state files v2–v13. Newer formats are refused as a whole. Format 8 adds `appUnlock` events |
 | CSV | columns only appended | read-only, not importable |
 
 - Old backups still import. This is tested for every format and every state version.
 - The secure PIN and trusted contact are never included in exports.
-- An import never turns on location features or lock flags, and never changes privacy settings.
+- An import never turns on location features, lock flags or the app lock, and never changes privacy settings.
 
 ## 5. Verification
 
-- **Automated:** 384 unit and widget tests, covering units, migrations, the backup round trip, import tolerance, the export cancel path, notification policy, zones, SOS, widgets, the app-lock stub and the zone-alert exit.
+- **Automated:** 430 unit and widget tests, covering units, migrations, the backup round trip, import tolerance, the export cancel path, notification policy, zones, SOS, widgets and the zone-alert exit. The app lock adds 46: schedules, the never-lockable list, the exit plan (budget, 30 s / 10 s payment / PIN / 120 s waits, 5-minute unlock), budget counting, `appUnlock` validation, state v13 and backup format 8 migrations and compatibility, the blocking screen (SOS/112/Go home always visible, Back goes home, cancel grants nothing), settings, the disclosure, the picker, the fail-safe banner, the host and the method channel.
 - **Emulator** (software rendering only, because hardware acceleration kept crashing): app launch, the milestone celebration and the in-app zone alert passed. On-device integration tests are in `integration_test/`.
 - **Release build:** succeeds with R8 and the new keep rules. The scheduled-notification restore after a reboot has not been run on a device.
 - **Not yet verified on a real phone:**
@@ -147,7 +182,8 @@ flutter build apk --release --split-per-abi
   - widgets on the home screen;
   - the position notification;
   - the Save screen on your phone;
-  - risk-window alerts after a reboot.
+  - risk-window alerts after a reboot;
+  - **the app lock service** (detection delay, blocking screen over a locked app, temporary unlock, revoke/restart behaviour, OEM battery savers).
 
 ## 6. Known issues and caveats
 
@@ -160,6 +196,13 @@ flutter build apk --release --split-per-abi
 - **The position notification only shows while the app is open.** It is removed when the app goes to the background.
 - **Background zone alerts** need "Allow all the time" location access. Android may delay geofence events.
 - **Android 14+:** a full-screen zone alert only appears when the system allows full-screen intents. Otherwise it shows as a heads-up notification.
+- **App lock limits:**
+  - **Polling delay:** a locked app can be visible for up to ~1–2 s before the blocking screen appears (UsageStats is polled, not event-driven).
+  - **OEM battery killers** (Xiaomi/MIUI, Oppo/Realme/ColorOS, Vivo, Samsung "sleeping apps", OnePlus) may kill the service. Nothing is locked until NO LEAN is opened again; the banner says so. Users should exempt NO LEAN from battery optimisation and enable autostart.
+  - **Display over other apps** is required for the blocking screen to appear from the background on Android 10+; without it only a notification prompt is shown.
+  - **Danger-zone locking with the app closed** relies on the phone's last known location (≤ 10 minutes old) and on background location ("Allow all the time"); a stale fix means the zone rule doesn't apply.
+  - It is a commitment device, not tamper-proof: the user can revoke Usage access in Android settings (by design, nothing stays locked).
+  - Play Store release needs the policy declarations in §3.7.
 
 ## 7. Gaps found (pre-merge audit, 10 Oct)
 
@@ -180,32 +223,32 @@ flutter build apk --release --split-per-abi
 |---|---|---|
 | **High** | Release builds are signed with the debug key | Set up a real upload key before any Play release. Updating existing phones needs the PC's debug key (see §2) |
 | **High** | Not tested on a real phone | Run the checklist in §8 before calling it released |
+| **High** | App lock service never run on a device | Install the preview, grant Usage access + Display over other apps, lock a test app, and check: blocking screen appears, SOS/112/Go home work, exit plan unlocks only that app for 5 min, budget then PIN, revoke Usage access → banner and nothing locked, reboot → service restarts |
+| Medium | Play policy declarations for `PACKAGE_USAGE_STATS`, `SYSTEM_ALERT_WINDOW` and the `specialUse` foreground service | Needed only for a Play Store release (§3.7). Sideloading is unaffected |
+| Medium | OEM battery optimisation can kill the app-lock service | Fail-safe (nothing locked, banner shown). Consider an in-app "exempt from battery optimisation" helper |
 | Medium | Version is still `1.1.0+3`, the same as `main` | Bump it (for example to `1.2.0+4`) with `tool/release_version.dart` before release, so stores and phones see a newer build |
 | Medium | The scheduled-notification restore after reboot is untested in a release build | This is a device test, done after installing the release APK |
 | Low | Some screens have no direct widget test: zone editor, zone monitoring panel, geofence disclosure, map markers, relapse-type card. The geofence gateway is platform code | They are covered indirectly or by integration tests. Add widget tests when those screens next change |
 | Low | `cupertino_icons` is declared but unused | Template leftover, harmless. Removing it is optional |
-| Info | `TODO(app-lock)` notes in `settings_screen.dart`, `app_lock_gateway.dart`, `locked_app.dart`, `app_lock_providers.dart` and the manifest | Intentional placeholders. No other TODOs or FIXMEs were found |
+| Low | The custom lock window exists in the model and native code but has no settings UI | The settings offer Always, Risk window and Danger zones only, as requested |
+| Info | No TODOs or FIXMEs left (the `TODO(app-lock)` placeholders were replaced by the real implementation) | — |
 
 **Checked and OK:**
 
 - Merge conflicts: none (fast-forward).
 - Every other dependency is used.
-- Manifest permissions match the features: notifications, biometrics, boot, exact alarm, fine, coarse and background location, wake lock, full-screen intent, and internet (for tiles only). No storage permission is needed, because the Save screen uses the system document picker.
+- Manifest permissions match the features: notifications, biometrics, boot, exact alarm, fine, coarse and background location, wake lock, full-screen intent, internet (for tiles only), and for the app lock usage stats, display over other apps and a `specialUse` foreground service. No `QUERY_ALL_PACKAGES` and no AccessibilityService. No storage permission is needed, because the Save screen uses the system document picker.
 - Notification channel IDs are unique and versioned.
 - `res/raw/keep.xml` keeps the notification icon.
 - The geofence callback has `vm:entry-point`.
 
 ## 8. Proposed next steps
 
-1. **A real app lock, with an exit plan for genuine needs.** For example, you might need to pay in an app while you're inside a danger zone.
-   - **Reason picker:** payment, work, navigation or other.
-   - **A 30-second mindful wait**, showing your own reasons for quitting.
-   - **A time-boxed 5-minute unlock**, after which the app locks again.
-   - **A "payments only" app class** (GPay, PhonePe) that opens quickly for a short time while other apps stay locked.
-   - **A daily unlock budget.** After it runs out, the PIN is required.
-   - **Every unlock is logged** with its reason and zone, and patterns show up in insights.
-   - **Never lockable:** the phone dialer, maps and NO LEAN itself. SOS is always reachable.
-   - Needs Usage Access plus a foreground service, or an Accessibility service, with a disclosure screen and a Play policy declaration. The notes are in `app_lock_gateway.dart`.
+1. **App lock follow-ups** (the app lock itself is now implemented, §3.7):
+   - unlock patterns in insights (which apps, reasons and zones come up most);
+   - an "exempt from battery optimisation" helper for OEM phones;
+   - app icons in the picker and a custom-window editor;
+   - a device test pass (see §7).
 2. **Evening game-plan check-ins** at 16:45, 19:00 and 21:00.
 3. **Automatic encrypted backup** to a folder you choose.
 4. **Trusted-person check-in:** the app drafts the message and you send it yourself. It never sends automatically.
@@ -222,7 +265,8 @@ flutter build apk --release --split-per-abi
    - widgets in all 3 sizes;
    - position notification inside and outside a zone;
    - street tiles on and off;
-   - deny notifications on Android 13+.
+   - deny notifications on Android 13+;
+   - app lock: lock a test app, exit plan, budget then PIN, revoke Usage access, reboot.
 
 ## Appendix A: key files
 
@@ -234,7 +278,7 @@ flutter build apk --release --split-per-abi
 | Notifications | `lib/features/recovery/services/notification_service.dart`, `lib/features/recovery/domain/notification_policy.dart`, `risk_alert_plan.dart` |
 | Zones and position | `lib/features/zones/` (`application/zone_monitor.dart`, `application/position_status_host.dart`, `domain/position_status.dart`, `services/native_geofence_gateway.dart`, `services/zone_entry_inbox.dart`, `presentation/zone_alert_screen.dart`, `presentation/zones_screen.dart`) |
 | Lock | `lib/features/recovery/domain/app_lock_session.dart`, `lib/features/recovery/presentation/app_lock_screen.dart`, `lib/features/recovery/services/relapse_lock_service.dart` |
-| App-lock placeholders | `lib/features/app_lock/` |
+| App lock (other apps) | `lib/features/app_lock/`, `android/app/src/main/kotlin/com/nolean/no_lean/AppLock*.kt`, `test/features/app_lock/` |
 | Progress | `lib/features/progress/domain/heat_map_data.dart`, `money_series.dart`, `lib/features/recovery/domain/milestones.dart` |
 | Android | `android/app/src/main/AndroidManifest.xml`, `android/app/build.gradle.kts`, `android/app/proguard-rules.pro`, `android/app/src/main/res/raw/keep.xml` |
 | Tests | `test/features/settings/services/export_flow_test.dart`, `test/features/recovery/services/compat_matrix_test.dart`, `test/features/recovery/services/backup_service_test.dart`, `integration_test/` |
@@ -287,4 +331,8 @@ flutter build apk --release --split-per-abi
 - `9fbf1dd` 2026-10-10 Release: R8 keep rules for Gson-backed scheduled notifications and geofence
 - `114559a` 2026-10-10 Docs: README features and memory export/import contract; compat matrix for backup formats 1-7 and state v2-v12
 - `6ad8997` 2026-10-10 Test: zone alert close and I'M LEAVING each exit in one tap
-- *(plus the commit that adds this document)*
+- `fdf9ba8` 2026-10-10 Docs: changes, merge handoff, gaps found and roadmap
+- `70ebb9b` 2026-10-10 App lock: policy, schedules, never-lockable list, exit plan and appUnlock events (state v13, backup format 8)
+- `f38a1dc` 2026-10-10 App lock (Android): UsageStats foreground service, blocking hand-off, temporary unlocks, boot restart, launcher <queries>
+- `00917c0` 2026-10-10 App lock UI: blocking screen with exit plan (SOS, Call 112, Go home), settings, disclosure, app picker, fail-safe banner
+- *(plus the commit that updates this document, README and memory.md for the app lock)*

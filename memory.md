@@ -31,14 +31,15 @@ Read it before changing code.
 
 ## Recovery and security rules
 
-- Persisted recovery JSON is currently state version 12 (v8 added
+- Persisted recovery JSON is currently state version 13 (v8 added
   `riskWindowLock` and `appLockPending`; v9 added `zones`, `zoneMonitoring`
   and `backgroundGeofencing`; v10 added `streetTiles`, `widgetPrivacy`,
   `quietHoursEnabled`, `quietHours`, `hideSensitiveNotifications` and the
   `codeSession` event type; v11 added `zoneHistory` and the `zoneEntry`
   event type; v12 added `bottleMl`, `insightPreferences`, the `cravingCheck`
   event type and structured dose/cost/stress metadata, and converts exact
-  free-text quantities on load; older states load with safe defaults). Any schema change must
+  free-text quantities on load; v13 added `appLockPolicy` (off by default)
+  and the `appUnlock` event type; older states load with safe defaults). Any schema change must
   increment the version and provide a non-destructive migration in
   `RecoveryController.load()`.
 - Production history is stored in `recovery/current.json` in application support
@@ -51,7 +52,8 @@ Read it before changing code.
   imports with no zones. Format 5 adds `codeSession` events; format 6 adds
   `zoneEntry` events; format 7 adds `cravingCheck` events, dose/cost/stress
   metadata and the portable `bottleMl` preference (format ≤6 and raw state
-  <12 imports get the exact-quantity conversion). A new event type always
+  <12 imports get the exact-quantity conversion); format 8 adds `appUnlock`
+  events (the app-lock policy is never exported or imported). A new event type always
   needs a format bump so older apps refuse the file as a whole.
 - CSV export (`events_csv.dart`) is a read-only copy of every event, oldest
   first: BOM + CRLF, RFC 4180 quoting, ISO-8601 timestamps with offset, and a
@@ -205,16 +207,50 @@ Read it before changing code.
 - SOS is staged (breathe → 5-4-3-2-1 → reasons → re-pledge). Leaving is held
   only for the first 15 s of breathing; completion is recorded at the pledge.
 
-## App lock for other apps (placeholder only, Oct 2026)
+## App lock for other apps (user decision, Oct 2026)
 
-- `lib/features/app_lock/`: `LockedApp`, `AppLockPolicy` (schedule off /
-  always / risk window / custom, `lockInsideDangerZones` hook),
-  `AppLockGateway` + `UnsupportedAppLockGateway` ("App lock is not available
-  yet."), providers in `application/app_lock_providers.dart`. Settings shows a
-  disabled "App lock (coming soon)" tile. Not persisted, no enforcement, and
-  no manifest permissions yet (only commented TODOs). Distinct from the
-  in-app PIN/biometric lock (`AppLockSession`). Real approach and Play policy
-  notes live in `app_lock_gateway.dart`.
+- Distinct from the in-app PIN/biometric lock (`AppLockSession`). Code in
+  `lib/features/app_lock/` + `android/.../AppLock*.kt` (channel
+  `no_lean/app_lock`).
+- Policy (`AppLockPolicy`, state key `appLockPolicy`, v13): enabled, apps
+  (`LockedApp` with `paymentApp`), schedule always / riskWindow (the existing
+  `riskWindow`, end minute inclusive) / off (= danger zones only) / custom
+  (model + native only, no UI), `lockInsideDangerZones` (default on),
+  `dailyUnlockBudget` 0-10 (default 3). Malformed `enabled` = off. Never in
+  `portablePreferences`; `mergeImportedEvents` strips it. Loosening
+  (`isLooserThan`: off, remove app, weaker schedule, zones off, bigger budget,
+  marking an already-locked app as payment) needs `_authorizeProtectedAction`;
+  tightening is free. Saving always runs `sanitized()`.
+- Never lockable (`never_lockable.dart` + `AppLockProtected.kt` at runtime:
+  default dialer, every HOME handler, `tel:`/`geo:`/Settings handlers, NO
+  LEAN's own ids). Filtered on save, in the picker and in the service. Never
+  shrink this list.
+- Exit plan (`exit_plan.dart`, mandatory user instruction): the blocking
+  screen ALWAYS shows SOS, CALL 112 and GO HOME; Back = go home. "I need this
+  app" → reason (payment/work/navigation/urgent/other) → within budget: 30 s
+  wait showing the user's reasons (payment apps 10 s) → that app only, 5 min.
+  Budget spent → PIN/biometrics (existing lockout). No PIN or locked out →
+  120 s wait. Never a dead end. Each unlock = `appUnlock` event {packageName,
+  appLabel, reason, method budget|pin|longWait, waitSeconds, unlockMinutes,
+  paymentApp, zoneName?}; coordinates stripped. Only `budget` unlocks spend
+  the budget (local calendar day).
+- Native: `AppLockService` (FGS `specialUse`, id 900, channel
+  `app_lock_service_v1`, neutral text; hide-sensitive → "Service running")
+  polls `UsageStatsManager.queryEvents` ~1 s while the screen is on and a
+  lock is active; zone rule uses the last known location (≤10 min, accuracy
+  ≤ radius and ≤150 m, exit hysteresis). Blocks by queueing a request
+  (`pending_blocks`) and starting `MainActivity` (needs "Display over other
+  apps" on Android 10+, else notification 901 on `app_lock_block_v1`).
+  `AppLockHost` (wraps Shell) pushes config on every relevant change and on
+  start/resume (restarts a killed service), drains requests and opens
+  `AppBlockScreen`. Grants are per package with an expiry in native prefs.
+  `AppLockBootReceiver` restarts it after boot/update.
+- Fail-safe: no usage access, broken config or any native error = nothing
+  blocked; the service stops itself when access is revoked. The Shell shows
+  `AppLockHealthBanner` (paused/limited/stopped) with FIX. NO LEAN never
+  draws overlays and never consumes Home/Back. No AccessibilityService (Play
+  policy); PACKAGE_USAGE_STATS, SYSTEM_ALERT_WINDOW and the specialUse FGS
+  need Play declarations (docs/CHANGES_AND_ROADMAP.md §3.7).
 
 ## Shared UI and feedback
 

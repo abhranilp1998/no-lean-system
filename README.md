@@ -20,6 +20,14 @@ NO LEAN is an offline-first Android recovery tracker built around a direct inter
 - Dose logging with ml/L/bottle/drink/tablet units, cost and stress, safety
   warnings with a 112 call card, and a 15-minute craving recheck.
 - Encrypted relapse lock with biometric-first authentication and PIN fallback.
+- App lock for other apps (Android): lock chosen apps always, in the risk
+  window or inside danger zones. Detection uses Usage access + a lightweight
+  foreground service (no AccessibilityService). The blocking screen always has
+  SOS, Call 112 and Go home, and an emergency exit plan: pick a reason, a 30 s
+  mindful wait (10 s for payment apps), then that app only for 5 minutes;
+  after the daily budget (default 3) the PIN, and a 120 s wait if there is no
+  PIN. Dialer, emergency, maps, settings, launchers and NO LEAN are never
+  lockable. Every unlock is logged on the timeline.
 - Configurable risk windows with high-visibility scheduled interrupts.
 - Trigger, time-of-day, weekly, and SOS-completion recovery insights.
 - Native Android home-screen widget with live clean-time seconds and streak.
@@ -65,6 +73,7 @@ lib/
 │   ├── utils/                   # Formatting helpers
 │   └── widgets/                 # Reusable UI primitives
 ├── features/
+│   ├── app_lock/                # Locking other apps + exit plan (native: android/.../AppLock*.kt)
 │   ├── cravings/                # Craving log and entry flow
 │   ├── dashboard/               # Counter and daily actions
 │   ├── emergency/               # SOS override experience
