@@ -10,6 +10,8 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/brand_header.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../app_lock/application/app_lock_providers.dart';
+import '../../app_lock/domain/locked_app.dart';
+import '../../app_lock/presentation/app_lock_settings_screen.dart';
 import '../../app_lock/services/app_lock_gateway.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../services/biometric_service.dart';
@@ -210,20 +212,20 @@ class SettingsScreen extends ConsumerWidget {
                 () => ref.read(recoveryProvider).setPositionNotification(value),
               ),
             ),
-            // Placeholder: app locking is not implemented yet. Stays disabled
-            // until the gateway reports it as available.
-            // TODO(app-lock): open the app picker + policy editor.
             SettingAction(
               key: const ValueKey('settings-app-lock'),
               icon: Icons.app_blocking_outlined,
-              title: 'App lock (coming soon)',
-              subtitle:
-                  ref.watch(appLockAvailabilityProvider).valueOrNull ==
-                      AppLockAvailability.available
-                  ? 'Block chosen apps during risky times'
-                  : 'Block chosen apps during risky times // not available yet',
-              color: muted,
-              onTap: null,
+              title: 'App lock',
+              subtitle: _appLockSubtitle(
+                recovery.appLockPolicy,
+                ref.watch(appLockStatusProvider),
+              ),
+              color: magenta,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AppLockSettingsScreen(),
+                ),
+              ),
             ),
             SettingAction(
               icon: Icons.hourglass_bottom,
@@ -402,4 +404,16 @@ class SettingsScreen extends ConsumerWidget {
       ],
     );
   }
+}
+
+String _appLockSubtitle(AppLockPolicy policy, AppLockStatus? status) {
+  if (!policy.enabled) return 'Off // lock chosen apps, with an exit plan';
+  final apps = policy.enabledPackages.length;
+  final when = policy.schedule == AppLockSchedule.off
+      ? 'danger zones'
+      : policy.schedule.label.toLowerCase();
+  final health = status != null && status.supported && !status.usageAccess
+      ? ' // needs usage access'
+      : '';
+  return '$apps app(s) // $when${policy.lockInsideDangerZones && policy.schedule != AppLockSchedule.off ? ' + zones' : ''}$health';
 }

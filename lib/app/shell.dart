@@ -7,6 +7,7 @@ import '../core/services/app_feedback.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/no_lean_visuals.dart';
 import '../core/widgets/animated_background.dart';
+import '../features/app_lock/presentation/app_lock_banner.dart';
 import '../features/code_instead/presentation/code_instead_screen.dart';
 import '../features/cravings/presentation/cravings_screen.dart';
 import '../features/cravings/presentation/craving_dialog.dart';
@@ -389,6 +390,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
                       ),
                     ],
                   ),
+                const AppLockHealthBanner(),
                 Expanded(
                   child: Stack(
                     children: [

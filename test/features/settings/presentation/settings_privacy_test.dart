@@ -157,18 +157,18 @@ void main() {
     expect(find.textContaining('zone alerts still work'), findsOneWidget);
   });
 
-  testWidgets('app lock is a disabled "coming soon" placeholder', (
+  testWidgets('app lock is a live tile (no longer "coming soon")', (
     tester,
   ) async {
     await pumpSettings(tester);
     final tile = find.byKey(const ValueKey('settings-app-lock'));
     await tester.scrollUntilVisible(tile, 300);
     await tester.pumpAndSettle();
-    expect(find.text('App lock (coming soon)'), findsOneWidget);
-    expect(find.textContaining('not available yet'), findsOneWidget);
+    expect(find.text('App lock (coming soon)'), findsNothing);
+    expect(find.textContaining('lock chosen apps'), findsOneWidget);
     final ink = tester.widget<InkWell>(
       find.descendant(of: tile, matching: find.byType(InkWell)),
     );
-    expect(ink.onTap, isNull);
+    expect(ink.onTap, isNotNull);
   });
 }
