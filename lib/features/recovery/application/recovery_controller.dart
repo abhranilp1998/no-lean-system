@@ -1603,8 +1603,44 @@ class RecoveryController extends ChangeNotifier {
     dismissedInsights = {};
   });
 
-  Future<void> updateRiskWindow(RiskWindow value) => _transaction(() async {
+  /// Removing protected minutes authenticates for either wall using this
+  /// window. Expanding it keeps every protected minute and remains free.
+  Future<ProtectedActionResult> updateRiskWindow(
+    RiskWindow value, {
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    if (value.startMinutes == riskWindow.startMinutes &&
+        value.endMinutes == riskWindow.endMinutes) {
+      return ProtectedActionResult.completed;
+    }
+    final protectsApps =
+        appLockPolicy.armed &&
+        appLockPolicy.schedule == AppLockSchedule.riskWindow;
+    if ((riskWindowWallArmed || protectsApps) && !value.covers(riskWindow)) {
+      final authorization = await _authorizeProtectedAction(
+        reason: 'Authenticate to remove protected hours from the risk window.',
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+    }
+    final previous = riskWindow.label;
     riskWindow = value;
+    events.add(
+      RecoveryEvent.create(
+        type: RecoveryEventType.settingsChange,
+        timestamp: _now(),
+        metadata: {
+          'setting': 'riskWindow',
+          'from': previous,
+          'newValue': value.label,
+        },
+      ),
+    );
+    return ProtectedActionResult.completed;
   });
 
   Future<void> updatePostSosWindow(int minutes) => _transaction(() async {

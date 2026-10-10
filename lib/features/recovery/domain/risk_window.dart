@@ -21,10 +21,25 @@ class RiskWindow {
 
   bool contains(DateTime dateTime) {
     final minute = dateTime.hour * 60 + dateTime.minute;
+    return _containsMinute(minute);
+  }
+
+  bool _containsMinute(int minute) {
     if (!spansMidnight) {
       return minute >= startMinutes && minute <= endMinutes;
     }
     return minute >= startMinutes || minute <= endMinutes;
+  }
+
+  /// True only when every previously protected minute stays protected.
+  /// Handles overnight and full-day windows, including the end minute.
+  bool covers(RiskWindow previous) {
+    for (var minute = 0; minute < minutesPerDay; minute++) {
+      if (previous._containsMinute(minute) && !_containsMinute(minute)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   List<int> reminderMinutes({int count = 4}) {

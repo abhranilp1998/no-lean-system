@@ -514,10 +514,37 @@ Future<void> showRiskWindowDialog(BuildContext context, WidgetRef ref) async {
   );
 
   if (updatedWindow == null || !context.mounted) return;
-  if (!await saveAction(
-    context,
-    () => ref.read(recoveryProvider).updateRiskWindow(updatedWindow),
-  )) {
+  ProtectedActionResult? result;
+  if (!await saveAction(context, () async {
+    result = await recovery.updateRiskWindow(updatedWindow);
+  })) {
+    return;
+  }
+  if (result == ProtectedActionResult.authenticationRequired &&
+      context.mounted) {
+    final pin = await showRelapsePinDialog(
+      context,
+      actionLabel: 'CHANGE WINDOW',
+    );
+    if (pin == null || !context.mounted) return;
+    if (!await saveAction(context, () async {
+      result = await recovery.updateRiskWindow(
+        updatedWindow,
+        pin: pin,
+        tryBiometrics: false,
+      );
+    })) {
+      return;
+    }
+  }
+  if (result != ProtectedActionResult.completed) {
+    if (context.mounted) {
+      AppNotice.show(
+        context,
+        result?.failureMessage ?? 'Risk window was not changed.',
+        type: AppNoticeType.error,
+      );
+    }
     return;
   }
   if (context.mounted) {
