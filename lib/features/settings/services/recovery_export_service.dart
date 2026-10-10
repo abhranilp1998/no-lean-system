@@ -8,28 +8,33 @@ import '../../recovery/presentation/backup_preview_sheet.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
 import '../../recovery/services/backup_service.dart';
 
+/// Saves a JSON backup. Cancelling the Save screen shows nothing: no error
+/// and no false "ready" notice.
 Future<void> exportRecoveryData(
   BuildContext context,
-  RecoveryController recovery,
-) async {
+  RecoveryController recovery, {
+  BackupService? service,
+}) async {
   try {
-    await BackupService().exportBackup(
+    final saved = await (service ?? BackupService()).exportBackup(
       recovery.events,
       preferences: recovery.portablePreferences,
       zones: recovery.zones,
     );
-    if (context.mounted) {
+    if (saved && context.mounted) {
       AppNotice.show(
         context,
         'RECOVERY EXPORT READY // SECURE PIN EXCLUDED.',
         type: AppNoticeType.success,
       );
     }
-  } catch (_) {
+  } catch (error) {
     if (context.mounted) {
       AppNotice.show(
         context,
-        'EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
+        error is FormatException
+            ? 'EXPORT FAILED // ${error.message}'
+            : 'EXPORT FAILED // YOUR LOCAL DATA IS STILL INTACT.',
         type: AppNoticeType.error,
       );
     }
@@ -38,11 +43,14 @@ Future<void> exportRecoveryData(
 
 Future<void> exportRecoveryCsv(
   BuildContext context,
-  RecoveryController recovery,
-) async {
+  RecoveryController recovery, {
+  BackupService? service,
+}) async {
   try {
-    await BackupService().exportEventsCsv(recovery.events);
-    if (context.mounted) {
+    final saved = await (service ?? BackupService()).exportEventsCsv(
+      recovery.events,
+    );
+    if (saved && context.mounted) {
       AppNotice.show(
         context,
         'CSV READY // ${recovery.events.length} EVENTS. NOTES ARE INCLUDED: SHARE WITH CARE.',

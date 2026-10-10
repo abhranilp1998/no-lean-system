@@ -40,7 +40,21 @@ class BackupPreview {
   bool get hasPreferences => preferences != null && preferences!.isNotEmpty;
 }
 
+/// Writes an export somewhere the user picks. Returns `true` when the file
+/// was written and `false` when the user cancelled.
+typedef ExportSaver =
+    Future<bool> Function(
+      String content, {
+      required String fileName,
+      required String mimeType,
+      required String extension,
+    });
+
 class BackupService {
+  BackupService({ExportSaver? saver}) : _saver = saver;
+
+  final ExportSaver? _saver;
+
   /// Format 4 adds `zones`; format 5 adds `codeSession` events; format 6 adds
   /// `zoneEntry` events; format 7 adds `cravingCheck` events, structured
   /// dose/cost/stress metadata and the `bottleMl` preference. Older formats
@@ -51,12 +65,13 @@ class BackupService {
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
-  Future<void> exportBackup(
+  /// Returns `true` when the backup was saved, `false` if the user cancelled.
+  Future<bool> exportBackup(
     List<RecoveryEvent> events, {
     required Map<String, dynamic> preferences,
     List<DangerZone> zones = const [],
-  }) async {
-    await exportJson(
+  }) {
+    return exportJson(
       jsonEncode(
         buildBackupPayload(events, preferences: preferences, zones: zones),
       ),
@@ -79,13 +94,16 @@ class BackupService {
     };
   }
 
-  Future<void> exportJson(String jsonString) async {
-    if (utf8.encode(jsonString).length > maxBackupBytes) {
+  /// Returns `true` when saved, `false` if the user cancelled the Save
+  /// screen. Set [enforceSizeLimit] to false for the emergency export of
+  /// preserved copies, which must never be blocked by the import limit.
+  Future<bool> exportJson(String jsonString, {bool enforceSizeLimit = true}) {
+    if (enforceSizeLimit && utf8.encode(jsonString).length > maxBackupBytes) {
       throw const FormatException(
         'Backup is larger than the 5 MB safety limit.',
       );
     }
-    await _shareText(
+    return _shareText(
       jsonString,
       fileName: 'nolean_backup_${_stamp()}.json',
       mimeType: 'application/json',
@@ -96,7 +114,7 @@ class BackupService {
 
   /// Shares every event as CSV (a readable copy; JSON stays the restorable
   /// backup format).
-  Future<void> exportEventsCsv(List<RecoveryEvent> events) => _shareText(
+  Future<bool> exportEventsCsv(List<RecoveryEvent> events) => _shareText(
     buildEventsCsv(events),
     fileName: 'nolean_history_${_stamp()}.csv',
     mimeType: 'text/csv',
@@ -106,42 +124,69 @@ class BackupService {
 
   String _stamp() => DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
 
-  Future<void> _shareText(
+  Future<bool> _shareText(
     String content, {
     required String fileName,
     required String mimeType,
     required String extension,
     required String shareText,
+  }) {
+    final saver = _saver;
+    if (saver != null) {
+      return saver(
+        content,
+        fileName: fileName,
+        mimeType: mimeType,
+        extension: extension,
+      );
+    }
+    return _saveWithSystemScreen(
+      content,
+      fileName: fileName,
+      mimeType: mimeType,
+      extension: extension,
+    );
+  }
+
+  Future<bool> _saveWithSystemScreen(
+    String content, {
+    required String fileName,
+    required String mimeType,
+    required String extension,
   }) async {
     if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
       // Save straight to a location the user picks (Downloads, Drive, ...)
-      // with the system "Save to" screen. The old share-sheet flow deleted
-      // the temp file as soon as the sheet closed, so slow targets saved
-      // nothing ("save failed") or only the share text.
+      // with the system "Save to" screen (Android: ACTION_CREATE_DOCUMENT,
+      // no storage permission needed on any version; iOS: document picker).
+      // The old share-sheet flow deleted the temp file as soon as the sheet
+      // closed, so slow targets saved nothing ("save failed") or only the
+      // share text. A null result means the user cancelled.
       final bytes = Uint8List.fromList(utf8.encode(content));
       try {
-        await FilePicker.saveFile(
+        final path = await FilePicker.saveFile(
           dialogTitle: 'Save export',
           fileName: fileName,
           type: FileType.any,
           bytes: bytes,
         );
-        return;
-      } on UnsupportedError {
+        return path != null;
+      } on UnimplementedError {
         // Fall through to sharing on platforms without a save screen.
+      } on UnsupportedError {
+        // Same.
       }
       await _shareFile(content, fileName: fileName, mimeType: mimeType);
-    } else {
-      final path = await FilePicker.saveFile(
-        dialogTitle: 'Save export',
-        fileName: fileName,
-        type: FileType.custom,
-        allowedExtensions: [extension],
-      );
-      if (path != null) {
-        await File(path).writeAsString(content, flush: true);
-      }
+      return true;
     }
+    final path = await FilePicker.saveFile(
+      dialogTitle: 'Save export',
+      fileName: fileName,
+      type: FileType.custom,
+      allowedExtensions: [extension],
+    );
+    if (path == null) return false;
+    await File(path).writeAsString(content, flush: true);
+    return true;
   }
 
   /// Shares a copy without deleting it right away: the receiving app may
