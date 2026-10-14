@@ -165,4 +165,39 @@ void main() {
       expect(store.value, before);
     },
   );
+
+  test(
+    'a risk window restored from a backup is logged on the timeline',
+    () async {
+      final (controller, _, _) = await load();
+      final result = await controller.mergeImportedEvents(
+        const [],
+        preferences: {'riskWindow': moved.toJson()},
+        restorePreferences: true,
+        pin: '1234',
+      );
+      expect(result, ProtectedActionResult.completed);
+      expect(controller.riskWindow.startMinutes, moved.startMinutes);
+      final logged = controller.events.where(
+        (e) =>
+            e.type == RecoveryEventType.settingsChange &&
+            e.metadata['setting'] == 'riskWindow' &&
+            e.metadata['source'] == 'import',
+      );
+      expect(logged, hasLength(1));
+      expect(logged.single.metadata['newValue'], moved.label);
+    },
+  );
+
+  test('importing the same risk window adds no timeline entry', () async {
+    final (controller, _, _) = await load();
+    final count = controller.events.length;
+    await controller.mergeImportedEvents(
+      const [],
+      preferences: {'riskWindow': controller.riskWindow.toJson()},
+      restorePreferences: true,
+      pin: '1234',
+    );
+    expect(controller.events.length, count);
+  });
 }

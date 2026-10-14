@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
@@ -87,6 +88,15 @@ internal class DocumentExportChannel(
                 false
             } catch (_: Exception) {
                 true
+            }
+            if (failure) {
+                // SAF created the file before we wrote to it. Remove the empty or
+                // partial copy so it can't be picked for import later.
+                try {
+                    DocumentsContract.deleteDocument(resolver, uri)
+                } catch (_: Exception) {
+                    // Best effort: some providers don't support deletion.
+                }
             }
             main.post {
                 if (!disposed && pending === request) {
