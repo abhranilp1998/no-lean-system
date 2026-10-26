@@ -1,3 +1,5 @@
+> **Superseded:** see [NO_LEAN_HANDBOOK.md](NO_LEAN_HANDBOOK.md) for the current, combined handbook. This file is kept for history.
+
 # Android 1.2 handoff review — 10 October 2026
 
 The user authorized the Android handoff and merge before midnight IST. The later
