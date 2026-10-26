@@ -4,6 +4,9 @@ import 'package:no_lean/features/app_lock/services/app_lock_gateway.dart';
 
 /// Records every call; tests choose the status and installed apps.
 class FakeAppLockGateway implements AppLockGateway {
+  @override
+  bool get isSupportedPlatform => true;
+
   FakeAppLockGateway({
     this.currentStatus = const AppLockStatus(
       supported: true,

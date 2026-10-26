@@ -11,7 +11,16 @@ import 'app_lock_settings_screen.dart';
 String? appLockHealthMessage({
   required bool armed,
   required AppLockStatus? status,
+  AppLockSyncFailure? syncFailure,
 }) {
+  if (syncFailure != null) {
+    return switch (syncFailure) {
+      AppLockSyncFailure.activation =>
+        'APP LOCK NOT READY // Android did not confirm activation. Retry or check App Lock settings.',
+      AppLockSyncFailure.deactivation =>
+        'APP LOCK UPDATE FAILED // Android did not confirm turning app lock off. Retry or check App Lock settings.',
+    };
+  }
   if (!armed || status == null || !status.supported) return null;
   if (!status.usageAccess) {
     return 'APP LOCK PAUSED // Usage access is off, so nothing is being locked. Grant it again to resume.';
@@ -33,15 +42,23 @@ class AppLockHealthBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final armed = ref.watch(recoveryProvider).appLockPolicy.armed;
+    final syncFailure = ref.watch(appLockSyncFailureProvider);
     final message = appLockHealthMessage(
       armed: armed,
       status: ref.watch(appLockStatusProvider),
+      syncFailure: syncFailure,
     );
     if (message == null) return const SizedBox.shrink();
     return MaterialBanner(
       key: const ValueKey('app-lock-health-banner'),
       content: Text(message),
       actions: [
+        if (syncFailure != null)
+          TextButton(
+            key: const ValueKey('app-lock-health-retry'),
+            onPressed: () => ref.read(appLockRetryProvider.notifier).state++,
+            child: const Text('RETRY'),
+          ),
         TextButton(
           key: const ValueKey('app-lock-health-fix'),
           onPressed: () => Navigator.of(context).push(

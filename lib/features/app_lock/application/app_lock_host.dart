@@ -30,10 +30,11 @@ class AppLockHost extends ConsumerStatefulWidget {
 class _AppLockHostState extends ConsumerState<AppLockHost>
     with WidgetsBindingObserver {
   StreamSubscription<void>? _blocks;
-  String? _pushed;
+  String? _acknowledgedConfig;
   bool _blockOpen = false;
   bool _syncing = false;
   bool _syncAgain = false;
+  bool _syncAgainForce = false;
 
   AppLockGateway get _gateway => ref.read(appLockGatewayProvider);
 
@@ -67,12 +68,20 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
     if (!mounted) return;
     if (_syncing) {
       _syncAgain = true;
+      _syncAgainForce = _syncAgainForce || force;
       return;
     }
     _syncing = true;
     try {
       final recovery = ref.read(recoveryProvider);
       if (!recovery.isLoaded) return;
+      if (!_gateway.isSupportedPlatform) {
+        _acknowledgedConfig = null;
+        ref.read(appLockSyncFailureProvider.notifier).state = null;
+        ref.read(appLockStatusProvider.notifier).state =
+            const AppLockStatus.unsupported();
+        return;
+      }
       final config = buildNativeAppLockConfig(
         policy: recovery.appLockPolicy,
         riskWindow: recovery.riskWindow,
@@ -80,23 +89,40 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
         hideSensitive: recovery.notificationPrefs.hideSensitive,
       );
       final encoded = jsonEncode(config);
-      if (force || encoded != _pushed) {
-        _pushed = encoded;
-        if (config['enabled'] == true) {
-          await _gateway.apply(config);
+      if (force || encoded != _acknowledgedConfig) {
+        // A failed replacement may have changed native state before failing.
+        // Neither the requested config nor an older one is acknowledged then.
+        _acknowledgedConfig = null;
+        final activating = config['enabled'] == true;
+        AppLockResult? result;
+        try {
+          result = activating
+              ? await _gateway.apply(config)
+              : await _gateway.disable();
+        } catch (_) {
+          // Report the failed update without exposing native exception data.
+        }
+        if (!mounted) return;
+        if (result?.supported == true) {
+          _acknowledgedConfig = encoded;
+          ref.read(appLockSyncFailureProvider.notifier).state = null;
         } else {
-          await _gateway.disable();
+          ref.read(appLockSyncFailureProvider.notifier).state = activating
+              ? AppLockSyncFailure.activation
+              : AppLockSyncFailure.deactivation;
         }
       }
       final status = await _gateway.status();
       if (mounted) ref.read(appLockStatusProvider.notifier).state = status;
     } catch (_) {
-      // Fail-safe: a failed push never blocks anything; retried on resume.
+      // A health-read failure must not trap navigation or essential actions.
     } finally {
       _syncing = false;
       if (_syncAgain && mounted) {
+        final force = _syncAgainForce;
         _syncAgain = false;
-        unawaited(_sync());
+        _syncAgainForce = false;
+        unawaited(_sync(force: force));
       }
     }
   }
@@ -123,6 +149,7 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
   @override
   Widget build(BuildContext context) {
     ref.listen(recoveryProvider, (_, _) => unawaited(_sync()));
+    ref.listen(appLockRetryProvider, (_, _) => unawaited(_sync(force: true)));
     return widget.child;
   }
 }

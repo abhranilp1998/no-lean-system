@@ -64,4 +64,46 @@ is required for this slice. State/backup versions remain unchanged. A distribute
 candidate still needs an inventoried higher app build and same-signer upgrade
 evidence through RELEASING.md. Existing Android/web branches remain retained.
 
-Implementation results will be recorded after the runtime change and final checks.
+## Implementation results
+
+The acknowledgement/retry fix is implemented. A failed or throwing native
+apply/disable clears the acknowledged-config cache; only an accepted result can
+populate it. Failed updates remain visible with RETRY and FIX actions. Pending
+forced retries are serialized without losing their force flag. Known unsupported
+platforms use their no-op capability without a false Android failure warning.
+No native method/persistence contract was changed.
+
+| Check | Observed result |
+|---|---|
+| Before-fix regression | Failed as expected: second sync made no native retry (one call instead of two) |
+| New host regressions | 12 cases cover failures, retry, old-policy invalidation, disable, lifecycle, concurrent updates, disposal and unsupported-platform behavior |
+| App-lock plus app smoke suite | 63 tests passed, including cooldown navigation/repeat logging |
+| Full Flutter suite | 470 tests passed after the unsupported-platform correction |
+| Static analysis | `dart analyze --fatal-infos`: no issues |
+| Formatting | 203 Dart files checked; zero changes required |
+| Android compile checks | Both `flutter build apk --release` and `flutter build apk --debug` succeeded, sequentially after the tests |
+| Release version gate | Pending allocation: unchanged 1.2.0+4 correctly fails `check --base-ref=origin/main` |
+| Device / complete D2 | Not verified; affected-device interruption, shared location and banking diagnosis remain open |
+
+The unsupported-platform correction was prompted by the full app cooldown
+regression; that flow and the full suite now pass. Native update failures on
+Android remain visible rather than being classified as an unsupported platform.
+
+Logs are retained locally under ignored `output/p0-app-lock-activation/`.
+The version gate must pass before merge readiness; distributed-build inventory,
+same-signer upgrade and device evidence remain separate release gates. No release
+tag, deployment or merge is part of this checkpoint.
+
+### Internal compile artifact identity
+
+The release compile output was inspected with aapt/apksigner: package
+`com.nolean.no_lean`, version `1.2.0`, code `4`, minimum API 24 and target API 36.
+Its SHA-256 is `0a7bb416a402e81e65be05fd88da4f4b5c6eeb501a09deaed46f9d33bb79a8fa`;
+the signer SHA-256 is
+`7d72b80dfc2af4b523e21c5779b4363f1b5add5b2b419b01ff0361f476390ec5`.
+The debug output SHA-256 is
+`f6b5d7d83bf785e3cc7322026f331e921441471d7aab307eb12e1744d85bb1b3`.
+These are internal compile checks with the unchanged build number, not a new
+distributable release or evidence of an installed-app upgrade. Build outputs are
+ignored; no APK is committed. The next candidate must satisfy the version and
+device/signing/upgrade gates rather than reusing these outputs for distribution.

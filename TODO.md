@@ -23,12 +23,15 @@ Feature IDs remain F01–F60; work packages below can contain overlapping fixes.
 
 ## P0 — current queue
 
-- [ ] **T01 — Native app-lock acknowledgement and retry (D2, F14; N09).**
-  First bounded implementation. A failed/throwing apply or disable must not be
+- [x] **T01 — Native app-lock acknowledgement and retry (D2, F14; N09):
+  automated verified.** A failed/throwing apply or disable must not be
   cached as acknowledged. Show an honest update-failure state and allow the next
   state change/resume to retry. Test failed→success, policy change after failure,
   exception, disable failure, in-flight updates and removal while awaiting native.
   This does not establish that selected-app interruption works on the phone.
+  Evidence: 12 new host regressions, 470 full-suite tests, clean analysis and
+  successful release/debug compile checks. See the
+  [implementation results](docs/IMPLEMENTATION_REVIEW_2026-10-27.md).
 - [ ] **T02 — Record contract and compatibility (D1-A; F01, F03, F04, F06).**
   Define purpose, mixed facts, effective revisions, occurrence/recording time,
   legacy/unreviewed meaning and honest day state. Update affected readers/writers
@@ -92,7 +95,9 @@ Feature IDs remain F01–F60; work packages below can contain overlapping fixes.
 - [x] Existing D1 baseline: 153 tests in 15 files passed; see the
   [baseline record](docs/DELIVERY_BASELINE_2026-10-27.md).
 - [x] Fresh main/tags inspected and first implementation branch created.
-- [ ] New implementation regression evidence recorded for T01.
+- [x] New implementation regression evidence recorded for T01.
+- [ ] Release-version/merge gate: inventory distributed builds and allocate a
+  higher build. Unchanged 1.2.0+4 intentionally does not pass the current guard.
 - [ ] Affected-device selected-app blocking/background verification. No device
   is connected at the starting baseline; this gate remains pending.
 

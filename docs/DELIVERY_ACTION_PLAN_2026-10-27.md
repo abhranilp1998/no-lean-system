@@ -5,7 +5,9 @@ It combines the user's delivery brief, the 60-item backlog and the complete
 26 October export review. It supersedes the older *suggested delivery sequence*
 in ROADMAP.md; existing product, privacy and release rules still apply.
 
-Status: priority queue reviewed; T01 selected for the first implementation slice.
+Status: priority queue reviewed; T01 automated-verified with 12 new regressions,
+470 full-suite tests and both Android compile checks. Full D2 device acceptance
+and release-version allocation remain pending. D1-A is the next implementation slice.
 Use [TODO.md](../TODO.md) for the current slice order and
 [implementation review](IMPLEMENTATION_REVIEW_2026-10-27.md) for the first decision.
 The features below

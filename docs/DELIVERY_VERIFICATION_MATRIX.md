@@ -47,7 +47,7 @@ Existing green tests do not establish that the new contracts below are satisfied
 | N06 | F14, F58 | Permission denied/permanently denied, services off, stale/no fix, notification denied, foreground service interrupted and inactive rule. UI shows actual health; unknown is not outside-zone reassurance. | Flow + Device |
 | N07 | F15 | SOS, emergency calling, navigation/home and historical logging from active block, cooldown, denied unlock and expired grant. Protected changes still require authorization. | Flow + Native + Device |
 | N08 | F12, F14, F58 | Zone notification/foreground zone state says inside while the native enforcement location is absent, stale or different. Show honest enforcement readiness; exercise the shared-source/state handoff without inferring readiness from notification delivery. | Domain/bridge + affected Device |
-| N09 | F14 | Native config apply/start returns failure or throws. Do not mark that config acknowledged before success; retain retry and visible failure/health state without trapping essential actions. | Gateway/host fault injection + Device |
+| N09 | F14 | Native config apply/start returns failure or throws. Do not mark that config acknowledged before success; retain retry and visible failure/health state without trapping essential actions. | [12 host regressions](../test/features/app_lock/app_lock_host_test.dart) automated-verified; Device pending |
 
 ## D3 — Histories and multi-tagging
 
