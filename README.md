@@ -53,6 +53,14 @@ flutter build apk --debug
 
 ## Roadmap
 
+Start with the [prioritized TODO queue](TODO.md) for current implementation
+status and branch/review policy.
+
+Current work follows the [D1–D8 delivery action plan](docs/DELIVERY_ACTION_PLAN_2026-10-27.md),
+with [delivery SOPs](docs/DELIVERY_SOPS.md), an
+[acceptance matrix](docs/DELIVERY_VERIFICATION_MATRIX.md) and a
+[verified starting baseline](docs/DELIVERY_BASELINE_2026-10-27.md).
+
 Release numbering, Git tags, and data-preserving APK upgrades are documented in
 [docs/RELEASING.md](docs/RELEASING.md). Use `tool/release_version.dart` to prepare
 and validate app versions before distributing a build.
