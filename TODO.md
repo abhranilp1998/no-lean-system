@@ -14,8 +14,10 @@ Feature IDs remain F01–F60; work packages below can contain overlapping fixes.
   before starting T01. It selects one bounded D2 fix before the larger D1 work.
 - Latest user-directed milestone: separate the existing Timeline into Recovery,
   Settings history and Location history tabs, with Progress linking to Recovery.
-  Verify this presentation-only slice (T06-A), then publish the current branch
-  for review. Do not merge or distribute it at this checkpoint. Resume T02 next.
+  This presentation-only slice (T06-A) is verified and the branch is published
+  for review. Draft PR creation is blocked by the connected integration's write
+  permission; see the history review for the handoff. Do not merge or distribute
+  it at this checkpoint. Resume T02 after review.
 - Use short feature/fix branches from reviewed main, one coherent slice per PR.
   Run applicable checks, review the final diff, then merge through a reviewed PR.
   Do not keep all D1–D8 work on a long-lived version branch.

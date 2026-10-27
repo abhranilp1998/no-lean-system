@@ -80,3 +80,18 @@ PR in draft: release-version allocation, distributed-build inventory, actual
 same-signer upgrade and affected-device selected-app interruption/background
 verification are separate pending gates. No merge, release tag or APK
 distribution is authorized at this checkpoint.
+
+## Publication disposition
+
+Published `9112-deviant/p0-app-lock-activation` to origin with implementation
+commit `edc8ea3`, the earlier native-acknowledgement fix and delivery planning.
+The local branch tracks origin and the implementation head was verified equal
+to upstream after the push. This handoff update changes documentation only.
+
+A draft PR was attempted, but GitHub's connector returned 403, "Resource not
+accessible by integration". The local GitHub CLI is not installed and the
+browser is signed out, so no PR was created. Review the
+[published branch comparison](https://github.com/abhranilp1998/no-lean-system/compare/main...9112-deviant/p0-app-lock-activation)
+and use the prepared description in ignored
+`output/history-separation/pull-request.md` when PR access is available.
+No merge, tag, APK distribution or private-history upload occurred.
