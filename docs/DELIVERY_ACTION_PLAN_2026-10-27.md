@@ -7,7 +7,11 @@ in ROADMAP.md; existing product, privacy and release rules still apply.
 
 Status: priority queue reviewed; T01 automated-verified with 12 new regressions,
 470 full-suite tests and both Android compile checks. Full D2 device acceptance
-and release-version allocation remain pending. D1-A is the next implementation slice.
+and release-version allocation remain pending. The user's next publication
+milestone is T06-A: separate the existing history views without changing record
+contracts. That history presentation slice is now automated/visual verified
+(485 full-suite tests); see the [history review](HISTORY_SEPARATION_REVIEW_2026-10-27.md)
+for Android compile checks and publication status. D1-A follows that checkpoint.
 Use [TODO.md](../TODO.md) for the current slice order and
 [implementation review](IMPLEMENTATION_REVIEW_2026-10-27.md) for the first decision.
 The features below
@@ -24,8 +28,10 @@ Companion documents:
 
 1. Remain useful offline and without an account. SOS, essential actions and
    truthful logging must remain reachable during protection and cooldown.
-2. Stabilize record meaning and projections before reusing them in new history
-   views, planning features or synchronization. D2 diagnosis can proceed beside D1.
+2. Stabilize record meaning and projections before purpose/correction-aware
+   history, planning features or synchronization. The existing records can be
+   separated into history tabs first without redefining their meaning.
+   D2 diagnosis can proceed beside D1.
 3. Apply D5 preservation, save/retry, migration, accessibility and export checks
    to every slice. D5 is not a late cleanup phase.
 4. Use Recovery History, Settings History and Location History as three views
@@ -265,6 +271,7 @@ Held items are neither merged nor represented as current Android capabilities.
 |---|---|---|
 | B0 | Baseline, contract map and synthetic fixture specification | Exact SHA/SDK/schema; relevant existing tests; device availability; named gaps |
 | P0 prelude | T01 / D2-N09 native acknowledgement, retry and visible update failure | Failing-before regression, healthy-status/failure warning and successful-retry evidence; D2 device gate stays pending |
+| Publication checkpoint | T06-A existing-record Recovery / Settings / Location history tabs and shared details | Shared-identity/no-write checks, source uncertainty, entry links and narrow/large-text verification; full D3 remains open |
 | 1 | D1-A effective record / purpose / time / correction contract + D5 readers/writers | Legacy fixtures, failed-save rollback, future-version refusal and JSON/CSV round trip |
 | 2 | D1-B/C/D capture, drafts, correction queue and amount/money handling | Widget/user-flow tests, duplicate retry, original preservation and transaction-linked spending |
 | 3 | D1-E/F progress, awards and use-aware follow-ups | Independent expected projections, backfill/revision boundaries and valid-award preservation |
@@ -282,7 +289,9 @@ must remain reviewable and include every reader/writer affected by its contract.
 Do not distribute an intermediate APK with partially upgraded serialization.
 
 The reviewed TODO queue inserts one bounded, no-schema D2 acknowledgement fix
-before D1-A. The rest of D2 does not have to finish before D1 begins.
+and the user-requested history presentation checkpoint before D1-A. Publish that
+branch for review after verification; merging still requires the version gate.
+The rest of D2 does not have to finish before D1 begins.
 
 ## SOP index
 

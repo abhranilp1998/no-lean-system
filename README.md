@@ -10,6 +10,9 @@ NO LEAN is an offline-first Android recovery tracker built around a direct inter
 - Full-screen SOS mode with a 60-second breathing/urge-surfing timer.
 - Data-driven risk-window alerts with a pre-window warning, quiet hours and a hide-sensitive mode.
 - Calendar-style clean-day heat map and milestone tracker.
+- Separate Recovery, Settings history and Location history tabs, shared record
+  details and links from Progress, Settings and Zones. Location source filters
+  preserve the uncertainty of older name/time-only observations.
 - Offline recovery persistence plus encrypted secure storage for the relapse PIN.
 - JSON backup and CSV history export through the system Save screen (pick
   Downloads, Drive, ...), with verified byte readback on Android; import accepts

@@ -12,6 +12,10 @@ Feature IDs remain F01–F60; work packages below can contain overlapping fixes.
 - Base: freshly fetched `origin/main` at `a246605776a5b4ad577f1974342c8e6781f127fc`.
 - [Pre-implementation review](docs/IMPLEMENTATION_REVIEW_2026-10-27.md) completed
   before starting T01. It selects one bounded D2 fix before the larger D1 work.
+- Latest user-directed milestone: separate the existing Timeline into Recovery,
+  Settings history and Location history tabs, with Progress linking to Recovery.
+  Verify this presentation-only slice (T06-A), then publish the current branch
+  for review. Do not merge or distribute it at this checkpoint. Resume T02 next.
 - Use short feature/fix branches from reviewed main, one coherent slice per PR.
   Run applicable checks, review the final diff, then merge through a reviewed PR.
   Do not keep all D1–D8 work on a long-lived version branch.
@@ -57,6 +61,16 @@ Feature IDs remain F01–F60; work packages below can contain overlapping fixes.
   Shared records/details; custom/recent/favorite tags; rename/archive/merge;
   bulk additive add/remove with preview/undo; combined filters and Any/All tags;
   round-trip preservation and no duplicate metrics.
+  - [x] **T06-A — Existing-record history split: automated/visual verified.**
+    Three tabs, shared details, links from Progress/Settings/Zones and explicit
+    location-source filters. No new record meaning or schema. This brings the
+    existing presentation forward; purpose/correction-aware projections,
+    complete settings-audit coverage and multi-tagging remain in T02/T06.
+    Seven domain and five history-flow tests plus three entry-route regressions
+    were added; the full suite passes 485 tests. Narrow/200% text previews were
+    inspected and the cramped card layout corrected. Android compile results
+    and publication disposition are in the review below.
+    See [history separation review](docs/HISTORY_SEPARATION_REVIEW_2026-10-27.md).
 - [ ] **T07 — Optional manual/automatic location experience (D4; F26–F31).**
   Refresh during logging, coordinate/pin editing, explicit attachment/source,
   accuracy/freshness, visit deduplication, list/map, retention/deletion/export.

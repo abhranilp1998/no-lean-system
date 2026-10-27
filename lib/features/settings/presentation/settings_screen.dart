@@ -20,6 +20,8 @@ import 'settings_dialogs.dart';
 import 'trusted_contact_dialog.dart';
 import 'widgets/settings_controls.dart';
 import '../../zones/presentation/zones_screen.dart';
+import '../../timeline/presentation/timeline_screen.dart';
+import '../../timeline/domain/history_projection.dart';
 import '../../recovery/domain/dose_units.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -95,6 +97,22 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: 'Merge events from file',
               color: purple,
               onTap: () => importRecoveryData(context, ref),
+            ),
+          ],
+        ),
+        SettingsSection(
+          title: 'HISTORY',
+          children: [
+            SettingAction(
+              key: const ValueKey('settings-history'),
+              icon: Icons.history,
+              title: 'Settings history',
+              subtitle: 'Recorded changes and known previous values',
+              color: cyan,
+              onTap: () => TimelineScreen.openPage(
+                context,
+                category: HistoryCategory.settings,
+              ),
             ),
           ],
         ),

@@ -12,6 +12,7 @@ import '../../../recovery/domain/recovery_event.dart';
 import '../../../recovery/domain/relapse_log_entry.dart';
 import '../../../recovery/presentation/relapse_auth_dialog.dart';
 import 'event_edit_dialog.dart';
+import 'history_record_facts.dart';
 
 class EventTile extends ConsumerWidget {
   const EventTile({required this.event, super.key});
@@ -33,47 +34,72 @@ class EventTile extends ConsumerWidget {
       accent: color,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final badge = Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: color, size: 20),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: displayFont(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+            );
+            final details = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: displayFont(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    event.type == RecoveryEventType.daySummary
-                        ? '${event.metadata['date']} · Time and event count were not recorded'
-                        : _formatDate(event.timestamp),
-                    style: TextStyle(color: muted, fontSize: 11),
-                  ),
-                  if (event.metadata.isNotEmpty) ...[
-                    const SizedBox(height: 8),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  event.type == RecoveryEventType.daySummary
+                      ? '${event.metadata['date']} · Time and event count were not recorded'
+                      : _formatDate(event.timestamp),
+                  style: TextStyle(color: muted, fontSize: 11),
+                ),
+                if (event.metadata.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  if (event.type == RecoveryEventType.settingsChange)
+                    SettingsChangeFacts(event: event)
+                  else if (event.type == RecoveryEventType.zoneEntry)
+                    LocationRecordFacts(event: event)
+                  else
                     _MetadataView(metadata: event.metadata),
-                  ],
                 ],
-              ),
-            ),
-            if (_ActionsMenu.isEditable(event) || _ActionsMenu.canDelete(event))
-              _ActionsMenu(event: event),
-          ],
+              ],
+            );
+            final actions =
+                _ActionsMenu.isEditable(event) || _ActionsMenu.canDelete(event)
+                ? _ActionsMenu(event: event)
+                : null;
+            final stacked =
+                constraints.maxWidth < 300 ||
+                MediaQuery.textScalerOf(context).scale(14) > 21;
+            if (stacked) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [badge, const Spacer(), ?actions]),
+                  const SizedBox(height: 12),
+                  details,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                badge,
+                const SizedBox(width: 14),
+                Expanded(child: details),
+                ?actions,
+              ],
+            );
+          },
         ),
       ),
     );
@@ -109,7 +135,7 @@ class EventTile extends ConsumerWidget {
         return ('SETTING CHANGED', Icons.tune, Colors.white54);
       case RecoveryEventType.zoneEntry:
         return (
-          'ZONE ENTERED // ${event.metadata['zoneName']}',
+          '${event.metadata['source'] == 'manualPin' ? 'LOCATION SAVED' : 'ZONE OBSERVED'} // ${event.metadata['zoneName']}',
           Icons.place_outlined,
           red,
         );

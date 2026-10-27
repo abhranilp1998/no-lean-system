@@ -21,6 +21,8 @@ import 'offline_grid_layer.dart';
 import 'zone_map_markers.dart';
 import 'zone_editor_dialog.dart';
 import 'zone_monitoring_panel.dart';
+import '../../timeline/presentation/timeline_screen.dart';
+import '../../timeline/domain/history_projection.dart';
 
 class ZonesScreen extends ConsumerStatefulWidget {
   const ZonesScreen({super.key});
@@ -257,6 +259,17 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        actions: [
+          IconButton(
+            key: const ValueKey('zones-location-history'),
+            tooltip: 'Location history',
+            onPressed: () => TimelineScreen.openPage(
+              context,
+              category: HistoryCategory.location,
+            ),
+            icon: const Icon(Icons.history),
+          ),
+        ],
         title: Text(
           'DANGER ZONES',
           style: displayFont(fontSize: 18, fontWeight: FontWeight.w800),
