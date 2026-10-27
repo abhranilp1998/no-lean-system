@@ -7,7 +7,9 @@ in ROADMAP.md; existing product, privacy and release rules still apply.
 
 Status: priority queue reviewed; T01 automated-verified with 12 new regressions,
 470 full-suite tests and both Android compile checks. Full D2 device acceptance
-and release-version allocation remain pending. The user's next publication
+remains pending. Candidate version 1.3.0+4005 now passes the main/tag guard;
+the [review-fix record](REVIEW_FIXES_2026-10-27.md) tracks PR #3 preservation and
+the user's six review findings. The user's publication
 milestone is T06-A: separate the existing history views without changing record
 contracts. That history presentation slice is now automated/visual verified
 (485 full-suite tests); see the [history review](HISTORY_SEPARATION_REVIEW_2026-10-27.md)

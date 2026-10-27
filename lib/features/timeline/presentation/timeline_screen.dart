@@ -9,7 +9,7 @@ import '../domain/history_projection.dart';
 import 'history_record_screen.dart';
 import 'widgets/event_tile.dart';
 
-class TimelineScreen extends StatelessWidget {
+class TimelineScreen extends StatefulWidget {
   const TimelineScreen({
     this.initialCategory = HistoryCategory.recovery,
     this.recordId,
@@ -37,57 +37,96 @@ class TimelineScreen extends StatelessWidget {
   );
 
   @override
+  State<TimelineScreen> createState() => _TimelineScreenState();
+}
+
+class _TimelineScreenState extends State<TimelineScreen> {
+  late final Map<HistoryCategory, String> _linkedRecords = {
+    widget.initialCategory: ?widget.recordId,
+  };
+  final Map<HistoryCategory, int> _linkRevisions = {};
+
+  void _openHistory(
+    BuildContext context,
+    HistoryCategory category,
+    String recordId,
+  ) {
+    setState(() {
+      _linkedRecords[category] = recordId;
+      _linkRevisions[category] = (_linkRevisions[category] ?? 0) + 1;
+    });
+    DefaultTabController.of(context).animateTo(category.index);
+  }
+
+  @override
   Widget build(BuildContext context) => DefaultTabController(
     length: HistoryCategory.values.length,
-    initialIndex: initialCategory.index,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            TabLayout.gutter,
-            TabLayout.top,
-            TabLayout.gutter,
-            8,
+    initialIndex: widget.initialCategory.index,
+    child: Builder(
+      builder: (historyContext) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              TabLayout.gutter,
+              TabLayout.top,
+              TabLayout.gutter,
+              8,
+            ),
+            child: Text('TIMELINE', style: eyebrowStyle.copyWith(color: cyan)),
           ),
-          child: Text('TIMELINE', style: eyebrowStyle.copyWith(color: cyan)),
-        ),
-        TabBar(
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          indicatorColor: cyan,
-          labelColor: cyan,
-          unselectedLabelColor: muted,
-          dividerColor: muted.withValues(alpha: .25),
-          tabs: [
-            for (final category in HistoryCategory.values)
-              Tab(
-                key: ValueKey('history-tab-${category.name}'),
-                text: category.label,
-              ),
-          ],
-        ),
-        Expanded(
-          child: TabBarView(
-            children: [
+          TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            indicatorColor: cyan,
+            labelColor: cyan,
+            unselectedLabelColor: muted,
+            dividerColor: muted.withValues(alpha: .25),
+            tabs: [
               for (final category in HistoryCategory.values)
-                _HistoryList(
-                  key: ValueKey(category),
-                  category: category,
-                  recordId: category == initialCategory ? recordId : null,
+                Tab(
+                  key: ValueKey('history-tab-${category.name}'),
+                  text: category.label,
                 ),
             ],
           ),
-        ),
-      ],
+          Expanded(
+            child: TabBarView(
+              children: [
+                for (final category in HistoryCategory.values)
+                  _HistoryList(
+                    key: ValueKey(category),
+                    category: category,
+                    recordId: _linkedRecords[category],
+                    linkRevision: _linkRevisions[category] ?? 0,
+                    onOpenHistory: (destination, id) =>
+                        _openHistory(historyContext, destination, id),
+                    onClearLinkedRecord: () =>
+                        setState(() => _linkedRecords.remove(category)),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
 
 class _HistoryList extends ConsumerStatefulWidget {
-  const _HistoryList({required this.category, this.recordId, super.key});
+  const _HistoryList({
+    required this.category,
+    required this.linkRevision,
+    required this.onOpenHistory,
+    required this.onClearLinkedRecord,
+    this.recordId,
+    super.key,
+  });
   final HistoryCategory category;
   final String? recordId;
+  final int linkRevision;
+  final void Function(HistoryCategory, String) onOpenHistory;
+  final VoidCallback onClearLinkedRecord;
 
   @override
   ConsumerState<_HistoryList> createState() => _HistoryListState();
@@ -96,24 +135,32 @@ class _HistoryList extends ConsumerStatefulWidget {
 class _HistoryListState extends ConsumerState<_HistoryList>
     with AutomaticKeepAliveClientMixin {
   HistoryLocationSource? _source;
-  late String? _recordId = widget.recordId;
+
+  @override
+  void didUpdateWidget(covariant _HistoryList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.linkRevision != widget.linkRevision) _source = null;
+  }
 
   @override
   bool get wantKeepAlive => true;
 
-  void _details(RecoveryEvent event) => Navigator.of(context).push(
-    MaterialPageRoute<void>(
-      builder: (detailContext) => HistoryRecordScreen(
-        recordId: event.id,
-        category: widget.category,
-        onOpenHistory: (category) => TimelineScreen.openPage(
-          detailContext,
-          category: category,
+  Future<void> _details(RecoveryEvent event) async {
+    // Return to this history before changing tabs; cross-links must not push
+    // another History route and grow the Back stack.
+    final destination = await Navigator.of(context).push<HistoryCategory>(
+      MaterialPageRoute<HistoryCategory>(
+        builder: (detailContext) => HistoryRecordScreen(
           recordId: event.id,
+          category: widget.category,
+          onOpenHistory: (category) =>
+              Navigator.of(detailContext).pop(category),
         ),
       ),
-    ),
-  );
+    );
+    if (!mounted || destination == null) return;
+    widget.onOpenHistory(destination, event.id);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -122,11 +169,15 @@ class _HistoryListState extends ConsumerState<_HistoryList>
       ref.watch(recoveryProvider).events,
       widget.category,
       source: _source,
-      recordId: _recordId,
+      recordId: widget.recordId,
     );
 
     return TabListView.builder(
-      key: PageStorageKey('history-list-${widget.category.name}'),
+      // Explicit record links start at the target; ordinary tab changes keep
+      // the existing scroll position and source selection.
+      key: PageStorageKey(
+        'history-list-${widget.category.name}-${widget.linkRevision}',
+      ),
       itemCount: 1 + (events.isEmpty ? 1 : events.length),
       itemBuilder: (context, index) {
         if (index == 0) {
@@ -149,11 +200,11 @@ class _HistoryListState extends ConsumerState<_HistoryList>
                   '${events.length} ${events.length == 1 ? 'record' : 'records'}',
                   style: microStyle,
                 ),
-                if (_recordId != null)
+                if (widget.recordId != null)
                   InputChip(
                     label: const Text('Linked record'),
                     deleteButtonTooltipMessage: 'Show all records',
-                    onDeleted: () => setState(() => _recordId = null),
+                    onDeleted: widget.onClearLinkedRecord,
                   ),
                 if (widget.category == HistoryCategory.location) ...[
                   const SizedBox(height: 12),
@@ -183,7 +234,7 @@ class _HistoryListState extends ConsumerState<_HistoryList>
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 32),
             child: Text(
-              _recordId != null
+              widget.recordId != null
                   ? 'This record is no longer available in this history. Clear Linked record to see all records.'
                   : _source != null
                   ? 'No location records match this source.'
@@ -213,10 +264,9 @@ class _HistoryListState extends ConsumerState<_HistoryList>
                       hasLocationContext(event))
                     TextButton.icon(
                       key: ValueKey('history-location-link-${event.id}'),
-                      onPressed: () => TimelineScreen.openPage(
-                        context,
-                        category: HistoryCategory.location,
-                        recordId: event.id,
+                      onPressed: () => widget.onOpenHistory(
+                        HistoryCategory.location,
+                        event.id,
                       ),
                       icon: const Icon(Icons.place_outlined, size: 16),
                       label: const Text('Location history'),

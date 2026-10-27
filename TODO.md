@@ -9,6 +9,13 @@ Feature IDs remain F01–F60; work packages below can contain overlapping fixes.
 ## Current work and branch policy
 
 - Current branch: `9112-deviant/p0-app-lock-activation`.
+- Candidate app/build: `1.3.0+4005`; state 13 and backup 8 are unchanged.
+- Current checkpoint: six user review findings addressed and verified before D1-A. PR #3's
+  exact head is merged into this feature branch, preserving its export/import
+  fixes and ancestry. See the [review-fix record](docs/REVIEW_FIXES_2026-10-27.md).
+  Final regression evidence: 504 Flutter tests and 12 native Gradle unit tests
+  passed; both final Android builds passed and report code 4005 with the retained
+  signer. Candidate artifact identities and pending device gates are in that review.
 - Base: freshly fetched `origin/main` at `a246605776a5b4ad577f1974342c8e6781f127fc`.
 - [Pre-implementation review](docs/IMPLEMENTATION_REVIEW_2026-10-27.md) completed
   before starting T01. It selects one bounded D2 fix before the larger D1 work.
@@ -56,6 +63,10 @@ Feature IDs remain F01–F60; work packages below can contain overlapping fixes.
   Unify foreground location, define refresh policy, verify unlock/expiry and
   essential access, then measure background behavior on affected phones.
   The separate banking-startup report remains an investigation item.
+  The current review also addresses unresolved native disable state and
+  simultaneous sync/permission warnings; this does not complete device acceptance.
+  Native method acceptance still needs separate durable-config/service-stop
+  diagnostics and affected-device verification.
 
 ## P1 — next deliveries; quality work starts immediately
 
@@ -112,8 +123,10 @@ Feature IDs remain F01–F60; work packages below can contain overlapping fixes.
   [baseline record](docs/DELIVERY_BASELINE_2026-10-27.md).
 - [x] Fresh main/tags inspected and first implementation branch created.
 - [x] New implementation regression evidence recorded for T01.
-- [ ] Release-version/merge gate: inventory distributed builds and allocate a
-  higher build. Unchanged 1.2.0+4 intentionally does not pass the current guard.
+- [x] Allocate a higher candidate build and pass the main/tag guard:
+  `1.3.0+4005`, above the documented legacy ABI-code range as well as universal 4.
+- [ ] Complete distribution inventory and physical same-signer installed-upgrade
+  checks; a higher number alone does not establish an installed upgrade.
 - [ ] Affected-device selected-app blocking/background verification. No device
   is connected at the starting baseline; this gate remains pending.
 

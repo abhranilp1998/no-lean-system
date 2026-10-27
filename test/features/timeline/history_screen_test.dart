@@ -20,6 +20,20 @@ import '../../support/recovery_fakes.dart';
 
 final _captureKey = GlobalKey();
 
+class _HistoryRoutes extends NavigatorObserver {
+  int depth = 0;
+  int maximumDepth = 0;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    depth++;
+    if (depth > maximumDepth) maximumDepth = depth;
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => depth--;
+}
+
 Future<void> _capture(WidgetTester tester, String name) async {
   final dir = Platform.environment['NO_LEAN_CAPTURE_DIR'];
   if (dir == null) return;
@@ -40,6 +54,9 @@ Future<(RecoveryController, MemoryRecoveryStore, List<RecoveryEvent>)> _pump(
   HistoryCategory category = HistoryCategory.recovery,
   double scale = 1,
   bool empty = false,
+  bool standalone = false,
+  NavigatorObserver? observer,
+  String manualSource = 'manualPin',
 }) async {
   if (scale == 1) {
     tester.view.physicalSize = const Size(414, 896);
@@ -73,7 +90,7 @@ Future<(RecoveryController, MemoryRecoveryStore, List<RecoveryEvent>)> _pump(
       for (final (source, minute) in [
         ('background', 3),
         ('app', 2),
-        ('manualPin', 1),
+        (manualSource, 1),
       ])
         RecoveryEvent.create(
           type: RecoveryEventType.zoneEntry,
@@ -107,6 +124,7 @@ Future<(RecoveryController, MemoryRecoveryStore, List<RecoveryEvent>)> _pump(
       container: container,
       child: MaterialApp(
         theme: buildNoLeanTheme(reduceMotion: true),
+        navigatorObservers: [?observer],
         builder: (context, child) => MediaQuery(
           data: MediaQuery.of(
             context,
@@ -115,7 +133,18 @@ Future<(RecoveryController, MemoryRecoveryStore, List<RecoveryEvent>)> _pump(
         ),
         home: RepaintBoundary(
           key: _captureKey,
-          child: Scaffold(body: TimelineScreen(initialCategory: category)),
+          child: Scaffold(
+            body: standalone
+                ? Builder(
+                    builder: (context) => TextButton(
+                      key: const ValueKey('open-history'),
+                      onPressed: () =>
+                          TimelineScreen.openPage(context, category: category),
+                      child: const Text('Open history'),
+                    ),
+                  )
+                : TimelineScreen(initialCategory: category),
+          ),
         ),
       ),
     ),
@@ -128,6 +157,21 @@ Future<void> _tab(WidgetTester tester, HistoryCategory category) async {
   final tab = find.byKey(ValueKey('history-tab-${category.name}'));
   await tester.ensureVisible(tab);
   await tester.tap(tab);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _reveal(WidgetTester tester, Finder target) async {
+  await tester.scrollUntilVisible(
+    target,
+    250,
+    scrollable: find
+        .descendant(
+          of: find.byType(TabListView),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.ensureVisible(target);
   await tester.pumpAndSettle();
 }
 
@@ -257,6 +301,111 @@ void main() {
       expect(store.writes, writes);
     },
   );
+
+  testWidgets(
+    'repeated history links switch tabs in place and Back returns to the entry page once',
+    (tester) async {
+      final routes = _HistoryRoutes();
+      final (c, store, events) = await _pump(
+        tester,
+        standalone: true,
+        observer: routes,
+      );
+      final before = c.events.map((event) => event.toJson()).toList();
+      final writes = store.writes;
+      final use = events.firstWhere(
+        (event) => event.type == RecoveryEventType.relapse,
+      );
+      expect(routes.depth, 1);
+      await tester.tap(find.byKey(const ValueKey('open-history')));
+      await tester.pumpAndSettle();
+      expect(routes.depth, 2);
+
+      // A direct link must reveal its record even if that tab previously had
+      // an incompatible source filter, without pushing another History page.
+      await _tab(tester, HistoryCategory.location);
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Unknown'));
+      await tester.pumpAndSettle();
+      await _tab(tester, HistoryCategory.recovery);
+      final direct = find.byKey(ValueKey('history-location-link-${use.id}'));
+      await _reveal(tester, direct);
+      await tester.tap(direct);
+      await tester.pumpAndSettle();
+      expect(routes.depth, 2);
+      expect(routes.maximumDepth, 2);
+      expect(find.byKey(ValueKey('history-record-${use.id}')), findsOneWidget);
+      expect(find.text('No location records match this source.'), findsNothing);
+
+      for (final destination in [
+        HistoryCategory.recovery,
+        HistoryCategory.location,
+        HistoryCategory.recovery,
+        HistoryCategory.location,
+      ]) {
+        final details = find.byKey(ValueKey('history-details-${use.id}'));
+        await _reveal(tester, details);
+        await tester.tap(details);
+        await tester.pumpAndSettle();
+        expect(routes.depth, 3);
+        final link = find.byKey(
+          ValueKey('history-crosslink-${destination.name}'),
+        );
+        await _reveal(tester, link);
+        await tester.tap(link);
+        await tester.pumpAndSettle();
+        expect(routes.depth, 2);
+        expect(routes.maximumDepth, 3);
+        expect(find.text('Record details'), findsNothing);
+        expect(
+          find.byType(TimelineScreen, skipOffstage: false),
+          findsOneWidget,
+        );
+        expect(
+          DefaultTabController.of(tester.element(find.byType(TabBar))).index,
+          destination.index,
+        );
+      }
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(routes.depth, 1);
+      expect(find.byKey(const ValueKey('open-history')), findsOneWidget);
+      expect(c.events.map((event) => event.toJson()).toList(), before);
+      expect(store.writes, writes);
+    },
+  );
+
+  for (final source in ['manual', 'manualGps', 'manualPin']) {
+    testWidgets('manual source $source has the same saved-location copy', (
+      tester,
+    ) async {
+      final (c, store, events) = await _pump(
+        tester,
+        category: HistoryCategory.location,
+        manualSource: source,
+      );
+      final event = events.firstWhere(
+        (event) => event.metadata['source'] == source,
+      );
+      final before = event.toJson();
+      final writes = store.writes;
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Manual'));
+      await tester.pumpAndSettle();
+      expect(find.text('LOCATION SAVED // Sample place'), findsOneWidget);
+      expect(find.text('Manual · recorded source'), findsOneWidget);
+      expect(
+        find.text('User-selected location; this does not establish presence.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('ZONE OBSERVED'), findsNothing);
+      expect(
+        c.events.firstWhere((item) => item.id == event.id).toJson(),
+        before,
+      );
+      expect(event.metadata.containsKey('latitude'), isFalse);
+      expect(store.writes, writes);
+    });
+  }
 
   testWidgets('settings and location have useful empty states', (tester) async {
     await _pump(tester, empty: true);

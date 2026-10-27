@@ -85,6 +85,11 @@ HistoryLocationSource locationSource(RecoveryEvent event) {
   };
 }
 
+/// All supported manual aliases carry the same conservative presentation.
+/// Neither a user-selected pin nor a manually saved fix proves a visit.
+bool isManualLocationRecord(RecoveryEvent event) =>
+    locationSource(event) == HistoryLocationSource.manual;
+
 /// Views of the same immutable records. This never writes, clones events or
 /// feeds a second event collection into recovery/money calculations.
 List<RecoveryEvent> projectHistory(

@@ -1,5 +1,9 @@
 # History separation review — 27 October 2026
 
+This records the original build-4 checkpoint. The later
+[review-fix record](REVIEW_FIXES_2026-10-27.md) tracks the higher candidate version,
+PR #3 preservation and subsequent navigation/protection corrections.
+
 The user selected this milestone before publishing the current feature branch:
 separate recovery activity from settings changes and provide a third view for
 location records. This is T06-A, a bounded presentation slice of D3. The original

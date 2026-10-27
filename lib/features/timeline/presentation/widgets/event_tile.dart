@@ -11,6 +11,7 @@ import '../../../recovery/domain/dose_units.dart';
 import '../../../recovery/domain/recovery_event.dart';
 import '../../../recovery/domain/relapse_log_entry.dart';
 import '../../../recovery/presentation/relapse_auth_dialog.dart';
+import '../../domain/history_projection.dart';
 import 'event_edit_dialog.dart';
 import 'history_record_facts.dart';
 
@@ -135,7 +136,7 @@ class EventTile extends ConsumerWidget {
         return ('SETTING CHANGED', Icons.tune, Colors.white54);
       case RecoveryEventType.zoneEntry:
         return (
-          '${event.metadata['source'] == 'manualPin' ? 'LOCATION SAVED' : 'ZONE OBSERVED'} // ${event.metadata['zoneName']}',
+          '${isManualLocationRecord(event) ? 'LOCATION SAVED' : 'ZONE OBSERVED'} // ${event.metadata['zoneName']}',
           Icons.place_outlined,
           red,
         );

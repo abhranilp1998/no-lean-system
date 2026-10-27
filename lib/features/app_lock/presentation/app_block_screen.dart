@@ -33,13 +33,13 @@ class AppBlockScreen extends ConsumerStatefulWidget {
   /// Test hook for the 112 call.
   final Future<bool> Function(Uri uri)? dialer;
 
+  static Route<void> route(AppBlockRequest request) => MaterialPageRoute<void>(
+    fullscreenDialog: true,
+    builder: (_) => AppBlockScreen(request: request),
+  );
+
   static Future<void> open(BuildContext context, AppBlockRequest request) =>
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          fullscreenDialog: true,
-          builder: (_) => AppBlockScreen(request: request),
-        ),
-      );
+      Navigator.of(context).push(route(request));
 
   @override
   ConsumerState<AppBlockScreen> createState() => _AppBlockScreenState();
@@ -215,6 +215,10 @@ class _AppBlockScreenState extends ConsumerState<AppBlockScreen> {
     } catch (_) {
       // Logging failed: still let the user in (never a dead end).
     }
+    // An accepted native stop/removal can dismiss this prompt while its log is
+    // being saved. Do not read a disposed ref or issue an unlock for that stale
+    // prompt when the save later completes (or fails).
+    if (!mounted) return;
     final opened = await ref
         .read(appLockGatewayProvider)
         .grantTemporaryUnlock(_request.packageName, step.unlockFor);
@@ -234,7 +238,12 @@ class _AppBlockScreenState extends ConsumerState<AppBlockScreen> {
     final recovery = ref.watch(recoveryProvider);
     final policy = recovery.appLockPolicy;
     final left = recovery.appUnlocksLeftToday;
-    final why = _request.cause == 'zone' && _request.zoneName != null
+    final unconfirmed = ref.watch(appLockNativeStateUnconfirmedProvider);
+    final why = unconfirmed && !policy.enabled
+        ? 'Android has not confirmed turning app lock off. This request may be from the previous policy.'
+        : unconfirmed && !policy.enabledPackages.contains(_request.packageName)
+        ? 'Android has not confirmed the updated rules. This request may be from the previous policy.'
+        : _request.cause == 'zone' && _request.zoneName != null
         ? 'You are inside ${_request.zoneName}.'
         : '${policy.schedule.label} lock is on'
               '${policy.schedule == AppLockSchedule.riskWindow ? ' (${recovery.riskWindow.label})' : ''}.';
@@ -264,7 +273,7 @@ class _AppBlockScreenState extends ConsumerState<AppBlockScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                '$why You chose to lock ${_request.label}.',
+                why,
                 style: const TextStyle(color: muted, fontSize: 13, height: 1.5),
               ),
               const SizedBox(height: 18),

@@ -83,7 +83,7 @@ class HistoryRecordScreen extends ConsumerWidget {
                       OutlinedButton.icon(
                         key: ValueKey('history-crosslink-${destination.name}'),
                         onPressed: () => onOpenHistory(destination),
-                        icon: const Icon(Icons.open_in_new),
+                        icon: const Icon(Icons.tab),
                         label: Text('View in ${destination.title}'),
                       ),
                   ExpansionTile(

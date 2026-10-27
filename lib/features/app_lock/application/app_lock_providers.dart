@@ -26,6 +26,18 @@ final appLockSyncFailureProvider = StateProvider<AppLockSyncFailure?>(
   (ref) => null,
 );
 
+/// A native configuration write is awaiting acknowledgement. The saved policy
+/// is the user's requested policy, not proof of the device's current state.
+final appLockSyncPendingProvider = StateProvider<bool>((ref) => false);
+
+/// During an in-flight/failed write Android can still enforce an older policy.
+/// Keep native block requests routed to the screen with essential exit actions.
+final appLockNativeStateUnconfirmedProvider = Provider<bool>(
+  (ref) =>
+      ref.watch(appLockSyncPendingProvider) ||
+      ref.watch(appLockSyncFailureProvider) != null,
+);
+
 /// Explicit retry signal; the host serializes it with policy/lifecycle updates.
 final appLockRetryProvider = StateProvider<int>((ref) => 0);
 

@@ -15,6 +15,7 @@ import '../domain/locked_app.dart';
 import '../domain/never_lockable.dart';
 import '../services/app_lock_gateway.dart';
 import 'app_lock_disclosure.dart';
+import 'app_lock_banner.dart';
 import 'app_picker_screen.dart';
 
 /// Saves [next]; loosening asks for biometrics/PIN like other protected
@@ -77,6 +78,8 @@ class AppLockSettingsScreen extends ConsumerWidget {
     final recovery = ref.watch(recoveryProvider);
     final policy = recovery.appLockPolicy;
     final status = ref.watch(appLockStatusProvider);
+    final pending = ref.watch(appLockSyncPendingProvider);
+    final unconfirmed = ref.watch(appLockNativeStateUnconfirmedProvider);
 
     Future<void> save(AppLockPolicy next) async {
       await saveAppLockPolicy(context, ref, next);
@@ -102,6 +105,9 @@ class AppLockSettingsScreen extends ConsumerWidget {
             const SizedBox(height: 14),
             _PermissionCard(status: status),
             const SizedBox(height: 12),
+            AppLockHealthBanner(
+              onFix: () => grantAppLockPermissions(context, ref),
+            ),
             SwitchListTile(
               key: const ValueKey('app-lock-enabled'),
               title: const Text('App lock'),
@@ -110,6 +116,10 @@ class AppLockSettingsScreen extends ConsumerWidget {
                     ? policy.apps.isEmpty
                           ? 'On // choose apps below'
                           : 'On // ${policy.enabledPackages.length} app(s)'
+                    : unconfirmed
+                    ? pending
+                          ? 'Off requested // waiting for Android confirmation'
+                          : 'Off requested // Android has not confirmed stopping'
                     : 'Off',
               ),
               value: policy.enabled,

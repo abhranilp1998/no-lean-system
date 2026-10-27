@@ -80,23 +80,15 @@ internal class DocumentExportChannel(
         val resolver = activity.applicationContext.contentResolver
         worker.execute {
             val failure = try {
-                DocumentBytes.writeAndVerify(
+                DocumentBytes.writeAndVerifyOrDelete(
                     request.bytes,
                     { resolver.openOutputStream(uri, "wt") },
                     { resolver.openInputStream(uri) },
+                    { DocumentsContract.deleteDocument(resolver, uri) },
                 )
                 false
             } catch (_: Exception) {
                 true
-            }
-            if (failure) {
-                // SAF created the file before we wrote to it. Remove the empty or
-                // partial copy so it can't be picked for import later.
-                try {
-                    DocumentsContract.deleteDocument(resolver, uri)
-                } catch (_: Exception) {
-                    // Best effort: some providers don't support deletion.
-                }
             }
             main.post {
                 if (!disposed && pending === request) {

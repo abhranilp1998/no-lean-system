@@ -61,7 +61,7 @@ class LocationRecordFacts extends StatelessWidget {
         'Saved zone/context reference. Exact position and accuracy are not verified by this record.',
         style: TextStyle(color: muted, fontSize: 11, height: 1.4),
       ),
-      if (event.metadata['source'] == 'manualPin')
+      if (isManualLocationRecord(event))
         const Text(
           'User-selected location; this does not establish presence.',
           style: TextStyle(color: muted, fontSize: 11, height: 1.4),
