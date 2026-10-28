@@ -113,8 +113,9 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
           ref.read(appLockSyncFailureProvider.notifier).state = null;
           // A confirmed stop/removal makes an already-open prompt stale.
           // Remove only that route, preserving an SOS route above it.
+          final packages = config['packages'];
           if (!activating ||
-              !(config['packages'] as List).contains(_blockingPackage)) {
+              (packages is List && !packages.contains(_blockingPackage))) {
             final route = _blockRoute;
             if (route != null && route.isActive) {
               route.navigator?.removeRoute(route);
@@ -153,6 +154,10 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
         _syncAgain = false;
         _syncAgainForce = false;
         unawaited(_sync(force: force));
+      } else if (mounted) {
+        // Cleanup errors must not leave an idle host showing "syncing".
+        // A queued successor owns the flag once it has started.
+        ref.read(appLockSyncPendingProvider.notifier).state = false;
       }
     }
   }

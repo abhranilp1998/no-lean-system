@@ -13,7 +13,7 @@ Feature IDs remain F01–F60; work packages below can contain overlapping fixes.
 - Current checkpoint: six user review findings addressed and verified before D1-A. PR #3's
   exact head is merged into this feature branch, preserving its export/import
   fixes and ancestry. See the [review-fix record](docs/REVIEW_FIXES_2026-10-27.md).
-  Final regression evidence: 504 Flutter tests and 12 native Gradle unit tests
+  Final regression evidence: 506 Flutter tests and 12 native Gradle unit tests
   passed; both final Android builds passed and report code 4005 with the retained
   signer. Candidate artifact identities and pending device gates are in that review.
 - Base: freshly fetched `origin/main` at `a246605776a5b4ad577f1974342c8e6781f127fc`.

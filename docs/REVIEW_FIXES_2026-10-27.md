@@ -115,3 +115,26 @@ banking startup, background/OEM behavior, real document-provider behavior and
 same-signer installed upgrade remain device acceptance gates. Build/test success
 alone does not establish those outcomes. No main merge, release tag or APK
 distribution is included in this checkpoint.
+
+## 28 October follow-up — sync status cleanup
+
+The stale-prompt check now inspects the package-list type safely. An unknown
+list is not evidence that a package was removed. When synchronization exits,
+`finally` clears its pending indicator unless a queued successor has taken
+ownership, retaining the existing late-acknowledgement/queued-retry behavior.
+
+Two fault-injection regressions reproduced the previous stuck `true` flag
+before the fix, then passed afterward. All 21 host regressions and the full
+506-test Flutter suite pass; fatal-info analysis is clean and 209 Dart files
+including integration/driver sources pass formatting. Stored contracts and the
+undistributed 1.3.0+4005 candidate version are unchanged. Both sequential compile
+checks passed: debug (208.5 s Gradle task) and release (134.1 s). Package/version
+and the existing signer were verified on both APKs. Prior hashes above describe
+the 27 October checkpoint; the 28 October internal compile hashes are:
+
+- Debug: `35860f301124f63bfeedc70e2a36f0091ce192bf228dd5b1a5deafa7a47bdede`.
+- Release: `9df504b4755bd2482830117e60efbee722813d6bafeeb0b9c40c5441d3ebe09c`.
+
+Logs are in ignored `output/app-lock-sync-cleanup/`. The refreshed main/tag
+version guard and PR #3 ancestor check pass. No merge, release tag, distribution
+or new physical-device acceptance is part of this follow-up.

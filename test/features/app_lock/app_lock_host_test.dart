@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,11 +31,13 @@ class _ControlledGateway extends FakeAppLockGateway {
   Completer<AppLockResult>? nextApply;
   Completer<AppLockResult>? nextDisable;
   Completer<AppLockStatus>? nextStatus;
+  void Function(Map<String, Object?>)? changeAppliedConfig;
   int statusReads = 0;
 
   @override
   Future<AppLockResult> apply(Map<String, Object?> config) async {
     applied.add(config);
+    changeAppliedConfig?.call(config);
     if (throwOnApply) throw StateError('Private native exception data');
     final pending = nextApply;
     nextApply = null;
@@ -60,6 +63,13 @@ class _ControlledGateway extends FakeAppLockGateway {
     if (pending != null) return pending.future;
     return currentStatus;
   }
+}
+
+class _FailingPackageLookup extends UnmodifiableListView<Object?> {
+  _FailingPackageLookup() : super(const []);
+
+  @override
+  bool contains(Object? element) => throw StateError('Package lookup failed');
 }
 
 class _PendingSaveStore extends MemoryRecoveryStore {
@@ -174,6 +184,38 @@ void main() {
     expect(gateway.applied, hasLength(1));
     expect(find.byKey(const ValueKey('app-lock-health-banner')), findsNothing);
   });
+
+  testWidgets(
+    'unexpected accepted app-list shape does not leave sync pending',
+    (tester) async {
+      final gateway = _ControlledGateway()
+        ..applyResult = const AppLockResult.ok()
+        ..changeAppliedConfig = (config) => config['packages'] = 'unavailable';
+      final container = await _pumpHost(tester, gateway);
+      expect(container.read(appLockSyncPendingProvider), isFalse);
+      expect(gateway.statusReads, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'post-acknowledgement error clears sync pending and allows retry',
+    (tester) async {
+      final gateway = _ControlledGateway()
+        ..applyResult = const AppLockResult.ok()
+        ..changeAppliedConfig = (config) =>
+            config['packages'] = _FailingPackageLookup();
+      final container = await _pumpHost(tester, gateway);
+      expect(container.read(appLockSyncPendingProvider), isFalse);
+      expect(tester.takeException(), isNull);
+      gateway.changeAppliedConfig = null;
+      container.read(appLockRetryProvider.notifier).state++;
+      await tester.pumpAndSettle();
+      expect(gateway.applied, hasLength(2));
+      expect(gateway.statusReads, 1);
+      expect(container.read(appLockSyncPendingProvider), isFalse);
+    },
+  );
 
   testWidgets('failed replacement invalidates the older acknowledgement', (
     tester,
