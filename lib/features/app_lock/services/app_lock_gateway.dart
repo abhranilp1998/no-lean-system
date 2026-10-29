@@ -165,6 +165,10 @@ class AppLockResult {
 /// Platform boundary for locking specific apps. Everything above it
 /// (policy, exit plan, settings, UI) is built and tested without native code.
 abstract interface class AppLockGateway {
+  /// Whether this platform has an enforcement implementation. This is distinct
+  /// from temporary native permission, service or channel failure on Android.
+  bool get isSupportedPlatform;
+
   Future<AppLockAvailability> availability();
 
   Future<AppLockStatus> status();
@@ -201,6 +205,9 @@ abstract interface class AppLockGateway {
 /// Non-Android platforms and tests: nothing is ever blocked.
 class UnsupportedAppLockGateway implements AppLockGateway {
   const UnsupportedAppLockGateway();
+
+  @override
+  bool get isSupportedPlatform => false;
 
   @override
   Future<AppLockAvailability> availability() async =>
@@ -246,6 +253,9 @@ class UnsupportedAppLockGateway implements AppLockGateway {
 /// Android gateway over `no_lean/app_lock`. Any channel failure degrades to
 /// "nothing blocked", never to a stuck lock.
 class MethodChannelAppLockGateway implements AppLockGateway {
+  @override
+  bool get isSupportedPlatform => true;
+
   MethodChannelAppLockGateway({MethodChannel? channel})
     : _channel = channel ?? const MethodChannel('no_lean/app_lock') {
     _channel.setMethodCallHandler((call) async {

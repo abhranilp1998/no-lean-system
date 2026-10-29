@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../recovery/application/recovery_provider.dart';
 import '../domain/native_config.dart';
+import '../domain/never_lockable.dart';
 import '../presentation/app_block_screen.dart';
 import '../services/app_lock_gateway.dart';
 import 'app_lock_providers.dart';
@@ -30,10 +31,13 @@ class AppLockHost extends ConsumerStatefulWidget {
 class _AppLockHostState extends ConsumerState<AppLockHost>
     with WidgetsBindingObserver {
   StreamSubscription<void>? _blocks;
-  String? _pushed;
+  String? _acknowledgedConfig;
   bool _blockOpen = false;
+  Route<void>? _blockRoute;
+  String? _blockingPackage;
   bool _syncing = false;
   bool _syncAgain = false;
+  bool _syncAgainForce = false;
 
   AppLockGateway get _gateway => ref.read(appLockGatewayProvider);
 
@@ -67,12 +71,21 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
     if (!mounted) return;
     if (_syncing) {
       _syncAgain = true;
+      _syncAgainForce = _syncAgainForce || force;
       return;
     }
     _syncing = true;
     try {
       final recovery = ref.read(recoveryProvider);
       if (!recovery.isLoaded) return;
+      if (!_gateway.isSupportedPlatform) {
+        _acknowledgedConfig = null;
+        ref.read(appLockSyncPendingProvider.notifier).state = false;
+        ref.read(appLockSyncFailureProvider.notifier).state = null;
+        ref.read(appLockStatusProvider.notifier).state =
+            const AppLockStatus.unsupported();
+        return;
+      }
       final config = buildNativeAppLockConfig(
         policy: recovery.appLockPolicy,
         riskWindow: recovery.riskWindow,
@@ -80,49 +93,127 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
         hideSensitive: recovery.notificationPrefs.hideSensitive,
       );
       final encoded = jsonEncode(config);
-      if (force || encoded != _pushed) {
-        _pushed = encoded;
-        if (config['enabled'] == true) {
-          await _gateway.apply(config);
-        } else {
-          await _gateway.disable();
+      if (force || encoded != _acknowledgedConfig) {
+        // A failed replacement may have changed native state before failing.
+        // Neither the requested config nor an older one is acknowledged then.
+        _acknowledgedConfig = null;
+        ref.read(appLockSyncPendingProvider.notifier).state = true;
+        final activating = config['enabled'] == true;
+        AppLockResult? result;
+        try {
+          result = activating
+              ? await _gateway.apply(config)
+              : await _gateway.disable();
+        } catch (_) {
+          // Report the failed update without exposing native exception data.
         }
+        if (!mounted) return;
+        if (result?.supported == true) {
+          _acknowledgedConfig = encoded;
+          ref.read(appLockSyncFailureProvider.notifier).state = null;
+          // A confirmed stop/removal makes an already-open prompt stale.
+          // Remove only that route, preserving an SOS route above it.
+          final packages = config['packages'];
+          if (!activating ||
+              (packages is List && !packages.contains(_blockingPackage))) {
+            final route = _blockRoute;
+            if (route != null && route.isActive) {
+              route.navigator?.removeRoute(route);
+            }
+          }
+        } else {
+          ref.read(appLockSyncFailureProvider.notifier).state = activating
+              ? AppLockSyncFailure.activation
+              : AppLockSyncFailure.deactivation;
+        }
+        final current = ref.read(recoveryProvider);
+        final stillRequested =
+            encoded ==
+            jsonEncode(
+              buildNativeAppLockConfig(
+                policy: current.appLockPolicy,
+                riskWindow: current.riskWindow,
+                zones: current.zones,
+                hideSensitive: current.notificationPrefs.hideSensitive,
+              ),
+            );
+        // An older write can complete after the user requested a newer policy.
+        // Do not briefly report the newer request as settled while status is
+        // being read; its queued write must be acknowledged first.
+        ref.read(appLockSyncPendingProvider.notifier).state = !stillRequested;
+        if (!stillRequested) _syncAgain = true;
       }
       final status = await _gateway.status();
       if (mounted) ref.read(appLockStatusProvider.notifier).state = status;
     } catch (_) {
-      // Fail-safe: a failed push never blocks anything; retried on resume.
+      // A health-read failure must not trap navigation or essential actions.
     } finally {
       _syncing = false;
       if (_syncAgain && mounted) {
+        final force = _syncAgainForce;
         _syncAgain = false;
-        unawaited(_sync());
+        _syncAgainForce = false;
+        unawaited(_sync(force: force));
+      } else if (mounted) {
+        // Cleanup errors must not leave an idle host showing "syncing".
+        // A queued successor owns the flag once it has started.
+        ref.read(appLockSyncPendingProvider.notifier).state = false;
       }
     }
   }
 
   Future<void> _drain() async {
-    if (!mounted || _blockOpen) return;
-    final requests = await _gateway.drainBlockRequests();
+    if (!mounted || _blockOpen || !_gateway.isSupportedPlatform) return;
+    List<AppBlockRequest> requests;
+    try {
+      requests = await _gateway.drainBlockRequests();
+    } catch (_) {
+      // A failed native read can be retried on the next signal or resume.
+      return;
+    }
     if (!mounted || requests.isEmpty || _blockOpen) return;
     final request = requests.last;
-    final policy = ref.read(recoveryProvider).appLockPolicy;
-    // Stale request (app removed or lock turned off since): ignore it.
-    if (!policy.enabled ||
-        !policy.enabledPackages.contains(request.packageName)) {
+    final recovery = ref.read(recoveryProvider);
+    final policy = recovery.appLockPolicy;
+    final requestedConfig = jsonEncode(
+      buildNativeAppLockConfig(
+        policy: policy,
+        riskWindow: recovery.riskWindow,
+        zones: recovery.zones,
+        hideSensitive: recovery.notificationPrefs.hideSensitive,
+      ),
+    );
+    final unconfirmed =
+        _acknowledgedConfig != requestedConfig ||
+        ref.read(appLockNativeStateUnconfirmedProvider);
+    // A saved Off/removal is only a request until Android acknowledges it.
+    // Failed writes may partially apply, including after a cold start where
+    // Dart has no copy of the old native policy. Keep essential exits available
+    // for native requests during that uncertainty; reject known stale requests
+    // again after an accepted update. Protected apps remain excluded always.
+    if (isNeverLockable(request.packageName) ||
+        (!unconfirmed &&
+            (!policy.enabled ||
+                !policy.enabledPackages.contains(request.packageName)))) {
       return;
     }
     _blockOpen = true;
+    _blockingPackage = request.packageName;
+    final route = AppBlockScreen.route(request);
+    _blockRoute = route;
     try {
-      await AppBlockScreen.open(context, request);
+      await Navigator.of(context).push(route);
     } finally {
       _blockOpen = false;
+      _blockRoute = null;
+      _blockingPackage = null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     ref.listen(recoveryProvider, (_, _) => unawaited(_sync()));
+    ref.listen(appLockRetryProvider, (_, _) => unawaited(_sync(force: true)));
     return widget.child;
   }
 }

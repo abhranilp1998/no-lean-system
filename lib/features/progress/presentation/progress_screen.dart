@@ -13,6 +13,7 @@ import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/recovery_event.dart';
 import '../../settings/presentation/settings_dialogs.dart';
 import '../../../core/services/save_action.dart';
+import '../../timeline/presentation/timeline_screen.dart';
 import '../domain/dose_insights.dart';
 import '../domain/money_series.dart';
 import '../domain/recovery_insights.dart';
@@ -107,6 +108,13 @@ class ProgressScreen extends ConsumerWidget {
           style: displayFont(fontSize: 24, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 18),
+        OutlinedButton.icon(
+          key: const ValueKey('progress-recovery-history'),
+          onPressed: () => TimelineScreen.openPage(context),
+          icon: const Icon(Icons.history),
+          label: const Text('Recovery history'),
+        ),
+        const SizedBox(height: 14),
         GlassCard(
           accent: purple,
           child: Column(

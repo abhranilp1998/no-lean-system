@@ -69,6 +69,22 @@ void main() {
     return (container, location);
   }
 
+  testWidgets('Zones opens location history without creating a visit', (
+    tester,
+  ) async {
+    final (container, _) = await pumpZones(tester);
+    final c = container.read(recoveryProvider);
+    final before = c.events.map((e) => e.toJson()).toList();
+    await tester.tap(find.byKey(const ValueKey('zones-location-history')));
+    await tester.pumpAndSettle();
+    expect(find.text('History'), findsOneWidget);
+    expect(
+      DefaultTabController.of(tester.element(find.byType(TabBar))).index,
+      2,
+    );
+    expect(c.events.map((e) => e.toJson()).toList(), before);
+  });
+
   testWidgets('PIN HERE marks a zone at the current fix without any network', (
     tester,
   ) async {
