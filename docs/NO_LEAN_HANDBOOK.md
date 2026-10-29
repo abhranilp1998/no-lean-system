@@ -3,7 +3,94 @@
 The single, current reference for NO LEAN. It replaces three older notes, which are kept for history:
 [CHANGES_AND_ROADMAP.md](CHANGES_AND_ROADMAP.md), [FUNCTIONAL_NOTES_2026-10-10.md](FUNCTIONAL_NOTES_2026-10-10.md) and
 [PR_ANDROID_HANDOFF_REVIEW.md](PR_ANDROID_HANDOFF_REVIEW.md). It also folds in the post-merge review of 10 Oct.
-Last checked against `main` at `a246605` on 26 Oct 2026. All times are IST.
+Last checked against `main` at `a246605` on 26 Oct 2026, and against release 1.3.0 (PR #4, `9112-deviant/p0-app-lock-activation` at `8b81ca2`) on 29 Oct 2026. All times are IST.
+
+> **Read this first.** Section 0 describes version 1.3.0. It applies to `main` only **after PR #4 merges**. Sections 1–9 describe `main` as it is today (1.2.0+4).
+
+## 0. Release 1.3.0 (PR #4, applies once PR #4 merges)
+
+Source: [PR #4](https://github.com/abhranilp1998/no-lean-system/pull/4), branch `9112-deviant/p0-app-lock-activation` at `8b81ca2`. Test pre-release: [v1.3.0-test.1](https://github.com/abhranilp1998/no-lean-system/releases/tag/v1.3.0-test.1). Tests at `8b81ca2`: 506 pass, `flutter analyze` clean.
+
+### Version and build numbers
+
+App version is **`1.3.0+4005`** (`pubspec.yaml`). When built split per ABI, Flutter adds a per-ABI offset, so each file has its own build number:
+
+| APK | Build number |
+|---|---|
+| universal | 4005 |
+| armeabi-v7a | 5005 |
+| arm64-v8a | 6005 |
+| x86_64 | 8005 |
+
+**Warning:** Android only installs an update if its build number is equal or higher. After the arm64 build (6005) is on a phone, every later build for that phone must have a build number of at least 6005, or it won't install over it. A later universal build needs `+6005` or higher.
+
+### What changed for the user
+
+**App lock (T01)**
+- The app lock now confirms the phone actually applied its settings, and retries if not. A blocked app no longer quietly stays open.
+- The status no longer gets stuck on "syncing" after a rare error: it is always cleared at the end (`app_lock_host.dart`, `finally`).
+- If the list of locked apps can't be read, the app no longer assumes the blocked app was uninstalled, so it stays blocked (`packages is List` check).
+- If switching the lock off fails, the block screen stays up instead of letting the app through.
+
+**History (T06-A)**
+- History is split into three tabs: recovery, settings changes and locations (`timeline_screen.dart`).
+- Links inside history switch to the right tab in place instead of opening a new screen.
+- Manual locations are labelled the same way everywhere through one shared check (`isManualLocationRecord`, `history_projection.dart`).
+
+**Warnings**
+- One combined app-lock health banner replaces several stacked ones (`AppLockHealthBanner`).
+
+**Export and import (from PR #3, included in PR #4)**
+- A failed export deletes the empty or half-written file it left behind (`DocumentsContract.deleteDocument` in `DocumentExportChannel.kt`).
+- If importing a backup changes the evening risk window, the timeline records the change.
+
+**Still in place (unchanged)**
+- Export goes through Android's "Save to" screen and checks the saved bytes match.
+- Moving or shrinking the risk window needs the PIN (when a PIN is required; see open questions).
+- Stored state is still **v13** and backups are still **format 8**, so old data and old backups load.
+
+### How to build and sign (box)
+
+```bash
+source /workspace/tools/android_env.sh   # sets Flutter, Android SDK and JAVA_HOME=/workspace/tools/jdk-21.0.13+9
+cd <repo>
+flutter test && flutter analyze
+flutter build apk --release --split-per-abi   # arm64 / v7a / x86_64 APKs
+flutter build apk --release                   # universal APK
+```
+
+- Signing uses the debug keystore at `~/.android/debug.keystore` (store password `android`). It is a copy of Abhranil's PC key `C:\Users\Abhranil\.android\debug.keystore`, so builds install as updates over his current app.
+- Its SHA-256 fingerprint is `7D:72:B8:0D:FC:2A:F4:B5:23:E2:1C:57:79:B4:36:3F:1B:5A:DD:5B:2B:41:9B:01:FF:03:61:F4:76:39:0E:C5`. Check a built APK with `apksigner verify --print-certs <apk>`; the SHA-256 must match. A different key means the APK won't install over the existing app, and uninstalling wipes data.
+
+### How to install the test release
+
+1. In NO LEAN, export a backup first.
+2. On the phone, open the [v1.3.0-test.1 release](https://github.com/abhranilp1998/no-lean-system/releases/tag/v1.3.0-test.1) and download `NO-LEAN-1.3.0-arm64-v8a.apk` (fits almost every recent phone). If it won't install, use `NO-LEAN-1.3.0-universal.apk`.
+3. Tap the file and allow installing from this source. It installs as an update; your data stays.
+4. Go through the testing checklist in the release notes.
+
+### To-do status
+
+| Item | Status |
+|---|---|
+| T01 app-lock activation | Done (PR #4) |
+| T06-A three history tabs | Done (PR #4). Rest of T06 later |
+| Release version gate | Met (1.3.0+4005) |
+| Real-phone testing | **Pending** |
+| T02 record contract | Next, on a new branch from updated `main` |
+| T03 capture and drafts, T04 progress follow-ups, T05 full protection path | After T02, with T08 release gate alongside each |
+| T07 location | Later |
+| T09–T12 | Parked |
+
+### Open questions
+
+- **Risk-window authentication (T05).** Fingerprint unlock is intentional and stays. The open question is whether changing the risk window should always need authentication, even when "require PIN after relapse" is off. Today it doesn't.
+- **Production signing.** All builds use a debug key. A real upload key is needed before any Play Store release (not planned now).
+
+### After PR #4 merges
+
+- Close PR #3 as superseded (its fixes arrive with PR #4).
+- In sections 2, 5, 6 and 7 below, treat the 1.2.0+4 version, 458-test count, "PR #3 open" and the two PR #3 known issues as historical.
 
 ## 1. Summary
 
@@ -116,7 +203,9 @@ Not yet verified on a real phone: install over the original, Save to Downloads/D
 | PR #1 `9112-deviant/production-hardening` | Merged 8 Sep 2026 09:55 (`4be697e`, tag `v1.1.0+3`). Branch deleted |
 | PR #2 `9112-deviant/android-handoff` | Merged 10 Oct 2026 23:05 (`a246605`, tag `v1.2.0+4`). Branch fully in `main` |
 | `nolean-v2-handoff` | Fully in `main` via PR #2 (its tip `78198bb` was the base of the android-handoff branch) |
-| PR #3 `review-fixes-export-import-log` | **Open, not merged.** 1 commit (`75a88ea`) ahead of `main`, 0 behind |
+| PR #3 `review-fixes-export-import-log` | **Open, not merged.** 1 commit (`75a88ea`) ahead of `main`, 0 behind. Included in PR #4; close after PR #4 merges |
+| PR #4 `9112-deviant/p0-app-lock-activation` | **Draft, open.** 1.3.0 (T01, T06-A, PR #3 fixes) at `8b81ca2`, 506 tests. Merge with a normal merge commit after phone testing |
+| `v1.3.0-test.1` pre-release | Test APKs for 1.3.0, signed with the PC debug key |
 | `9112-deviant/web` | **Not merged, on hold.** Web work from 6 Oct (`e903df8`). 1 commit ahead, 58 behind; conflicts with `main` in `.gitignore`, `pubspec.yaml`, `recovery_provider.dart`, `backup_service.dart` |
 | `preview-2026-10-09` pre-release | Stale: built before the 10 Oct fixes, still named "stillpoint-8" |
 
@@ -128,7 +217,7 @@ Not yet verified on a real phone: install over the original, Save to Downloads/D
 - **Failed export leaves a file behind** (fixed in PR #3, not on `main`).
 - **Risk-window change from a backup import is not logged** (fixed in PR #3, not on `main`).
 - **Two foreground location streams** (zone monitor and position notification) double GPS use.
-- **Version codes differ:** universal build = 4, split-ABI arm64 = 2004. A later universal build can't update a 2004 install.
+- **Version codes differ:** universal build = 4, split-ABI arm64 = 2004. A later universal build can't update a 2004 install. In 1.3.0: universal 4005, arm64 6005 (see section 0).
 - App lock limits: up to ~1–2 s before the blocking screen appears; OEM battery savers can kill the service (no battery-exemption helper yet); "Display over other apps" is needed on Android 10+.
 - Background zone alerts need "Allow all the time"; Android 13+ needs notification permission; Android 14+ may show the zone alert as a heads-up instead of full screen.
 - If the phone clock is off by more than ~1–2 minutes, foreground zone alerts silently drop every fix.
