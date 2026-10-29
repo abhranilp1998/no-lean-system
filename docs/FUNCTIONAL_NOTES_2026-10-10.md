@@ -1,3 +1,5 @@
+> **Superseded:** see [NO_LEAN_HANDBOOK.md](NO_LEAN_HANDBOOK.md) for the current, combined handbook. This file is kept for history.
+
 # Android functional notes — 10 October 2026
 
 This records the user's export/GPS reports, the corrections in this handoff and

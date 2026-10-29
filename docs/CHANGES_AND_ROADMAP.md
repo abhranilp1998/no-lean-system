@@ -1,3 +1,5 @@
+> **Superseded:** see [NO_LEAN_HANDBOOK.md](NO_LEAN_HANDBOOK.md) for the current, combined handbook. This file is kept for history.
+
 # NO LEAN: changes, merge handoff and roadmap
 
 Prepared 10 Oct 2026 for Abhranil and the reviewer who merges this branch.
