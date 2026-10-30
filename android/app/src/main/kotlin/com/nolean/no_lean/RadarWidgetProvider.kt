@@ -14,10 +14,18 @@ import android.widget.RemoteViews
 class RadarWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = updateAll(context)
 
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: android.os.Bundle) =
+        updateAll(context)
+
     companion object {
         fun updateAll(context: Context) {
             val ids = WidgetPack.ids(context, RadarWidgetProvider::class.java)
             if (ids.isEmpty()) return
+            val manager = AppWidgetManager.getInstance(context)
+            ids.forEach { id -> manager.updateAppWidget(id, WidgetSizing.views(context, manager, id) { build(context, it) }) }
+        }
+
+        fun build(context: Context, bucket: WidgetBucket): RemoteViews {
             val prefs = WidgetPack.prefs(context)
             val count = prefs.getInt(WidgetPack.KEY_RADAR_ZONES, 0)
             val bitmap = prefs.getString(WidgetPack.KEY_RADAR_PATH, null)?.let { WidgetPack.decodeArt(it) }
@@ -30,7 +38,8 @@ class RadarWidgetProvider : AppWidgetProvider() {
             )
             views.setViewVisibility(R.id.radar_image, if (bitmap != null) View.VISIBLE else View.INVISIBLE)
             views.setOnClickPendingIntent(R.id.radar_root, WidgetPack.openApp(context, MainActivity.WIDGET_ACTION_MAP, 50))
-            AppWidgetManager.getInstance(context).updateAppWidget(ids, views)
+            WidgetSizing.scaleText(views, bucket, R.id.radar_caption to 11f)
+            return views
         }
     }
 }

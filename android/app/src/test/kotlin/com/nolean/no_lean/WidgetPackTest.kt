@@ -24,3 +24,34 @@ class WidgetPackTest {
         assertEquals("2026-10-30", WidgetPack.dateKey(next, Calendar.getInstance(zone)))
     }
 }
+
+class WidgetSizingTest {
+    @org.junit.Test
+    fun bucketsGrowWithoutLimit() {
+        org.junit.Assert.assertEquals(WidgetBucket.COMPACT, WidgetSizing.bucketFor(180, 110))
+        org.junit.Assert.assertEquals(WidgetBucket.FULL, WidgetSizing.bucketFor(250, 250))
+        org.junit.Assert.assertEquals(WidgetBucket.LARGE, WidgetSizing.bucketFor(300, 420))
+        org.junit.Assert.assertEquals(WidgetBucket.HUGE, WidgetSizing.bucketFor(400, 800))
+        org.junit.Assert.assertEquals(WidgetBucket.HUGE, WidgetSizing.bucketFor(5000, 5000))
+        // Wide but short stays compact rather than looking stretched.
+        org.junit.Assert.assertEquals(WidgetBucket.COMPACT, WidgetSizing.bucketFor(900, 120))
+    }
+
+    @org.junit.Test
+    fun stretchedNoLeanFollowsTheEvening() {
+        val h = 3_600_000L
+        val start = 100 * h
+        org.junit.Assert.assertEquals(WidgetPack.Stretched.SHIELD, WidgetPack.stretchedView(NightTimeline.Phase.ACTIVE, start + h, start, false))
+        org.junit.Assert.assertEquals(WidgetPack.Stretched.NIGHT, WidgetPack.stretchedView(NightTimeline.Phase.UPCOMING, start - 2 * h, start, false))
+        org.junit.Assert.assertEquals(WidgetPack.Stretched.GARDEN, WidgetPack.stretchedView(NightTimeline.Phase.UPCOMING, start - 6 * h, start, false))
+        org.junit.Assert.assertEquals(WidgetPack.Stretched.NIGHT, WidgetPack.stretchedView(NightTimeline.Phase.BEATEN, start + 5 * h, start, false))
+        org.junit.Assert.assertEquals(WidgetPack.Stretched.NIGHT, WidgetPack.stretchedView(NightTimeline.Phase.ACTIVE, start + h, start, true))
+    }
+
+    @org.junit.Test
+    fun noteIsSealedOutsideTheEvening() {
+        org.junit.Assert.assertEquals(NoteWidgetProvider.Status.EMPTY, NoteWidgetProvider.status(false, NightTimeline.Phase.ACTIVE))
+        org.junit.Assert.assertEquals(NoteWidgetProvider.Status.SEALED, NoteWidgetProvider.status(true, NightTimeline.Phase.UPCOMING))
+        org.junit.Assert.assertEquals(NoteWidgetProvider.Status.READY, NoteWidgetProvider.status(true, NightTimeline.Phase.ACTIVE))
+    }
+}

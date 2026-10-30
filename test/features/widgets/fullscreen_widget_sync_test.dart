@@ -54,6 +54,8 @@ void main() {
     expect(args['gardenToday'], '2026-10-30');
     expect(args['gardenTomorrow'], '2026-10-31');
     expect(args['radarZones'], 1);
+    // Notes: only whether any exist, never their text.
+    expect(args['hasNotes'], isFalse);
     for (final name in [
       'garden_today_day',
       'garden_today_evening',

@@ -56,4 +56,9 @@
     <string name="shield_action_walk">WALK 10 MIN</string>
     <string name="shield_action_ride">RIDE IT OUT</string>
     <string name="wave_tile_label">Ride it out</string>
+    <string name="note_label">NOTE</string>
+    <string name="note_ready">A note for tonight</string>
+    <string name="note_sealed">Sealed until %1$s</string>
+    <string name="note_empty">Tap to write a note</string>
+    <string name="note_description">A sealed note. It opens inside the app.</string>
 </resources>

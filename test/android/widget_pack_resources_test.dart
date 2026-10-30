@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 /// Keeps the widget-pack Kotlin, layouts, strings and manifest consistent.
 /// RemoteViews fails the whole widget when code touches an id its layout
-/// lacks, and an unbounded resize was the bug that started this pack.
+/// lacks. Resizing is deliberately unbounded (no maxResize*): every layout
+/// fills and scales instead, up to a full screen.
 void main() {
   const res = 'android/app/src/main/res';
   const kt = 'android/app/src/main/kotlin/com/nolean/no_lean';
@@ -33,11 +34,12 @@ void main() {
       'evening_shield_widget_info',
       ['evening_shield_widget', 'evening_shield_widget_compact'],
     ),
+    'NoteWidgetProvider': ('note_widget_info', ['note_widget']),
   };
 
   for (final MapEntry(key: provider, value: (info, layouts))
       in widgets.entries) {
-    test('$provider: ids, strings, bounded resize, registered', () {
+    test('$provider: ids, strings, unbounded resize, registered', () {
       final source = File('$kt/$provider.kt').readAsStringSync();
       final all = {for (final l in layouts) ...ids(l)};
       for (final m in RegExp(r'R\.id\.(\w+)').allMatches(source)) {
@@ -49,8 +51,17 @@ void main() {
         expect(strings, contains('name="${m.group(1)}"'), reason: m.group(1));
       }
       final xml = File('$res/xml/$info.xml').readAsStringSync();
-      expect(xml, contains('android:maxResizeWidth'));
-      expect(xml, contains('android:maxResizeHeight'));
+      expect(xml, isNot(contains('maxResize')));
+      expect(xml, contains('horizontal|vertical'));
+      expect(source, contains('WidgetSizing.views'));
+      for (final l in layouts.where((l) => !l.endsWith('_row'))) {
+        final root = File('$res/layout/$l.xml').readAsStringSync();
+        expect(
+          RegExp(r'layout_height="match_parent"').hasMatch(root),
+          isTrue,
+          reason: '$l must fill the widget',
+        );
+      }
       expect(manifest, contains('android:name=".$provider"'));
       expect(manifest, contains('@xml/$info'));
     });
@@ -69,7 +80,7 @@ void main() {
 
   test('pack text on the home screen stays discreet', () {
     final pack = RegExp(
-      r'name="(?:night|garden|radar|shield|wave)_\w+"[^>]*>([^<]*)<',
+      r'name="(?:night|garden|radar|shield|wave|note)_\w+"[^>]*>([^<]*)<',
     ).allMatches(strings).map((m) => m.group(1)!.toLowerCase()).join(' ');
     final plurals = RegExp(
       r'<plurals name="radar_places">([\s\S]*?)</plurals>',
@@ -86,8 +97,35 @@ void main() {
       'risk',
       'drug',
       'urge',
+      'letter',
+      'future',
     ]) {
       expect('$pack $plurals', isNot(contains(word)), reason: word);
+    }
+  });
+
+  test('note widget never carries note text', () {
+    final source = File('$kt/NoteWidgetProvider.kt').readAsStringSync();
+    expect(source, isNot(contains('getString(WidgetPack.KEY')));
+    final sync = File(
+      'lib/features/widgets/services/fullscreen_widget_sync.dart',
+    ).readAsStringSync();
+    expect(sync, isNot(contains('.text')));
+    expect(sync, contains("args['hasNotes'] = noteCount > 0"));
+  });
+
+  test('the existing NO LEAN widget turns into the pack when stretched', () {
+    final source = File('$kt/NoLeanWidgetProvider.kt').readAsStringSync();
+    expect(source, contains('WidgetSizing.views'));
+    expect(source, contains('EveningShieldWidgetProvider.buildNow'));
+    expect(source, contains('NightTimelineWidgetProvider.buildNow'));
+    expect(source, contains('GardenWidgetProvider.build'));
+    expect(source, contains('onAppWidgetOptionsChanged'));
+    for (final info in ['no_lean_widget_info', 'no_lean_widget_large_info']) {
+      expect(
+        File('$res/xml/$info.xml').readAsStringSync(),
+        isNot(contains('maxResize')),
+      );
     }
   });
 
@@ -99,5 +137,6 @@ void main() {
     ).readAsStringSync();
     expect(service, contains("'wave'"));
     expect(service, contains("'map'"));
+    expect(service, contains("'letter'"));
   });
 }

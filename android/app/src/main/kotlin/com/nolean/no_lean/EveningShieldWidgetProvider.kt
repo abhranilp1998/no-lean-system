@@ -31,7 +31,8 @@ class EveningShieldWidgetProvider : AppWidgetProvider() {
             ACTION_WALK -> {
                 WidgetPack.prefs(context).edit()
                     .putLong(KEY_WALK_UNTIL, System.currentTimeMillis() + WALK_MILLIS).apply()
-                updateAll(context)
+                // Also redraws a stretched NO LEAN widget showing the shield.
+                NoLeanWidgetProvider.updateAllWidgets(context)
             }
             ACTION_TICK -> updateAll(context)
         }
@@ -61,17 +62,7 @@ class EveningShieldWidgetProvider : AppWidgetProvider() {
             val active = night.phase == NightTimeline.Phase.ACTIVE
             val walkUntil = WidgetPack.prefs(context).getLong(KEY_WALK_UNTIL, 0L).takeIf { it > now }
             ids.forEach { id ->
-                val views = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    RemoteViews(
-                        mapOf(
-                            SizeF(180f, 110f) to build(context, now, night, active, walkUntil, full = false),
-                            SizeF(180f, FULL_MIN_HEIGHT_DP.toFloat()) to build(context, now, night, active, walkUntil, full = true),
-                        ),
-                    )
-                } else {
-                    val h = manager.getAppWidgetOptions(id).getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, FULL_MIN_HEIGHT_DP)
-                    build(context, now, night, active, walkUntil, full = h >= FULL_MIN_HEIGHT_DP)
-                }
+                val views = WidgetSizing.views(context, manager, id) { build(context, now, night, active, walkUntil, it) }
                 manager.updateAppWidget(id, views)
             }
             val edge = if (active) night.windowEndMillis else night.windowStartMillis.let {
@@ -80,14 +71,15 @@ class EveningShieldWidgetProvider : AppWidgetProvider() {
             WidgetPack.schedule(context, tick(context), minOf(edge, walkUntil ?: Long.MAX_VALUE))
         }
 
-        private fun build(
+        internal fun build(
             context: Context,
             now: Long,
             night: NightTimeline.State,
             active: Boolean,
             walkUntil: Long?,
-            full: Boolean,
+            bucket: WidgetBucket,
         ): RemoteViews {
+            val full = bucket.isFull
             val views = RemoteViews(
                 context.packageName,
                 if (full) R.layout.evening_shield_widget else R.layout.evening_shield_widget_compact,
@@ -134,7 +126,23 @@ class EveningShieldWidgetProvider : AppWidgetProvider() {
                     views.setViewVisibility(R.id.shield_action_walk, View.VISIBLE)
                 }
             }
+            WidgetSizing.scaleText(
+                views,
+                bucket,
+                R.id.shield_title to 11f,
+                R.id.shield_countdown to (if (full) 34f else 22f),
+                R.id.shield_action_ride to 15f,
+                *(if (full) arrayOf(R.id.shield_action_call to 15f, R.id.shield_action_walk to 15f, R.id.shield_walk_timer to 15f) else emptyArray()),
+            )
             return views
+        }
+
+        /** Live shield state, for the stretched NO LEAN widget. */
+        fun buildNow(context: Context, bucket: WidgetBucket): RemoteViews {
+            val now = System.currentTimeMillis()
+            val night = NightTimeline.compute(now, WidgetPack.riskStart(context), WidgetPack.riskEnd(context), 0L)
+            val walkUntil = WidgetPack.prefs(context).getLong(KEY_WALK_UNTIL, 0L).takeIf { it > now }
+            return build(context, now, night, night.phase == NightTimeline.Phase.ACTIVE, walkUntil, bucket)
         }
     }
 }

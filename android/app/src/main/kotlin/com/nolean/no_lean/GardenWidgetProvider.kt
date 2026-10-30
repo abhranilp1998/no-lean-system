@@ -25,6 +25,9 @@ class GardenWidgetProvider : AppWidgetProvider() {
         WidgetPack.cancel(context, tick(context))
     }
 
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: android.os.Bundle) =
+        updateAll(context)
+
     companion object {
         private const val ACTION_TICK = "com.nolean.no_lean.action.GARDEN_TICK"
         private const val EVENING_FROM_MINUTES = 18 * 60
@@ -35,6 +38,13 @@ class GardenWidgetProvider : AppWidgetProvider() {
         fun updateAll(context: Context) {
             val ids = WidgetPack.ids(context, GardenWidgetProvider::class.java)
             if (ids.isEmpty()) return
+            val manager = AppWidgetManager.getInstance(context)
+            ids.forEach { id -> manager.updateAppWidget(id, WidgetSizing.views(context, manager, id) { build(context, it) }) }
+            WidgetPack.schedule(context, tick(context), WidgetPack.nextLocalHour(System.currentTimeMillis()))
+        }
+
+        /** The garden art fills the widget at every size (fitCenter). */
+        fun build(context: Context, bucket: WidgetBucket): RemoteViews {
             val prefs = WidgetPack.prefs(context)
             val now = System.currentTimeMillis()
             val minute = WidgetPack.minutesOfDay(now)
@@ -57,8 +67,8 @@ class GardenWidgetProvider : AppWidgetProvider() {
                 views.setViewVisibility(R.id.garden_empty, View.VISIBLE)
             }
             views.setOnClickPendingIntent(R.id.garden_root, WidgetPack.openApp(context, null, 40))
-            AppWidgetManager.getInstance(context).updateAppWidget(ids, views)
-            WidgetPack.schedule(context, tick(context), WidgetPack.nextLocalHour(now))
+            WidgetSizing.scaleText(views, bucket, R.id.garden_empty to 12f)
+            return views
         }
     }
 }

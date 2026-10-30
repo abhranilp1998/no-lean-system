@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A plain sealed envelope. No text: the note itself never leaves the app. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="64dp"
+    android:viewportWidth="96"
+    android:viewportHeight="64">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/widget_cyan"
+        android:strokeWidth="2.5"
+        android:pathData="M6,6 L90,6 L90,58 L6,58 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="@color/widget_cyan"
+        android:strokeWidth="2.5"
+        android:pathData="M6,6 L48,38 L90,6" />
+    <path
+        android:fillColor="@color/widget_cyan"
+        android:pathData="M48,34 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" />
+</vector>

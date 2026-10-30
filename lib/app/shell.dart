@@ -9,6 +9,7 @@ import '../core/theme/no_lean_visuals.dart';
 import '../core/widgets/animated_background.dart';
 import '../features/app_lock/presentation/app_lock_banner.dart';
 import '../features/code_instead/presentation/code_instead_screen.dart';
+import '../features/letters/presentation/future_letters_screen.dart';
 import '../features/cravings/presentation/cravings_screen.dart';
 import '../features/cravings/presentation/craving_dialog.dart';
 import '../features/cravings/presentation/craving_wave_screen.dart';
@@ -54,6 +55,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   final _lockSession = AppLockSession();
   AppLockReason? _lastLockReason;
   bool _deferredRelapse = false;
+  bool _deferredLetter = false;
   Timer? _lockTicker;
   late final ZoneMonitor _zoneMonitor = ZoneMonitor(
     location: ref.read(locationServiceProvider),
@@ -224,6 +226,11 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       _pendingActions.add('relapse');
       unawaited(_drainActions());
     }
+    if (_deferredLetter) {
+      _deferredLetter = false;
+      _pendingActions.add('letter');
+      unawaited(_drainActions());
+    }
   }
 
   Future<void> _openSos() async {
@@ -274,6 +281,16 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         context,
         source: 'widget',
       ).whenComplete(() => _waveOpen = false);
+      return;
+    }
+    if (action == 'letter') {
+      if (_resolveLock() != null) {
+        // The note never shows over the lock; it opens after unlocking.
+        _deferredLetter = true;
+        AppNotice.show(context, 'Unlock to open your note.');
+        return;
+      }
+      FutureLettersScreen.open(context);
       return;
     }
     if (action == 'map') {

@@ -23,6 +23,7 @@ object WidgetPack {
     const val KEY_GARDEN_TOMORROW = "garden_tomorrow"
     const val KEY_RADAR_PATH = "radar_path"
     const val KEY_RADAR_ZONES = "radar_zones"
+    const val KEY_HAS_NOTES = "has_notes"
 
     fun prefs(context: Context) =
         context.getSharedPreferences(NoLeanWidgetProvider.PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -36,6 +37,7 @@ object WidgetPack {
         GardenWidgetProvider.updateAll(context)
         EveningShieldWidgetProvider.updateAll(context)
         RadarWidgetProvider.updateAll(context)
+        NoteWidgetProvider.updateAll(context)
     }
 
     fun ids(context: Context, type: Class<out AppWidgetProvider>): IntArray =
@@ -121,4 +123,20 @@ object WidgetPack {
         calendar.timeInMillis = nowMillis
         return calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
     }
+
+    enum class Stretched { GARDEN, NIGHT, SHIELD }
+
+    /**
+     * What a stretched NO LEAN widget shows: the shield inside the window,
+     * the night timeline in the 3 hours before it and after it ends, and the
+     * garden the rest of the day. Privacy mode always gets the neutral
+     * timeline.
+     */
+    fun stretchedView(phase: NightTimeline.Phase, nowMillis: Long, windowStartMillis: Long, privacy: Boolean): Stretched =
+        when {
+            privacy -> Stretched.NIGHT
+            phase == NightTimeline.Phase.ACTIVE -> Stretched.SHIELD
+            phase == NightTimeline.Phase.UPCOMING && windowStartMillis - nowMillis > 3 * 3_600_000L -> Stretched.GARDEN
+            else -> Stretched.NIGHT
+        }
 }

@@ -72,9 +72,11 @@ class MainActivity : FlutterFragmentActivity() {
                 call.argument<String>("gardenTomorrow")?.let { editor.putString(WidgetPack.KEY_GARDEN_TOMORROW, it) }
                 call.argument<String>("radarPath")?.let { editor.putString(WidgetPack.KEY_RADAR_PATH, it) }
                 call.argument<Number>("radarZones")?.let { editor.putInt(WidgetPack.KEY_RADAR_ZONES, it.toInt()) }
+                call.argument<Boolean>("hasNotes")?.let { editor.putBoolean(WidgetPack.KEY_HAS_NOTES, it) }
                 editor.apply()
                 GardenWidgetProvider.updateAll(this)
                 RadarWidgetProvider.updateAll(this)
+                NoteWidgetProvider.updateAll(this)
                 result.success(null)
             } else {
                 result.notImplemented()
@@ -153,7 +155,7 @@ class MainActivity : FlutterFragmentActivity() {
     private fun widgetActionFrom(intent: Intent?): String? {
         return when (val action = intent?.getStringExtra(EXTRA_WIDGET_ACTION)) {
             WIDGET_ACTION_SOS, WIDGET_ACTION_CRAVING, WIDGET_ACTION_RELAPSE, WIDGET_ACTION_CODE -> action
-            WIDGET_ACTION_WAVE, WIDGET_ACTION_MAP -> action
+            WIDGET_ACTION_WAVE, WIDGET_ACTION_MAP, WIDGET_ACTION_LETTER -> action
             else -> null
         }
     }
@@ -206,5 +208,6 @@ class MainActivity : FlutterFragmentActivity() {
         const val WIDGET_ACTION_CODE = "code"
         const val WIDGET_ACTION_WAVE = "wave"
         const val WIDGET_ACTION_MAP = "map"
+        const val WIDGET_ACTION_LETTER = "letter"
     }
 }

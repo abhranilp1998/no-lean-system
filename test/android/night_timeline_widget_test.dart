@@ -57,17 +57,16 @@ void main() {
     }
   });
 
-  test('widget is resizable but bounded, and registered', () {
+  test('widget resizes without a maximum, and registered', () {
     final info = File(
       '$res/xml/night_timeline_widget_info.xml',
     ).readAsStringSync();
-    expect(info, contains('android:maxResizeWidth'));
-    expect(info, contains('android:maxResizeHeight'));
+    expect(info, isNot(contains('maxResize')));
     expect(info, contains('horizontal|vertical'));
     final manifest = File(
       'android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
     expect(manifest, contains('.NightTimelineWidgetProvider'));
-    expect(source, contains('Build.VERSION_CODES.S'));
+    expect(source, contains('WidgetSizing.views'));
   });
 }

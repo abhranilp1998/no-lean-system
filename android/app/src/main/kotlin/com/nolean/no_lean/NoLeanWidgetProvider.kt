@@ -45,7 +45,7 @@ open class NoLeanWidgetProvider(
         } else {
             0L
         }
-        appWidgetIds.forEach { id ->
+        val classic = {
             val views = RemoteViews(context.packageName, size.layout)
             if (privacy) {
                 bindPrivate(context, views)
@@ -53,11 +53,52 @@ open class NoLeanWidgetProvider(
                 bindFull(context, views, prefs, lastDoseEpochMillis, elapsedMillis)
             }
             bindActions(context, views)
+            views
+        }
+        appWidgetIds.forEach { id ->
+            // At its normal size the widget looks as before. Stretched big
+            // (no upper limit), the 4x2/4x3 widget becomes the full-screen
+            // pack view that fits the time of day.
+            val views = if (size == NoLeanWidgetSize.SMALL) {
+                classic()
+            } else {
+                WidgetSizing.views(context, appWidgetManager, id) { bucket ->
+                    if (bucket < WidgetBucket.LARGE) classic() else stretched(context, bucket, privacy)
+                }
+            }
             appWidgetManager.updateAppWidget(id, views)
+        }
+        if (size != NoLeanWidgetSize.SMALL && appWidgetIds.isNotEmpty()) {
+            WidgetPack.schedule(
+                context,
+                WidgetPack.broadcast(context, NoLeanWidgetProvider::class.java, ACTION_REFRESH_BOUNDARY, 70),
+                NightTimelineWidgetProvider.nextRefresh(context),
+            )
         }
 
         if (appWidgetIds.isNotEmpty() && lastDoseEpochMillis > 0L) {
             scheduleNextFormatBoundary(context, elapsedMillis)
+        }
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: android.os.Bundle,
+    ) = onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+
+    private fun stretched(context: Context, bucket: WidgetBucket, privacy: Boolean): RemoteViews {
+        val night = NightTimeline.compute(
+            System.currentTimeMillis(),
+            WidgetPack.riskStart(context),
+            WidgetPack.riskEnd(context),
+            0L,
+        )
+        return when (WidgetPack.stretchedView(night.phase, System.currentTimeMillis(), night.windowStartMillis, privacy)) {
+            WidgetPack.Stretched.SHIELD -> EveningShieldWidgetProvider.buildNow(context, bucket)
+            WidgetPack.Stretched.NIGHT -> NightTimelineWidgetProvider.buildNow(context, bucket)
+            WidgetPack.Stretched.GARDEN -> GardenWidgetProvider.build(context, bucket)
         }
     }
 

@@ -75,18 +75,7 @@ class NightTimelineWidgetProvider : AppWidgetProvider() {
 
         private fun render(context: Context, manager: AppWidgetManager, id: Int) {
             val (state, privacy) = state(context)
-            val views = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                RemoteViews(
-                    mapOf(
-                        SizeF(180f, 110f) to build(context, state, privacy, full = false),
-                        SizeF(180f, COMPACT_MAX_HEIGHT_DP.toFloat()) to build(context, state, privacy, full = true),
-                    ),
-                )
-            } else {
-                val height = manager.getAppWidgetOptions(id)
-                    .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, COMPACT_MAX_HEIGHT_DP)
-                build(context, state, privacy, full = height >= COMPACT_MAX_HEIGHT_DP)
-            }
+            val views = WidgetSizing.views(context, manager, id) { build(context, state, privacy, it) }
             manager.updateAppWidget(id, views)
         }
 
@@ -94,8 +83,9 @@ class NightTimelineWidgetProvider : AppWidgetProvider() {
             context: Context,
             state: NightTimeline.State,
             privacy: Boolean,
-            full: Boolean,
+            bucket: WidgetBucket,
         ): RemoteViews {
+            val full = bucket.isFull
             val layout = if (full) R.layout.night_timeline_widget else R.layout.night_timeline_widget_compact
             val views = RemoteViews(context.packageName, layout)
             val first = state.hours.firstOrNull()?.label ?: ""
@@ -141,6 +131,7 @@ class NightTimelineWidgetProvider : AppWidgetProvider() {
                     }
                     row.setTextViewText(R.id.night_row_mark, text)
                     row.setTextColor(R.id.night_row_mark, context.getColor(color))
+                    WidgetSizing.scaleText(row, bucket, R.id.night_row_time to 13f, R.id.night_row_mark to 13f)
                     views.addView(R.id.night_rows, row)
                 }
                 views.setViewVisibility(R.id.night_action_sos, View.VISIBLE)
@@ -149,8 +140,25 @@ class NightTimelineWidgetProvider : AppWidgetProvider() {
                     openApp(context, MainActivity.WIDGET_ACTION_SOS, 31),
                 )
             }
+            WidgetSizing.scaleText(
+                views,
+                bucket,
+                R.id.night_title to 11f,
+                R.id.night_window to 11f,
+                R.id.night_headline to (if (full) 20f else 16f),
+                *(if (full) arrayOf(R.id.night_action_sos to 12f) else emptyArray()),
+            )
             return views
         }
+
+        /** Live timeline, for the stretched NO LEAN widget. */
+        fun buildNow(context: Context, bucket: WidgetBucket): RemoteViews {
+            val (state, privacy) = state(context)
+            return build(context, state, privacy, bucket)
+        }
+
+        /** Next phase edge, so a stretched NO LEAN widget refreshes too. */
+        fun nextRefresh(context: Context): Long = state(context).first.nextRefreshMillis
 
         private fun openApp(context: Context, action: String?, requestCode: Int): PendingIntent {
             val intent = Intent(context, MainActivity::class.java).apply {

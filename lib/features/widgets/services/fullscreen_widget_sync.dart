@@ -41,6 +41,7 @@ class FullscreenWidgetSync {
   Future<void> sync({
     required List<RecoveryEvent> events,
     required List<DangerZone> zones,
+    int noteCount = 0,
     DateTime? now,
   }) async {
     if (!_enabled) return;
@@ -48,7 +49,7 @@ class FullscreenWidgetSync {
     while (_running != null) {
       await _running;
     }
-    final run = _sync(events, zones, now ?? DateTime.now());
+    final run = _sync(events, zones, now ?? DateTime.now(), noteCount);
     _running = run;
     try {
       await run;
@@ -62,8 +63,9 @@ class FullscreenWidgetSync {
   Future<Map<String, Object>?> _sync(
     List<RecoveryEvent> events,
     List<DangerZone> zones,
-    DateTime now,
-  ) async {
+    DateTime now, [
+    int noteCount = 0,
+  ]) async {
     final dir = Directory('${(await _directory()).path}/widget_art');
     await dir.create(recursive: true);
     final args = <String, Object>{};
@@ -106,6 +108,8 @@ class FullscreenWidgetSync {
       args['radarPath'] = '${dir.path}/radar.png';
       args['radarZones'] = zones.length;
     }
+    // Only whether notes exist; never their text.
+    args['hasNotes'] = noteCount > 0;
     await channel.invokeMethod<void>('art', args);
     return args;
   }
@@ -116,5 +120,6 @@ class FullscreenWidgetSync {
     required List<RecoveryEvent> events,
     required List<DangerZone> zones,
     required DateTime now,
-  }) => _sync(events, zones, now);
+    int noteCount = 0,
+  }) => _sync(events, zones, now, noteCount);
 }

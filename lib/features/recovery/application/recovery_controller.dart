@@ -27,6 +27,7 @@ import '../services/notification_service.dart';
 import '../services/relapse_lock_service.dart';
 import '../../app_lock/domain/exit_plan.dart';
 import '../../app_lock/domain/locked_app.dart';
+import '../../letters/domain/future_letter.dart';
 import '../../widgets/services/fullscreen_widget_sync.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../zones/domain/zone_entry.dart';
@@ -105,7 +106,8 @@ class RecoveryController extends ChangeNotifier {
   /// converts free-text quantities that parse exactly (text is kept).
   /// v13 adds `appLockPolicy` (locking other apps) and `appUnlock` events.
   /// Older states load with the lock off.
-  static const stateVersion = 13;
+  /// v14 adds `futureLetters` (notes to self). Older states load with none.
+  static const stateVersion = 14;
 
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
   final Future<void> Function() _cancelCravingCheck;
@@ -178,6 +180,9 @@ class RecoveryController extends ChangeNotifier {
 
   /// User-defined danger zones (state v9+).
   List<DangerZone> zones = [];
+
+  /// Notes to self (state v14+). Shown only inside the app, behind the PIN.
+  List<FutureLetter> futureLetters = [];
 
   /// In-app distance checks while NO LEAN is open (opt-in).
   bool zoneMonitoring = false;
@@ -339,6 +344,7 @@ class RecoveryController extends ChangeNotifier {
         events = upgradeQuantityText(events);
       }
       zones = DangerZone.decodeList(map['zones']);
+      futureLetters = _decodeLetters(map['futureLetters']);
       relapseCooldownUntil = DateTime.tryParse(
         map['relapseCooldownUntil']?.toString() ?? '',
       );
@@ -608,6 +614,7 @@ class RecoveryController extends ChangeNotifier {
     'riskWindowLock': riskWindowLock,
     'appLockPending': appLockPending,
     'zones': zones.map((zone) => zone.toJson()).toList(),
+    'futureLetters': futureLetters.map((l) => l.toJson()).toList(),
     'zoneMonitoring': zoneMonitoring,
     'streetTiles': streetTiles,
     'positionNotification': positionNotification,
@@ -625,6 +632,7 @@ class RecoveryController extends ChangeNotifier {
     events = _decodeCurrentEvents(map['events']);
     _restoreSettings(map);
     zones = DangerZone.decodeList(map['zones']);
+    futureLetters = _decodeLetters(map['futureLetters']);
     relapseCooldownUntil = DateTime.tryParse(
       map['relapseCooldownUntil']?.toString() ?? '',
     );
@@ -845,6 +853,7 @@ class RecoveryController extends ChangeNotifier {
   Future<ProtectedActionResult> mergeImportedEvents(
     List<RecoveryEvent> importedEvents, {
     List<DangerZone> importedZones = const [],
+    List<FutureLetter> importedLetters = const [],
     Map<String, dynamic>? preferences,
     bool restorePreferences = false,
     String? pin,
@@ -870,6 +879,14 @@ class RecoveryController extends ChangeNotifier {
       );
     }
     zones = [...zones, ...newZones];
+    final letterIds = futureLetters.map((l) => l.id).toSet();
+    final newLetters = importedLetters
+        .where((l) => letterIds.add(l.id))
+        .toList();
+    if (futureLetters.length + newLetters.length > FutureLetter.maxLetters) {
+      throw StateError('This backup would exceed 100 notes.');
+    }
+    futureLetters = [...futureLetters, ...newLetters];
     if (restorePreferences && preferences != null) {
       final previousWindow = riskWindow;
       _restoreSettings(
@@ -1578,6 +1595,43 @@ class RecoveryController extends ChangeNotifier {
     return ProtectedActionResult.authenticationRequired;
   }
 
+  /// A malformed stored list must not block loading the whole history.
+  static List<FutureLetter> _decodeLetters(Object? json) {
+    try {
+      return FutureLetter.decodeList(json);
+    } on FormatException {
+      return [];
+    }
+  }
+
+  /// Tonight's note: one unlocks per evening window, rotating through all.
+  FutureLetter? get tonightLetter {
+    final i = tonightLetterIndex(futureLetters.length, _now(), riskWindow);
+    return i < 0 ? null : futureLetters[i];
+  }
+
+  Future<void> addFutureLetter(String text) => _transaction(() async {
+    if (futureLetters.length >= FutureLetter.maxLetters) {
+      throw StateError('You can keep at most 100 notes.');
+    }
+    futureLetters = [...futureLetters, FutureLetter.create(text, at: _now())];
+  });
+
+  Future<void> deleteFutureLetter(String id) => _transaction(() async {
+    futureLetters = futureLetters.where((l) => l.id != id).toList();
+  });
+
+  /// Opening notes needs the same PIN/biometric check as other protected
+  /// actions whenever a PIN is set.
+  Future<ProtectedActionResult> authorizeFutureLetters({
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _authorizeProtectedAction(
+    pin: pin,
+    tryBiometrics: tryBiometrics,
+    reason: 'Authenticate to open your notes.',
+  );
+
   Future<void> updateReasons(List<String> value) => _transaction(() async {
     reasons = value.where((item) => item.trim().isNotEmpty).toList();
   });
@@ -1796,7 +1850,11 @@ class RecoveryController extends ChangeNotifier {
   Future<void> syncWidget() async {
     await _syncHomeWidget();
     // Garden and radar art; a no-op off Android and in tests.
-    await FullscreenWidgetSync.instance.sync(events: events, zones: zones);
+    await FullscreenWidgetSync.instance.sync(
+      events: events,
+      zones: zones,
+      noteCount: futureLetters.length,
+    );
   }
 
   Future<void> _syncHomeWidget() => HomeWidgetService.update(

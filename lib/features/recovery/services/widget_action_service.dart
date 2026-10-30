@@ -14,6 +14,7 @@ class WidgetActionService {
     'code',
     'wave',
     'map',
+    'letter',
   };
 
   final _actions = StreamController<String>.broadcast();

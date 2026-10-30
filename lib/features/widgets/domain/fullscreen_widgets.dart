@@ -3,6 +3,12 @@
 /// Every widget is on for every user today. This list is the single switch a
 /// future per-user picker will drive: the app only renders art for, and the
 /// native side only draws, widgets in [enabledFullscreenWidgets].
-enum FullscreenWidget { nightTimeline, garden, eveningShield, dangerRadar }
+enum FullscreenWidget {
+  nightTimeline,
+  garden,
+  eveningShield,
+  dangerRadar,
+  futureNote,
+}
 
 const enabledFullscreenWidgets = FullscreenWidget.values;
