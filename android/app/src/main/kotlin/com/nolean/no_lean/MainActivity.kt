@@ -40,6 +40,8 @@ class MainActivity : FlutterFragmentActivity() {
                 val hasPledgedToday = call.argument<Boolean>("hasPledgedToday") ?: false
                 val lastDoseEpochMillis = call.argument<Number>("lastDoseEpochMillis")?.toLong()
                 val privacy = call.argument<Boolean>("privacy") ?: false
+                val riskStart = call.argument<Number>("riskStartMinutes")?.toInt()
+                val riskEnd = call.argument<Number>("riskEndMinutes")?.toInt()
                 val editor = getSharedPreferences(NoLeanWidgetProvider.PREFERENCES_NAME, MODE_PRIVATE).edit()
                     .putString("clean_time", cleanTime)
                     .putString("streak_days", streak)
@@ -54,6 +56,10 @@ class MainActivity : FlutterFragmentActivity() {
                     editor.remove(NoLeanWidgetProvider.KEY_LAST_DOSE_EPOCH_MILLIS)
                 } else if (lastDoseEpochMillis != null && lastDoseEpochMillis > 0L) {
                     editor.putLong(NoLeanWidgetProvider.KEY_LAST_DOSE_EPOCH_MILLIS, lastDoseEpochMillis)
+                }
+                if (riskStart != null && riskEnd != null) {
+                    editor.putInt(NightTimelineWidgetProvider.KEY_RISK_START, riskStart)
+                        .putInt(NightTimelineWidgetProvider.KEY_RISK_END, riskEnd)
                 }
                 editor.apply()
 

@@ -11,6 +11,8 @@ Map<String, Object> homeWidgetPayload({
   required bool isRiskWindow,
   required bool hasPledgedToday,
   required bool privacy,
+  int? riskStartMinutes,
+  int? riskEndMinutes,
 }) {
   if (privacy) {
     return const <String, Object>{
@@ -29,5 +31,8 @@ Map<String, Object> homeWidgetPayload({
     'streak': '$streak DAYS',
     'isRiskWindow': isRiskWindow,
     'hasPledgedToday': hasPledgedToday,
+    // The night-timeline widget redraws hourly from these without the app.
+    'riskStartMinutes': ?riskStartMinutes,
+    'riskEndMinutes': ?riskEndMinutes,
   };
 }

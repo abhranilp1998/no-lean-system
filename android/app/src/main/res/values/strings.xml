@@ -26,4 +26,17 @@
     <string name="widget_action_craving_private">NOTE</string>
     <string name="widget_action_relapse_private">RECORD</string>
     <string name="widget_action_code_private">FOCUS</string>
+    <string name="night_title">TONIGHT</string>
+    <string name="night_title_private">EVENING</string>
+    <string name="night_description">Your evening hour by hour</string>
+    <string name="night_headline_upcoming">Tonight\'s window starts at %1$s</string>
+    <string name="night_headline_active">%1$d of %2$d hours held</string>
+    <string name="night_headline_beaten">You beat tonight</string>
+    <string name="night_headline_slipped">Evening over. Fresh start tomorrow.</string>
+    <string name="night_headline_private">Evening plan</string>
+    <string name="night_mark_done">HELD</string>
+    <string name="night_mark_now">NOW · STAY WITH IT</string>
+    <string name="night_mark_ahead">ahead</string>
+    <string name="night_mark_slipped">—</string>
+    <string name="night_action_support">SUPPORT</string>
 </resources>

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../domain/home_widget_payload.dart';
+import '../domain/risk_window.dart';
 
 /// Pushes state to every NO LEAN home-screen widget size (2x1, 4x2, 4x3).
 class HomeWidgetService {
@@ -17,6 +18,7 @@ class HomeWidgetService {
     required bool isRiskWindow,
     required bool hasPledgedToday,
     bool privacy = false,
+    RiskWindow? riskWindow,
   }) async {
     try {
       await channel.invokeMethod<void>(
@@ -28,6 +30,8 @@ class HomeWidgetService {
           isRiskWindow: isRiskWindow,
           hasPledgedToday: hasPledgedToday,
           privacy: privacy,
+          riskStartMinutes: riskWindow?.startMinutes,
+          riskEndMinutes: riskWindow?.endMinutes,
         ),
       );
     } catch (_) {
