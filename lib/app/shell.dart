@@ -11,6 +11,8 @@ import '../features/app_lock/presentation/app_lock_banner.dart';
 import '../features/code_instead/presentation/code_instead_screen.dart';
 import '../features/cravings/presentation/cravings_screen.dart';
 import '../features/cravings/presentation/craving_dialog.dart';
+import '../features/cravings/presentation/craving_wave_screen.dart';
+import '../features/zones/presentation/zones_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
 import '../features/emergency/presentation/emergency_screen.dart';
 import '../features/progress/presentation/milestone_celebration.dart';
@@ -46,6 +48,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   bool _celebrating = false;
   final _pendingActions = <String>[];
   int _selectedTab = 0;
+  bool _waveOpen = false;
   StreamSubscription<String>? _notificationActionSubscription;
   StreamSubscription<String>? _widgetActionSubscription;
   final _lockSession = AppLockSession();
@@ -262,6 +265,22 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     }
     if (action == 'code') {
       _openCodeInstead('widget');
+      return;
+    }
+    if (action == 'wave') {
+      if (_waveOpen) return;
+      _waveOpen = true;
+      CravingWaveScreen.open(
+        context,
+        source: 'widget',
+      ).whenComplete(() => _waveOpen = false);
+      return;
+    }
+    if (action == 'map') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ZonesScreen()),
+      );
       return;
     }
     // Repeated taps while the same sheet is open do not stack duplicate forms.

@@ -301,7 +301,7 @@ open class NoLeanWidgetProvider(
                 val ids = manager.getAppWidgetIds(ComponentName(context, type))
                 if (ids.isNotEmpty()) create().onUpdate(context, manager, ids)
             }
-            NightTimelineWidgetProvider.updateAll(context)
+            WidgetPack.updateAll(context)
         }
     }
 }

@@ -27,6 +27,7 @@ import '../services/notification_service.dart';
 import '../services/relapse_lock_service.dart';
 import '../../app_lock/domain/exit_plan.dart';
 import '../../app_lock/domain/locked_app.dart';
+import '../../widgets/services/fullscreen_widget_sync.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../zones/domain/zone_entry.dart';
 import '../../zones/services/geofence_gateway.dart';
@@ -1792,7 +1793,13 @@ class RecoveryController extends ChangeNotifier {
     }
   }
 
-  Future<void> syncWidget() => HomeWidgetService.update(
+  Future<void> syncWidget() async {
+    await _syncHomeWidget();
+    // Garden and radar art; a no-op off Android and in tests.
+    await FullscreenWidgetSync.instance.sync(events: events, zones: zones);
+  }
+
+  Future<void> _syncHomeWidget() => HomeWidgetService.update(
     lastDose: lastDose,
     cleanTime: formatDuration(cleanDuration, compact: true),
     streak: streak,

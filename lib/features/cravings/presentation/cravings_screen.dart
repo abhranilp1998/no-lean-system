@@ -12,6 +12,7 @@ import '../../../core/widgets/status_pill.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/craving_entry.dart';
 import 'craving_dialog.dart';
+import 'craving_wave_screen.dart';
 
 class CravingsScreen extends ConsumerWidget {
   const CravingsScreen({super.key});
@@ -40,6 +41,13 @@ class CravingsScreen extends ConsumerWidget {
           icon: Icons.add,
           color: magenta,
           onTap: () => showCravingDialog(context, ref),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          key: const Key('open-craving-wave'),
+          icon: const Icon(Icons.waves),
+          label: const Text('RIDE THE WAVE'),
+          onPressed: () => CravingWaveScreen.open(context),
         ),
         const SizedBox(height: 22),
         SectionHeader(

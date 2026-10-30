@@ -39,4 +39,21 @@
     <string name="night_mark_ahead">ahead</string>
     <string name="night_mark_slipped">—</string>
     <string name="night_action_support">SUPPORT</string>
+    <string name="garden_description">A garden that grows day by day</string>
+    <string name="garden_empty">Open the app to plant</string>
+    <string name="radar_description">A map of places you marked</string>
+    <string name="radar_empty">MAP · NO PLACES MARKED</string>
+    <plurals name="radar_places">
+        <item quantity="one">MAP · %d PLACE</item>
+        <item quantity="other">MAP · %d PLACES</item>
+    </plurals>
+    <string name="shield_description">Evening focus with call, walk and breathe buttons</string>
+    <string name="shield_title_active">EVENING · ENDS IN</string>
+    <string name="shield_title_quiet">EVENING · FROM %1$s</string>
+    <string name="shield_countdown_format">%s</string>
+    <string name="shield_walk_format">WALK %s</string>
+    <string name="shield_action_call">CALL SOMEONE</string>
+    <string name="shield_action_walk">WALK 10 MIN</string>
+    <string name="shield_action_ride">RIDE IT OUT</string>
+    <string name="wave_tile_label">Ride it out</string>
 </resources>
