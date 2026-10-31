@@ -31,6 +31,7 @@ import '../features/zones/domain/zone_alert_copy.dart';
 import '../features/zones/domain/zone_entry.dart';
 import '../features/zones/presentation/zone_alert_screen.dart';
 import '../features/zones/services/location_service.dart';
+import '../features/zones/services/zone_test_trigger.dart';
 
 class Shell extends ConsumerStatefulWidget {
   const Shell({super.key});
@@ -48,6 +49,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   int _selectedTab = 0;
   StreamSubscription<String>? _notificationActionSubscription;
   StreamSubscription<String>? _widgetActionSubscription;
+  StreamSubscription<DangerZone>? _zoneTestSubscription;
   final _lockSession = AppLockSession();
   AppLockReason? _lastLockReason;
   bool _deferredRelapse = false;
@@ -67,6 +69,9 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         .listen(_handleNotificationAction);
     _widgetActionSubscription = WidgetActionService.instance.actionStream
         .listen(_handleWidgetAction);
+    _zoneTestSubscription = ZoneTestTrigger.instance.stream.listen(
+      (zone) => unawaited(_onZoneEntered(zone)),
+    );
     // Re-evaluate the risk-window wall while the app stays in the foreground.
     _lockTicker = Timer.periodic(const Duration(seconds: 20), (_) {
       if (!mounted) return;
@@ -141,6 +146,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     unawaited(_zoneMonitor.stop());
     _notificationActionSubscription?.cancel();
     _widgetActionSubscription?.cancel();
+    _zoneTestSubscription?.cancel();
     super.dispose();
   }
 

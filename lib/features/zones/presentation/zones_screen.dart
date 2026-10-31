@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +24,7 @@ import 'zone_editor_dialog.dart';
 import 'zone_monitoring_panel.dart';
 import '../../timeline/presentation/timeline_screen.dart';
 import '../../timeline/domain/history_projection.dart';
+import '../services/zone_test_trigger.dart';
 
 class ZonesScreen extends ConsumerStatefulWidget {
   const ZonesScreen({super.key});
@@ -132,6 +134,41 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
       return fix;
     } finally {
       if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  /// Test: saves a 150 m zone at the current GPS fix and fires the real
+  /// zone-entry path (alert screen; native lock if enabled in App Lock).
+  Future<void> _testHere() async {
+    final fix = await _locate();
+    if (fix == null || !mounted) return;
+    final location = ref.read(locationServiceProvider);
+    try {
+      final zone = await ref
+          .read(recoveryProvider)
+          .addZone(
+            name: testZoneName,
+            latitude: fix.latitude,
+            longitude: fix.longitude,
+            radiusMeters: testZoneRadiusMeters,
+          );
+      if (!mounted) return;
+      AppNotice.show(
+        context,
+        'TEST ZONE ARMED // 150 m around you. Triggering entry now.',
+        type: AppNoticeType.success,
+      );
+      ZoneTestTrigger.instance.fire(zone);
+      // Background alerts/locking need "Allow all the time" location.
+      unawaited(location.requestBackground().then((_) {}, onError: (_) {}));
+    } catch (error) {
+      if (mounted) {
+        AppNotice.show(
+          context,
+          error is StateError ? error.message : 'Test zone could not be saved.',
+          type: AppNoticeType.error,
+        );
+      }
     }
   }
 
@@ -260,6 +297,12 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
     return Scaffold(
       appBar: AppBar(
         actions: [
+          IconButton(
+            key: const ValueKey('zones-test-here'),
+            tooltip: 'Test: mark my current location as danger zone',
+            onPressed: _locating ? null : _testHere,
+            icon: const Icon(Icons.science_outlined),
+          ),
           IconButton(
             key: const ValueKey('zones-location-history'),
             tooltip: 'Location history',
