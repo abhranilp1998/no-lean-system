@@ -35,10 +35,7 @@ void main() {
       ['evening_shield_widget', 'evening_shield_widget_compact'],
     ),
     'NoteWidgetProvider': ('note_widget_info', ['note_widget']),
-    'NoLeanFullWidgetProvider': (
-      'no_lean_full_widget_info',
-      ['stretched_host', 'wave_widget'],
-    ),
+    'NoLeanFullWidgetProvider': ('no_lean_full_widget_info', ['wave_widget']),
   };
 
   for (final MapEntry(key: provider, value: (info, layouts))
@@ -118,9 +115,9 @@ void main() {
     expect(sync, contains("args['hasNotes'] = noteCount > 0"));
   });
 
-  test('stretched views: host and wave ids exist, every view is wired', () {
+  test('stretched views: wave ids exist, every view is wired', () {
     final source = File('$kt/StretchedViews.kt').readAsStringSync();
-    final all = {...ids('stretched_host'), ...ids('wave_widget')};
+    final all = ids('wave_widget');
     for (final m in RegExp(r'R\.id\.(\w+)').allMatches(source)) {
       expect(all, contains(m.group(1)), reason: m.group(1));
     }
@@ -136,11 +133,14 @@ void main() {
     }
   });
 
-  test('the existing NO LEAN widget turns into the pack when stretched', () {
+  test('classic widgets stay classic unless a view is picked for them', () {
     final source = File('$kt/NoLeanWidgetProvider.kt').readAsStringSync();
-    expect(source, contains('WidgetSizing.views'));
-    expect(source, contains('StretchedViews.build'));
-    expect(source, contains('StretchedViews.handleCycle'));
+    expect(source, contains('StretchedViews.overrideFor(context, id)'));
+    expect(source, contains('picked == null'));
+    expect(source, isNot(contains('choiceFor')));
+    expect(source, isNot(contains('handleCycle')));
+    expect(manifest, contains('android.intent.action.MY_PACKAGE_REPLACED'));
+    expect(File('$res/layout/stretched_host.xml').existsSync(), isFalse);
     expect(source, contains('onAppWidgetOptionsChanged'));
     for (final info in ['no_lean_widget_info', 'no_lean_widget_large_info']) {
       expect(
@@ -159,5 +159,37 @@ void main() {
     expect(service, contains("'wave'"));
     expect(service, contains("'map'"));
     expect(service, contains("'letter'"));
+  });
+
+  test('picker: distinct labels, preview images, only 4 widgets offered', () {
+    final receivers = RegExp(
+      r'<receiver[^>]*android:name="\.(\w+WidgetProvider)"[^>]*>[\s\S]*?</receiver>',
+    ).allMatches(manifest).toList();
+    expect(receivers, hasLength(9));
+    final labels = <String>{};
+    final offered = <String>[];
+    for (final r in receivers) {
+      final block = r.group(0)!;
+      final label = RegExp(r'android:label="([^"]+)"').firstMatch(block);
+      expect(label, isNotNull, reason: '${r.group(1)} needs a picker name');
+      expect(labels.add(label!.group(1)!), isTrue, reason: label.group(1));
+      final info = RegExp(r'@xml/(\w+)').firstMatch(block)!.group(1)!;
+      final xml = File('$res/xml/$info.xml').readAsStringSync();
+      final image = RegExp(
+        r'previewImage="@drawable/(\w+)"',
+      ).firstMatch(xml)!.group(1)!;
+      expect(
+        File('$res/drawable-nodpi/$image.png').existsSync(),
+        isTrue,
+        reason: image,
+      );
+      if (!xml.contains('hide_from_picker')) offered.add(label.group(1)!);
+    }
+    expect(offered.toSet(), {
+      'NO LEAN 2x1',
+      'NO LEAN 4x2',
+      'NO LEAN 4x3',
+      'NO LEAN Full',
+    });
   });
 }

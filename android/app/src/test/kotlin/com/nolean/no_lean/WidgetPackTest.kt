@@ -61,12 +61,11 @@ class StretchedViewsTest {
     private val start = 100 * h
 
     @org.junit.Test
-    fun cycleVisitsEveryChoiceAndWraps() {
-        var c: String? = null
-        val seen = mutableListOf<String>()
-        repeat(StretchedViews.CHOICES.size) { c = StretchedViews.next(c); seen += c!! }
-        org.junit.Assert.assertEquals(StretchedViews.CHOICES.drop(1) + "auto", seen)
-        org.junit.Assert.assertEquals("auto", StretchedViews.next("bogus"))
+    fun onlyClassicWidgetsAndFullCanBeAddedFromTheApp() {
+        org.junit.Assert.assertEquals(NoLeanFullWidgetProvider::class.java, StretchedViews.providerFor("full"))
+        org.junit.Assert.assertEquals(NoLeanWidgetProvider::class.java, StretchedViews.providerFor("medium"))
+        org.junit.Assert.assertNull(StretchedViews.providerFor("garden"))
+        org.junit.Assert.assertFalse(StretchedViews.CLASSIC in StretchedViews.CHOICES)
     }
 
     @org.junit.Test

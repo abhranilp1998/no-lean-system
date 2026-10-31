@@ -1,35 +1,31 @@
 package com.nolean.no_lean
 
-import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.Context
-import android.content.Intent
 import android.widget.RemoteViews
 
 /**
- * The configurable full-screen view of a stretched NO LEAN widget (and of
- * the "NO LEAN Full" widget). The choice comes from the app (one default for
- * every widget) and can be overridden per placed widget from the app or by
- * tapping the small cycle button on the widget itself.
+ * The configurable full-screen view of the "NO LEAN Full" widget (one
+ * app-wide choice, overridable per placed widget in the app's Widgets page).
+ * Classic 4x2/4x3 widgets keep their classic look at every size unless the
+ * user picks a view for that particular widget in the app.
  */
 object StretchedViews {
     const val KEY_DEFAULT = "stretched_view"
-    const val ACTION_CYCLE = "com.nolean.no_lean.action.STRETCHED_CYCLE"
-    const val EXTRA_ID = "stretched_widget_id"
+    const val CLASSIC = "classic"
 
-    /** Stored names, in tap-to-cycle order. Must match Dart nativeName. */
+    /** Stored names. Must match Dart nativeName. */
     val CHOICES = listOf("auto", "garden", "shield", "night", "wave", "map", "note")
 
     enum class View { GARDEN, NIGHT, SHIELD, WAVE, MAP, NOTE }
 
     fun keyFor(id: Int) = "stretched_view_$id"
 
-    fun next(current: String?): String {
-        val i = CHOICES.indexOf(current ?: "auto")
-        return CHOICES[(if (i < 0) 0 else i + 1) % CHOICES.size]
-    }
+    /** Per-widget override, or null (classic widgets stay classic). */
+    fun overrideFor(context: Context, id: Int): String? =
+        WidgetPack.prefs(context).getString(keyFor(id), null)?.takeIf { it in CHOICES }
 
-    /** Per-widget override, else the app-wide choice, else auto. */
+    /** Full widget: per-widget override, else the app-wide choice, else auto. */
     fun choiceFor(context: Context, id: Int): String {
         val prefs = WidgetPack.prefs(context)
         return prefs.getString(keyFor(id), null) ?: prefs.getString(KEY_DEFAULT, "auto") ?: "auto"
@@ -57,10 +53,10 @@ object StretchedViews {
         }
     }
 
-    fun build(context: Context, id: Int, bucket: WidgetBucket, privacy: Boolean, receiver: Class<*>): RemoteViews {
+    fun build(context: Context, choice: String, bucket: WidgetBucket, privacy: Boolean): RemoteViews {
         val now = System.currentTimeMillis()
         val night = NightTimeline.compute(now, WidgetPack.riskStart(context), WidgetPack.riskEnd(context), 0L)
-        val inner = when (resolve(choiceFor(context, id), night.phase, now, night.windowStartMillis, privacy)) {
+        return when (resolve(choice, night.phase, now, night.windowStartMillis, privacy)) {
             View.SHIELD -> EveningShieldWidgetProvider.buildNow(context, bucket)
             View.NIGHT -> NightTimelineWidgetProvider.buildNow(context, bucket)
             View.GARDEN -> GardenWidgetProvider.build(context, bucket)
@@ -68,34 +64,6 @@ object StretchedViews {
             View.MAP -> RadarWidgetProvider.build(context, bucket)
             View.NOTE -> NoteWidgetProvider.buildNow(context, bucket)
         }
-        val host = RemoteViews(context.packageName, R.layout.stretched_host)
-        host.removeAllViews(R.id.stretched_content)
-        host.addView(R.id.stretched_content, inner)
-        val cycle = Intent(context, receiver).apply {
-            action = ACTION_CYCLE
-            putExtra(EXTRA_ID, id)
-        }
-        host.setOnClickPendingIntent(
-            R.id.stretched_cycle,
-            PendingIntent.getBroadcast(
-                context,
-                10_000 + id,
-                cycle,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            ),
-        )
-        return host
-    }
-
-    /** Handles the cycle tap: stores a per-widget override and redraws. */
-    fun handleCycle(context: Context, intent: Intent): Boolean {
-        if (intent.action != ACTION_CYCLE) return false
-        val id = intent.getIntExtra(EXTRA_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
-        // Only our own placed widgets (the receivers are exported).
-        if (placed(context).none { it["id"] == id }) return true
-        WidgetPack.prefs(context).edit().putString(keyFor(id), next(choiceFor(context, id))).apply()
-        NoLeanWidgetProvider.updateAllWidgets(context)
-        return true
     }
 
     /** Static wave; tapping opens the animated one in the app. */
@@ -110,9 +78,15 @@ object StretchedViews {
     fun placed(context: Context): List<Map<String, Any?>> {
         val prefs = WidgetPack.prefs(context)
         return listOf(
+            "small" to NoLeanSmallWidgetProvider::class.java,
             "medium" to NoLeanWidgetProvider::class.java,
             "large" to NoLeanLargeWidgetProvider::class.java,
             "full" to NoLeanFullWidgetProvider::class.java,
+            "tonight" to NightTimelineWidgetProvider::class.java,
+            "garden" to GardenWidgetProvider::class.java,
+            "evening" to EveningShieldWidgetProvider::class.java,
+            "map" to RadarWidgetProvider::class.java,
+            "note" to NoteWidgetProvider::class.java,
         ).flatMap { (kind, type) ->
             WidgetPack.ids(context, type).map { mapOf("id" to it, "kind" to kind, "view" to prefs.getString(keyFor(it), null)) }
         }
@@ -120,7 +94,16 @@ object StretchedViews {
 
     fun setOverride(context: Context, id: Int, choice: String?) {
         val edit = WidgetPack.prefs(context).edit()
-        if (choice == null || choice !in CHOICES) edit.remove(keyFor(id)) else edit.putString(keyFor(id), choice)
+        if (choice == null || (choice !in CHOICES && choice != CLASSIC)) edit.remove(keyFor(id)) else edit.putString(keyFor(id), choice)
         edit.apply()
+    }
+
+    /** Which picker entries exist, for "Add to home screen". */
+    fun providerFor(kind: String): Class<*>? = when (kind) {
+        "small" -> NoLeanSmallWidgetProvider::class.java
+        "medium" -> NoLeanWidgetProvider::class.java
+        "large" -> NoLeanLargeWidgetProvider::class.java
+        "full" -> NoLeanFullWidgetProvider::class.java
+        else -> null
     }
 }

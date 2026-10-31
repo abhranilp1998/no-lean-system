@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/services/backup_service.dart';
 import 'package:no_lean/features/widgets/domain/fullscreen_widgets.dart';
-import 'package:no_lean/features/widgets/presentation/home_widget_settings_screen.dart';
+import 'package:no_lean/features/widgets/presentation/widgets_screen.dart';
 import 'package:no_lean/features/widgets/services/widget_choice_service.dart';
 
 import '../../support/recovery_fakes.dart';
@@ -142,8 +142,56 @@ void main() {
       child: (context, ref) => TextButton(
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => HomeWidgetSettingsScreen(
-              service: WidgetChoiceService(enabled: false),
+            builder: (_) =>
+                WidgetsScreen(service: WidgetChoiceService(enabled: false)),
+          ),
+        ),
+        child: const Text('OPEN'),
+      ),
+    );
+    await tester.tap(find.text('OPEN'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('stretched-choice-garden')),
+      300,
+    );
+    for (final v in StretchedWidgetView.values) {
+      expect(find.byKey(Key('stretched-choice-${v.name}')), findsOneWidget);
+    }
+    await tester.ensureVisible(
+      find.byKey(const Key('stretched-choice-garden')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('stretched-choice-garden')));
+    await tester.pumpAndSettle();
+    expect(c.stretchedWidgetView, StretchedWidgetView.garden);
+  });
+
+  testWidgets('Widgets page: previews, add fallback, placed widgets', (
+    tester,
+  ) async {
+    const channel = MethodChannel('test/widgets-page');
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'placedWidgets') {
+            return [
+              {'id': 3, 'kind': 'medium', 'view': null},
+              {'id': 4, 'kind': 'small', 'view': null},
+              {'id': 5, 'kind': 'garden', 'view': null},
+            ];
+          }
+          if (call.method == 'pinWidget') return false;
+          return null;
+        });
+    await pumpHost(
+      tester,
+      child: (context, ref) => TextButton(
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => WidgetsScreen(
+              service: WidgetChoiceService(channel: channel, enabled: true),
             ),
           ),
         ),
@@ -152,11 +200,43 @@ void main() {
     );
     await tester.tap(find.text('OPEN'));
     await tester.pumpAndSettle();
-    for (final v in StretchedWidgetView.values) {
-      expect(find.byKey(Key('stretched-choice-${v.name}')), findsOneWidget);
+    expect(
+      find.byKey(const Key('widget-preview-counter-small')),
+      findsOneWidget,
+    );
+    for (final k in WidgetKind.values) {
+      await tester.scrollUntilVisible(
+        find.byKey(Key('widget-add-${k.native}')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(find.byKey(Key('widget-kind-${k.native}')), findsOneWidget);
     }
-    await tester.tap(find.byKey(const Key('stretched-choice-garden')));
+    await tester.tap(find.byKey(const Key('widget-add-full')));
     await tester.pumpAndSettle();
-    expect(c.stretchedWidgetView, StretchedWidgetView.garden);
+    expect(calls.last.method, 'pinWidget');
+    expect(calls.last.arguments, {'kind': 'full'});
+    expect(find.byKey(const Key('widget-add-steps')), findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+
+    final medium = find.byKey(const Key('placed-widget-3'));
+    await tester.scrollUntilVisible(
+      medium,
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(
+      find.descendant(of: medium, matching: find.text('Classic')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('placed-widget-4')),
+        matching: find.byType(DropdownButton<StretchedWidgetView?>),
+      ),
+      findsNothing,
+    );
+    expect(find.textContaining('older widget'), findsOneWidget);
   });
 }

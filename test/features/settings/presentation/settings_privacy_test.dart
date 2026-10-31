@@ -104,12 +104,16 @@ void main() {
     expect(find.textContaining('risk + zone alerts still on'), findsOneWidget);
   });
 
-  testWidgets('private home widget toggle saves the setting', (tester) async {
+  testWidgets('widget privacy lives on the Widgets page', (tester) async {
     final container = await pumpSettings(tester);
-    final toggle = find.byKey(const ValueKey('settings-widget-privacy'));
-    await tester.scrollUntilVisible(toggle, 300);
-    await tester.ensureVisible(toggle);
+    expect(find.byKey(const ValueKey('settings-widget-privacy')), findsNothing);
+    final open = find.byKey(const Key('open-home-widget-settings'));
+    await tester.scrollUntilVisible(open, 300);
+    await tester.ensureVisible(open);
     await tester.pumpAndSettle();
+    await tester.tap(open);
+    await tester.pumpAndSettle();
+    final toggle = find.byKey(const ValueKey('widgets-privacy'));
     await tester.tap(toggle);
     await tester.pumpAndSettle();
     expect(container.read(recoveryProvider).widgetPrivacy, isTrue);

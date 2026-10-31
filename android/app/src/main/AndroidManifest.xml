@@ -63,12 +63,15 @@
         </activity>
         <receiver
             android:name=".NoLeanWidgetProvider"
-            android:exported="true">
+            android:exported="true"
+            android:label="NO LEAN 4x2">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <!-- Redraw placed widgets right after an app update. -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

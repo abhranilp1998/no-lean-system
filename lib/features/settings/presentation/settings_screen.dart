@@ -1,7 +1,7 @@
 import '../../../core/layout/tab_layout.dart';
 import 'package:flutter/material.dart';
 
-import '../../widgets/presentation/home_widget_settings_screen.dart';
+import '../../widgets/presentation/widgets_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -51,10 +51,12 @@ class SettingsScreen extends ConsumerWidget {
             SettingAction(
               key: const Key('open-home-widget-settings'),
               icon: Icons.widgets_outlined,
-              title: 'Home screen widget',
-              subtitle: 'Stretched view: ${recovery.stretchedWidgetView.label}',
+              title: 'Widgets',
+              subtitle: recovery.widgetPrivacy
+                  ? 'Previews, add to home screen // private'
+                  : 'Previews, add to home screen, views, privacy',
               color: cyan,
-              onTap: () => HomeWidgetSettingsScreen.open(context),
+              onTap: () => WidgetsScreen.open(context),
             ),
             SettingAction(
               icon: Icons.edit_note,
@@ -365,19 +367,6 @@ class SettingsScreen extends ConsumerWidget {
                 color: red,
                 onTap: () => confirmClearZoneHistory(context, ref),
               ),
-            SettingToggle(
-              key: const ValueKey('settings-widget-privacy'),
-              title: 'Private home widget',
-              subtitle: recovery.widgetPrivacy
-                  ? 'Neutral labels // no counter, streak or risk state'
-                  : 'Widget shows clean time, streak and risk window',
-              value: recovery.widgetPrivacy,
-              color: cyan,
-              onChanged: (value) => saveAction(
-                context,
-                () => ref.read(recoveryProvider).setWidgetPrivacy(value),
-              ),
-            ),
             SettingToggle(
               key: const ValueKey('settings-hide-sensitive'),
               title: 'Hide sensitive content',

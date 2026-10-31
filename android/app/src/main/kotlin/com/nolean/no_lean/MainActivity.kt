@@ -1,5 +1,8 @@
 package com.nolean.no_lean
 
+import android.os.Build
+import android.content.ComponentName
+import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -78,6 +81,14 @@ class MainActivity : FlutterFragmentActivity() {
                 // Redraws every widget, so a new choice shows immediately.
                 NoLeanWidgetProvider.updateAllWidgets(this)
                 result.success(null)
+            } else if (call.method == "pinWidget") {
+                val type = call.argument<String>("kind")?.let { StretchedViews.providerFor(it) }
+                val manager = AppWidgetManager.getInstance(this)
+                if (type == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !manager.isRequestPinAppWidgetSupported) {
+                    result.success(false)
+                } else {
+                    result.success(manager.requestPinAppWidget(ComponentName(this, type), null, null))
+                }
             } else if (call.method == "placedWidgets") {
                 result.success(StretchedViews.placed(this))
             } else if (call.method == "setWidgetView") {

@@ -14,7 +14,6 @@ class NoLeanFullWidgetProvider : AppWidgetProvider() {
         updateAll(context)
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (StretchedViews.handleCycle(context, intent)) return
         super.onReceive(context, intent)
         if (intent.action == ACTION_TICK) updateAll(context)
     }
@@ -38,7 +37,7 @@ class NoLeanFullWidgetProvider : AppWidgetProvider() {
                 manager.updateAppWidget(
                     id,
                     WidgetSizing.views(context, manager, id) {
-                        StretchedViews.build(context, id, it, privacy, NoLeanFullWidgetProvider::class.java)
+                        StretchedViews.build(context, StretchedViews.choiceFor(context, id), it, privacy)
                     },
                 )
             }

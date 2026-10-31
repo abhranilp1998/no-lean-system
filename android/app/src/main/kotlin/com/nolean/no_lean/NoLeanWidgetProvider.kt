@@ -56,18 +56,15 @@ open class NoLeanWidgetProvider(
             views
         }
         appWidgetIds.forEach { id ->
-            // At its normal size the widget looks as before. Stretched big
-            // (no upper limit), the 4x2/4x3 widget becomes the full-screen
-            // pack view that fits the time of day.
-            val views = if (size == NoLeanWidgetSize.SMALL) {
+            // Classic look at every size, as before 1.4. Only a view the user
+            // picked for this widget in the app replaces it, and only once
+            // the widget is big enough to hold it.
+            val picked = StretchedViews.overrideFor(context, id)?.takeIf { it != StretchedViews.CLASSIC }
+            val views = if (size == NoLeanWidgetSize.SMALL || picked == null) {
                 classic()
             } else {
                 WidgetSizing.views(context, appWidgetManager, id) { bucket ->
-                    if (bucket < WidgetBucket.LARGE) {
-                        classic()
-                    } else {
-                        StretchedViews.build(context, id, bucket, privacy, this::class.java)
-                    }
+                    if (bucket < WidgetBucket.FULL) classic() else StretchedViews.build(context, picked, bucket, privacy)
                 }
             }
             appWidgetManager.updateAppWidget(id, views)
@@ -223,13 +220,13 @@ open class NoLeanWidgetProvider(
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (StretchedViews.handleCycle(context, intent)) return
         super.onReceive(context, intent)
         if (
             intent.action == ACTION_REFRESH_BOUNDARY ||
                 intent.action == Intent.ACTION_TIME_CHANGED ||
                 intent.action == Intent.ACTION_TIMEZONE_CHANGED ||
-                intent.action == Intent.ACTION_BOOT_COMPLETED
+                intent.action == Intent.ACTION_BOOT_COMPLETED ||
+                intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
         ) {
             updateAllWidgets(context)
         }

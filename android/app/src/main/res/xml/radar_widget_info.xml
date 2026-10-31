@@ -2,6 +2,8 @@
 <!-- No maximum size: stretches to the whole screen; layouts scale with
      each size bucket. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:previewImage="@drawable/radar_widget_preview"
+    android:widgetFeatures="hide_from_picker"
     android:minWidth="180dp"
     android:minHeight="110dp"
     android:minResizeWidth="110dp"
