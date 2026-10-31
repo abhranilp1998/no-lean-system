@@ -63,7 +63,10 @@ open class NoLeanWidgetProvider(
                 bindFull(context, views, prefs, lastDoseEpochMillis, elapsedMillis)
             }
             bindActions(context, views)
-            if (size.layoutFor(bucket) != size.layout) scaleClassic(views, bucket)
+            if (size.layoutFor(bucket) != size.layout) {
+                bindMiddle(context, views, privacy, elapsedMillis.takeIf { lastDoseEpochMillis > 0L })
+                scaleClassic(views, bucket)
+            }
             views
         }
         appWidgetIds.forEach { id ->
@@ -100,6 +103,24 @@ open class NoLeanWidgetProvider(
         newOptions: android.os.Bundle,
     ) = onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
 
+    /** Middle of a tall classic widget: milestone progress, or only the date in privacy mode. */
+    private fun bindMiddle(context: Context, views: RemoteViews, privacy: Boolean, elapsedMillis: Long?) {
+        val progressIds = listOf(R.id.widget_milestone, R.id.widget_milestone_bar, R.id.widget_week)
+        progressIds.forEach { views.setViewVisibility(it, if (privacy) View.GONE else View.VISIBLE) }
+        views.setViewVisibility(R.id.widget_date, if (privacy) View.VISIBLE else View.GONE)
+        if (privacy || elapsedMillis == null) {
+            views.setProgressBar(R.id.widget_milestone_bar, 100, 0, false)
+            return
+        }
+        val m = milestone(elapsedMillis)
+        views.setTextViewText(
+            R.id.widget_milestone,
+            context.getString(R.string.widget_milestone, dayLabel(m.nextDays), m.left),
+        )
+        views.setProgressBar(R.id.widget_milestone_bar, 100, m.percent, false)
+        views.setTextViewText(R.id.widget_week, weekStrip(elapsedMillis / DAY_MILLIS))
+    }
+
     /** Bigger text in a stretched classic widget, capped so nothing is cut. */
     private fun scaleClassic(views: RemoteViews, bucket: WidgetBucket) {
         val scale = bucket.textScale
@@ -108,6 +129,9 @@ open class NoLeanWidgetProvider(
         val header = minOf(scale, 1.3f)
         listOf(R.id.widget_title, R.id.widget_status, R.id.widget_streak, R.id.widget_pledge)
             .forEach { views.setTextViewTextSize(it, sp, 11f * header) }
+        views.setTextViewTextSize(R.id.widget_milestone, sp, 12f * header)
+        views.setTextViewTextSize(R.id.widget_week, sp, 14f * header)
+        views.setTextViewTextSize(R.id.widget_date, sp, 16f * header)
         views.setTextViewTextSize(R.id.widget_clean_time, sp, minOf(size.counterSp * scale, MAX_COUNTER_SP))
         views.setTextViewTextSize(R.id.widget_neutral, sp, minOf(16f * scale, MAX_COUNTER_SP))
         val button = 11f * minOf(scale, size.buttonScaleMax)
@@ -334,7 +358,32 @@ open class NoLeanWidgetProvider(
         )
     }
 
+    data class Milestone(val nextDays: Int, val percent: Int, val left: String)
+
     companion object {
+        private val MILESTONES = intArrayOf(1, 3, 7, 14, 30, 60, 90, 180, 365)
+
+        /** Pure: next milestone, progress since the previous one, and time left. */
+        fun milestone(elapsedMillis: Long): Milestone {
+            val days = (elapsedMillis / DAY_MILLIS).toInt()
+            val next = MILESTONES.firstOrNull { it > days } ?: ((days / 365) + 1) * 365
+            val prev = if (days >= 365) (days / 365) * 365 else MILESTONES.lastOrNull { it <= days } ?: 0
+            val span = (next - prev) * DAY_MILLIS
+            val into = elapsedMillis - prev * DAY_MILLIS
+            val leftMillis = next * DAY_MILLIS - elapsedMillis
+            val left = if (leftMillis >= DAY_MILLIS) "${(leftMillis + DAY_MILLIS - 1) / DAY_MILLIS}D" else "${maxOf(1L, (leftMillis + HOUR_MILLIS - 1) / HOUR_MILLIS)}H"
+            return Milestone(next, (into * 100 / span).toInt().coerceIn(0, 100), left)
+        }
+
+        fun dayLabel(days: Int): String = if (days >= 365 && days % 365 == 0) "${days / 365}Y" else "${days}D"
+
+        /** Pure: this streak week as 7 squares, the done days filled. */
+        fun weekStrip(wholeDays: Long): String {
+            val week = wholeDays / 7 + 1
+            val done = (wholeDays % 7).toInt()
+            return "WK$week " + (0 until 7).joinToString(" ") { if (it < done) "\u25A0" else "\u25A1" }
+        }
+
         /** "0d 00:00:00" still fits a 280dp-wide widget in monospace. */
         const val MAX_COUNTER_SP = 36f
 

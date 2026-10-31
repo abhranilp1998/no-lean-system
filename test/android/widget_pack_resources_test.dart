@@ -198,10 +198,26 @@ void main() {
       ('no_lean_widget', 'no_lean_widget_tall'),
       ('no_lean_widget_large', 'no_lean_widget_large_tall'),
     ]) {
-      expect(ids(tall), ids(normal), reason: tall);
+      expect(ids(tall), {
+        ...ids(normal),
+        'widget_middle',
+        'widget_milestone',
+        'widget_milestone_bar',
+        'widget_week',
+        'widget_date',
+      }, reason: tall);
       final xml = File('$res/layout/$tall.xml').readAsStringSync();
-      expect(xml, isNot(contains('layout_height="48dp"')));
-      expect(xml, contains('android:layout_weight="1"'));
+      // Buttons keep a normal height; the middle block takes the space.
+      expect(
+        xml,
+        isNot(
+          contains(
+            'layout_height="match_parent"\n            android:layout_marginEnd',
+          ),
+        ),
+      );
+      expect(xml, contains('android:layout_height="56dp"'));
+      expect(xml, contains('android:id="@+id/widget_middle"'));
     }
   });
 

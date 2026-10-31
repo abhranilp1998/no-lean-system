@@ -70,6 +70,16 @@ class StretchedViewsTest {
     }
 
     @org.junit.Test
+    fun tallClassicShowsMilestoneProgress() {
+        val day = 86_400_000L
+        org.junit.Assert.assertEquals(NoLeanWidgetProvider.Milestone(1, 50, "12H"), NoLeanWidgetProvider.milestone(day / 2))
+        org.junit.Assert.assertEquals(NoLeanWidgetProvider.Milestone(7, 50, "2D"), NoLeanWidgetProvider.milestone(5 * day))
+        org.junit.Assert.assertEquals(730, NoLeanWidgetProvider.milestone(400 * day).nextDays)
+        org.junit.Assert.assertEquals("1Y", NoLeanWidgetProvider.dayLabel(365))
+        org.junit.Assert.assertEquals("WK2 \u25A0\u0020\u25A0 \u25A1 \u25A1 \u25A1 \u25A1 \u25A1", NoLeanWidgetProvider.weekStrip(9))
+    }
+
+    @org.junit.Test
     fun onlyClassicWidgetsAndFullCanBeAddedFromTheApp() {
         org.junit.Assert.assertEquals(NoLeanFullWidgetProvider::class.java, StretchedViews.providerFor("full"))
         org.junit.Assert.assertEquals(NoLeanWidgetProvider::class.java, StretchedViews.providerFor("medium"))

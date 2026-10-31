@@ -64,4 +64,8 @@
     <string name="wave_widget_title">Ride it out</string>
     <string name="wave_widget_hint">Tap to start</string>
     <string name="stretched_description">Any full-screen view. Pick it in the app or tap the corner button.</string>
+    <string name="widget_milestone_placeholder">NEXT // OPEN APP</string>
+    <string name="widget_week_placeholder">· · · · · · ·</string>
+    <string name="widget_milestone">NEXT %1$s // %2$s LEFT</string>
+    <string name="widget_milestone_reached">%1$s REACHED</string>
 </resources>
