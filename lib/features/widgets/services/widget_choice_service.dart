@@ -52,7 +52,7 @@ enum WidgetKind {
   large(
     'large',
     'NO LEAN 4x3',
-    'Everything in 4x2 plus a code-instead button and a bigger counter.',
+    'Everything in 4x2 plus a bigger counter and more room for progress.',
   ),
   full(
     'full',
