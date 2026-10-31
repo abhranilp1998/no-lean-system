@@ -47,12 +47,12 @@ enum WidgetKind {
   medium(
     'medium',
     'NO LEAN 4x2',
-    'Clean time plus SOS, log craving, log relapse and code buttons.',
+    'Clean time, next milestone and SOS, log craving, log relapse buttons.',
   ),
   large(
     'large',
     'NO LEAN 4x3',
-    'Everything in 4x2 with a bigger counter and risk window.',
+    'Everything in 4x2 plus a code-instead button and a bigger counter.',
   ),
   full(
     'full',
