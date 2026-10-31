@@ -64,7 +64,7 @@ class StretchedViewsTest {
     fun classicWidgetsFillTallSizesWithTheirTallLayout() {
         org.junit.Assert.assertEquals(R.layout.no_lean_widget, NoLeanWidgetSize.MEDIUM.layoutFor(WidgetBucket.COMPACT))
         org.junit.Assert.assertEquals(R.layout.no_lean_widget_tall, NoLeanWidgetSize.MEDIUM.layoutFor(WidgetBucket.FULL))
-        org.junit.Assert.assertEquals(R.layout.no_lean_widget_large, NoLeanWidgetSize.LARGE.layoutFor(WidgetBucket.FULL))
+        org.junit.Assert.assertEquals(R.layout.no_lean_widget_large_tall, NoLeanWidgetSize.LARGE.layoutFor(WidgetBucket.FULL))
         org.junit.Assert.assertEquals(R.layout.no_lean_widget_large_tall, NoLeanWidgetSize.LARGE.layoutFor(WidgetBucket.HUGE))
         org.junit.Assert.assertEquals(R.layout.no_lean_widget_small, NoLeanWidgetSize.SMALL.layoutFor(WidgetBucket.HUGE))
     }

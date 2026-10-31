@@ -34,7 +34,7 @@ enum class NoLeanWidgetSize(
 ) {
     SMALL(R.layout.no_lean_widget_small, false, false, false, false, false),
     MEDIUM(R.layout.no_lean_widget, true, true, true, true, false, R.layout.no_lean_widget_tall, WidgetBucket.FULL),
-    LARGE(R.layout.no_lean_widget_large, true, true, true, true, true, R.layout.no_lean_widget_large_tall, WidgetBucket.LARGE, 28f, 1.3f),
+    LARGE(R.layout.no_lean_widget_large, true, true, true, true, true, R.layout.no_lean_widget_large_tall, WidgetBucket.FULL, 28f, 1.3f),
     ;
 
     /** Pure: the layout for a bucket (tests). */
