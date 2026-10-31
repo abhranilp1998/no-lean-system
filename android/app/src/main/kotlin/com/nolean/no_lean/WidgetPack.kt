@@ -129,23 +129,11 @@ object WidgetPack {
         if (bounds.outWidth <= 0) return null
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
-        val decoded = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
-        val bitmap = rounded(decoded)
+        // Corners come from clipToOutline on the layout root (Android 12+).
+        val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
         artCache[key] = bitmap
         while (artCache.size > 4) artCache.remove(artCache.keys.first())
         return bitmap
-    }
-
-    /** Rounds the art's corners like the classic widget background. */
-    private fun rounded(src: Bitmap): Bitmap {
-        val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
-        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            shader = android.graphics.BitmapShader(src, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP)
-        }
-        val r = src.width * 0.05f
-        android.graphics.Canvas(out).drawRoundRect(0f, 0f, src.width.toFloat(), src.height.toFloat(), r, r, paint)
-        if (out != src) src.recycle()
-        return out
     }
 
     /** Longest side of widget art; ~1.1 MB per bitmap at most. */
