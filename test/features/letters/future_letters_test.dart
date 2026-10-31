@@ -52,26 +52,29 @@ void main() {
     });
   });
 
-  test('state v13 loads with no notes and is saved as v14', () async {
-    final (controller, store, _) = await load(
-      jsonEncode({'stateVersion': 13, 'events': <Object>[]}),
-    );
-    expect(RecoveryController.stateVersion, 14);
-    expect(controller.futureLetters, isEmpty);
-    expect(controller.tonightLetter, isNull);
-    await controller.addFutureLetter('You got through worse.');
-    final saved = jsonDecode(store.value!) as Map<String, dynamic>;
-    expect(saved['stateVersion'], 14);
-    expect(
-      (saved['futureLetters'] as List).single['text'],
-      'You got '
-      'through worse.',
-    );
+  test(
+    'state v13 loads with no notes and is saved as the current version',
+    () async {
+      final (controller, store, _) = await load(
+        jsonEncode({'stateVersion': 13, 'events': <Object>[]}),
+      );
+      expect(RecoveryController.stateVersion, 15);
+      expect(controller.futureLetters, isEmpty);
+      expect(controller.tonightLetter, isNull);
+      await controller.addFutureLetter('You got through worse.');
+      final saved = jsonDecode(store.value!) as Map<String, dynamic>;
+      expect(saved['stateVersion'], 15);
+      expect(
+        (saved['futureLetters'] as List).single['text'],
+        'You got '
+        'through worse.',
+      );
 
-    final (reloaded, _, _) = await load(store.value);
-    expect(reloaded.futureLetters.single.text, 'You got through worse.');
-    expect(reloaded.tonightLetter!.text, 'You got through worse.');
-  });
+      final (reloaded, _, _) = await load(store.value);
+      expect(reloaded.futureLetters.single.text, 'You got through worse.');
+      expect(reloaded.tonightLetter!.text, 'You got through worse.');
+    },
+  );
 
   test('a malformed stored notes list does not block loading', () async {
     final (controller, _, _) = await load(

@@ -35,6 +35,10 @@ void main() {
       ['evening_shield_widget', 'evening_shield_widget_compact'],
     ),
     'NoteWidgetProvider': ('note_widget_info', ['note_widget']),
+    'NoLeanFullWidgetProvider': (
+      'no_lean_full_widget_info',
+      ['stretched_host', 'wave_widget'],
+    ),
   };
 
   for (final MapEntry(key: provider, value: (info, layouts))
@@ -80,7 +84,7 @@ void main() {
 
   test('pack text on the home screen stays discreet', () {
     final pack = RegExp(
-      r'name="(?:night|garden|radar|shield|wave|note)_\w+"[^>]*>([^<]*)<',
+      r'name="(?:night|garden|radar|shield|wave|note|stretched)_\w+"[^>]*>([^<]*)<',
     ).allMatches(strings).map((m) => m.group(1)!.toLowerCase()).join(' ');
     final plurals = RegExp(
       r'<plurals name="radar_places">([\s\S]*?)</plurals>',
@@ -114,12 +118,29 @@ void main() {
     expect(sync, contains("args['hasNotes'] = noteCount > 0"));
   });
 
+  test('stretched views: host and wave ids exist, every view is wired', () {
+    final source = File('$kt/StretchedViews.kt').readAsStringSync();
+    final all = {...ids('stretched_host'), ...ids('wave_widget')};
+    for (final m in RegExp(r'R\.id\.(\w+)').allMatches(source)) {
+      expect(all, contains(m.group(1)), reason: m.group(1));
+    }
+    for (final call in [
+      'EveningShieldWidgetProvider.buildNow',
+      'NightTimelineWidgetProvider.buildNow',
+      'GardenWidgetProvider.build',
+      'RadarWidgetProvider.build',
+      'NoteWidgetProvider.buildNow',
+      'privacy -> View.NIGHT',
+    ]) {
+      expect(source, contains(call));
+    }
+  });
+
   test('the existing NO LEAN widget turns into the pack when stretched', () {
     final source = File('$kt/NoLeanWidgetProvider.kt').readAsStringSync();
     expect(source, contains('WidgetSizing.views'));
-    expect(source, contains('EveningShieldWidgetProvider.buildNow'));
-    expect(source, contains('NightTimelineWidgetProvider.buildNow'));
-    expect(source, contains('GardenWidgetProvider.build'));
+    expect(source, contains('StretchedViews.build'));
+    expect(source, contains('StretchedViews.handleCycle'));
     expect(source, contains('onAppWidgetOptionsChanged'));
     for (final info in ['no_lean_widget_info', 'no_lean_widget_large_info']) {
       expect(

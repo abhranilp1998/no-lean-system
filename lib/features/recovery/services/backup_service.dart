@@ -18,6 +18,7 @@ import '../domain/quantity_upgrade.dart';
 import '../domain/recovery_event.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../letters/domain/future_letter.dart';
+import '../../widgets/domain/fullscreen_widgets.dart';
 import 'android_document_export.dart';
 
 class BackupPreview {
@@ -78,8 +79,9 @@ class BackupService {
   /// failing per event. Format 8 adds `appUnlock` events (app lock exit
   /// plan); the app-lock policy itself is device-specific and never exported.
   /// Format 9 adds `futureLetters` (notes to self); older formats import with
-  /// none and imports merge notes by ID.
-  static const int currentBackupVersion = 9;
+  /// none and imports merge notes by ID. Format 10 adds the
+  /// `stretchedWidgetView` preference; older formats keep the current choice.
+  static const int currentBackupVersion = 10;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
@@ -559,7 +561,12 @@ class BackupService {
         throw FormatException('$key must be true or false.');
       }
     }
-    for (final key in ['feedbackSound', 'intensity', 'dashboardNoticeStyle']) {
+    for (final key in [
+      'feedbackSound',
+      'intensity',
+      'dashboardNoticeStyle',
+      'stretchedWidgetView',
+    ]) {
       final value = input[key];
       if (value != null && value is! String) {
         throw FormatException('$key must be text.');
@@ -583,6 +590,11 @@ class BackupService {
           (value) => value.name == dashboardNoticeStyle,
         )) {
       throw const FormatException('dashboardNoticeStyle is not supported.');
+    }
+    final stretched = input['stretchedWidgetView'];
+    if (stretched is String &&
+        !StretchedWidgetView.values.any((value) => value.name == stretched)) {
+      throw const FormatException('stretchedWidgetView is not supported.');
     }
 
     final reasons = stringList('reasons');
@@ -608,6 +620,7 @@ class BackupService {
       'feedbackSound',
       'intensity',
       'dashboardNoticeStyle',
+      'stretchedWidgetView',
     ]) {
       if (input.containsKey(key)) preferences[key] = input[key];
     }

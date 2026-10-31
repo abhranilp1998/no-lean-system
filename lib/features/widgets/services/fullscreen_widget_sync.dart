@@ -42,6 +42,7 @@ class FullscreenWidgetSync {
     required List<RecoveryEvent> events,
     required List<DangerZone> zones,
     int noteCount = 0,
+    String stretchedView = 'auto',
     DateTime? now,
   }) async {
     if (!_enabled) return;
@@ -49,7 +50,13 @@ class FullscreenWidgetSync {
     while (_running != null) {
       await _running;
     }
-    final run = _sync(events, zones, now ?? DateTime.now(), noteCount);
+    final run = _sync(
+      events,
+      zones,
+      now ?? DateTime.now(),
+      noteCount,
+      stretchedView,
+    );
     _running = run;
     try {
       await run;
@@ -65,6 +72,7 @@ class FullscreenWidgetSync {
     List<DangerZone> zones,
     DateTime now, [
     int noteCount = 0,
+    String stretchedView = 'auto',
   ]) async {
     final dir = Directory('${(await _directory()).path}/widget_art');
     await dir.create(recursive: true);
@@ -110,6 +118,7 @@ class FullscreenWidgetSync {
     }
     // Only whether notes exist; never their text.
     args['hasNotes'] = noteCount > 0;
+    args['stretchedView'] = stretchedView;
     await channel.invokeMethod<void>('art', args);
     return args;
   }
@@ -121,5 +130,6 @@ class FullscreenWidgetSync {
     required List<DangerZone> zones,
     required DateTime now,
     int noteCount = 0,
-  }) => _sync(events, zones, now, noteCount);
+    String stretchedView = 'auto',
+  }) => _sync(events, zones, now, noteCount, stretchedView);
 }

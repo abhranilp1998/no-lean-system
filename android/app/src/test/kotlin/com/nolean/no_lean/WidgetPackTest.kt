@@ -55,3 +55,41 @@ class WidgetSizingTest {
         org.junit.Assert.assertEquals(NoteWidgetProvider.Status.READY, NoteWidgetProvider.status(true, NightTimeline.Phase.ACTIVE))
     }
 }
+
+class StretchedViewsTest {
+    private val h = 3_600_000L
+    private val start = 100 * h
+
+    @org.junit.Test
+    fun cycleVisitsEveryChoiceAndWraps() {
+        var c: String? = null
+        val seen = mutableListOf<String>()
+        repeat(StretchedViews.CHOICES.size) { c = StretchedViews.next(c); seen += c!! }
+        org.junit.Assert.assertEquals(StretchedViews.CHOICES.drop(1) + "auto", seen)
+        org.junit.Assert.assertEquals("auto", StretchedViews.next("bogus"))
+    }
+
+    @org.junit.Test
+    fun fixedChoicesWinOverTimeOfDay() {
+        val p = NightTimeline.Phase.ACTIVE
+        org.junit.Assert.assertEquals(StretchedViews.View.GARDEN, StretchedViews.resolve("garden", p, start + h, start, false))
+        org.junit.Assert.assertEquals(StretchedViews.View.WAVE, StretchedViews.resolve("wave", p, start + h, start, false))
+        org.junit.Assert.assertEquals(StretchedViews.View.MAP, StretchedViews.resolve("map", p, start + h, start, false))
+        org.junit.Assert.assertEquals(StretchedViews.View.NOTE, StretchedViews.resolve("note", p, start + h, start, false))
+        org.junit.Assert.assertEquals(StretchedViews.View.SHIELD, StretchedViews.resolve("auto", p, start + h, start, false))
+        org.junit.Assert.assertEquals(
+            StretchedViews.View.GARDEN,
+            StretchedViews.resolve(null, NightTimeline.Phase.UPCOMING, start - 6 * h, start, false),
+        )
+    }
+
+    @org.junit.Test
+    fun privacyForcesTheNeutralView() {
+        StretchedViews.CHOICES.forEach {
+            org.junit.Assert.assertEquals(
+                StretchedViews.View.NIGHT,
+                StretchedViews.resolve(it, NightTimeline.Phase.ACTIVE, start + h, start, true),
+            )
+        }
+    }
+}

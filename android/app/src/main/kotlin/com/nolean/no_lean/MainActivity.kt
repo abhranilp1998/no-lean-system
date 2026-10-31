@@ -73,11 +73,22 @@ class MainActivity : FlutterFragmentActivity() {
                 call.argument<String>("radarPath")?.let { editor.putString(WidgetPack.KEY_RADAR_PATH, it) }
                 call.argument<Number>("radarZones")?.let { editor.putInt(WidgetPack.KEY_RADAR_ZONES, it.toInt()) }
                 call.argument<Boolean>("hasNotes")?.let { editor.putBoolean(WidgetPack.KEY_HAS_NOTES, it) }
+                call.argument<String>("stretchedView")?.let { editor.putString(StretchedViews.KEY_DEFAULT, it) }
                 editor.apply()
-                GardenWidgetProvider.updateAll(this)
-                RadarWidgetProvider.updateAll(this)
-                NoteWidgetProvider.updateAll(this)
+                // Redraws every widget, so a new choice shows immediately.
+                NoLeanWidgetProvider.updateAllWidgets(this)
                 result.success(null)
+            } else if (call.method == "placedWidgets") {
+                result.success(StretchedViews.placed(this))
+            } else if (call.method == "setWidgetView") {
+                val id = call.argument<Number>("id")?.toInt()
+                if (id == null) {
+                    result.error("bad_args", "id is required", null)
+                } else {
+                    StretchedViews.setOverride(this, id, call.argument<String>("view"))
+                    NoLeanWidgetProvider.updateAllWidgets(this)
+                    result.success(null)
+                }
             } else {
                 result.notImplemented()
             }

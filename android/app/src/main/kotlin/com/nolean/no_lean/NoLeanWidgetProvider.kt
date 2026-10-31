@@ -63,7 +63,11 @@ open class NoLeanWidgetProvider(
                 classic()
             } else {
                 WidgetSizing.views(context, appWidgetManager, id) { bucket ->
-                    if (bucket < WidgetBucket.LARGE) classic() else stretched(context, bucket, privacy)
+                    if (bucket < WidgetBucket.LARGE) {
+                        classic()
+                    } else {
+                        StretchedViews.build(context, id, bucket, privacy, this::class.java)
+                    }
                 }
             }
             appWidgetManager.updateAppWidget(id, views)
@@ -87,20 +91,6 @@ open class NoLeanWidgetProvider(
         appWidgetId: Int,
         newOptions: android.os.Bundle,
     ) = onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
-
-    private fun stretched(context: Context, bucket: WidgetBucket, privacy: Boolean): RemoteViews {
-        val night = NightTimeline.compute(
-            System.currentTimeMillis(),
-            WidgetPack.riskStart(context),
-            WidgetPack.riskEnd(context),
-            0L,
-        )
-        return when (WidgetPack.stretchedView(night.phase, System.currentTimeMillis(), night.windowStartMillis, privacy)) {
-            WidgetPack.Stretched.SHIELD -> EveningShieldWidgetProvider.buildNow(context, bucket)
-            WidgetPack.Stretched.NIGHT -> NightTimelineWidgetProvider.buildNow(context, bucket)
-            WidgetPack.Stretched.GARDEN -> GardenWidgetProvider.build(context, bucket)
-        }
-    }
 
     /** Neutral copy only: no counter, streak, risk or pledge state. */
     private fun bindPrivate(context: Context, views: RemoteViews) {
@@ -233,6 +223,7 @@ open class NoLeanWidgetProvider(
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        if (StretchedViews.handleCycle(context, intent)) return
         super.onReceive(context, intent)
         if (
             intent.action == ACTION_REFRESH_BOUNDARY ||
@@ -242,6 +233,12 @@ open class NoLeanWidgetProvider(
         ) {
             updateAllWidgets(context)
         }
+    }
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        val edit = WidgetPack.prefs(context).edit()
+        appWidgetIds.forEach { edit.remove(StretchedViews.keyFor(it)) }
+        edit.apply()
     }
 
     override fun onDisabled(context: Context) {

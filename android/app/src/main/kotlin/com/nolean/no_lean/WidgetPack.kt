@@ -38,6 +38,7 @@ object WidgetPack {
         EveningShieldWidgetProvider.updateAll(context)
         RadarWidgetProvider.updateAll(context)
         NoteWidgetProvider.updateAll(context)
+        NoLeanFullWidgetProvider.updateAll(context)
     }
 
     fun ids(context: Context, type: Class<out AppWidgetProvider>): IntArray =

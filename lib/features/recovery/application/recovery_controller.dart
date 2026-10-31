@@ -28,6 +28,7 @@ import '../services/relapse_lock_service.dart';
 import '../../app_lock/domain/exit_plan.dart';
 import '../../app_lock/domain/locked_app.dart';
 import '../../letters/domain/future_letter.dart';
+import '../../widgets/domain/fullscreen_widgets.dart';
 import '../../widgets/services/fullscreen_widget_sync.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../zones/domain/zone_entry.dart';
@@ -107,7 +108,9 @@ class RecoveryController extends ChangeNotifier {
   /// v13 adds `appLockPolicy` (locking other apps) and `appUnlock` events.
   /// Older states load with the lock off.
   /// v14 adds `futureLetters` (notes to self). Older states load with none.
-  static const stateVersion = 14;
+  /// v15 adds `stretchedWidgetView` (what a big NO LEAN widget shows).
+  /// Older states load with `auto`.
+  static const stateVersion = 15;
 
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
   final Future<void> Function() _cancelCravingCheck;
@@ -217,6 +220,9 @@ class RecoveryController extends ChangeNotifier {
   bool backgroundGeofencing = false;
   EffectIntensity intensity = EffectIntensity.standard;
   DashboardNoticeStyle dashboardNoticeStyle = DashboardNoticeStyle.edgeRail;
+
+  /// What a stretched NO LEAN widget shows (state v15+). Default: auto.
+  StretchedWidgetView stretchedWidgetView = StretchedWidgetView.auto;
   bool isLoaded = false;
 
   void _recomputeDerivedState() {
@@ -518,6 +524,10 @@ class RecoveryController extends ChangeNotifier {
       (v) => v.name == map['intensity'],
       orElse: () => intensity,
     );
+    stretchedWidgetView = StretchedWidgetView.fromName(
+      map['stretchedWidgetView'],
+      fallback: stretchedWidgetView,
+    );
     dashboardNoticeStyle = DashboardNoticeStyle.values.firstWhere(
       (value) => value.name == map['dashboardNoticeStyle'],
       orElse: () => dashboardNoticeStyle,
@@ -625,6 +635,7 @@ class RecoveryController extends ChangeNotifier {
     'backgroundGeofencing': backgroundGeofencing,
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
+    'stretchedWidgetView': stretchedWidgetView.name,
   };
 
   void _restoreSnapshot(Map<String, dynamic> map) {
@@ -949,6 +960,7 @@ class RecoveryController extends ChangeNotifier {
     'feedbackSound': feedbackSound.name,
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
+    'stretchedWidgetView': stretchedWidgetView.name,
   };
 
   Future<void> pledge() async {
@@ -1604,6 +1616,12 @@ class RecoveryController extends ChangeNotifier {
     }
   }
 
+  /// Picks what a stretched NO LEAN widget shows and pushes it right away.
+  Future<void> setStretchedWidgetView(StretchedWidgetView value) =>
+      _transaction(() async {
+        stretchedWidgetView = value;
+      });
+
   /// Tonight's note: one unlocks per evening window, rotating through all.
   FutureLetter? get tonightLetter {
     final i = tonightLetterIndex(futureLetters.length, _now(), riskWindow);
@@ -1854,6 +1872,7 @@ class RecoveryController extends ChangeNotifier {
       events: events,
       zones: zones,
       noteCount: futureLetters.length,
+      stretchedView: stretchedWidgetView.nativeName,
     );
   }
 

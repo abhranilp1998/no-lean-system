@@ -1,5 +1,7 @@
 import '../../../core/layout/tab_layout.dart';
 import 'package:flutter/material.dart';
+
+import '../../widgets/presentation/home_widget_settings_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -46,6 +48,14 @@ class SettingsScreen extends ConsumerWidget {
         SettingsSection(
           title: 'PERSONAL DATA',
           children: [
+            SettingAction(
+              key: const Key('open-home-widget-settings'),
+              icon: Icons.widgets_outlined,
+              title: 'Home screen widget',
+              subtitle: 'Stretched view: ${recovery.stretchedWidgetView.label}',
+              color: cyan,
+              onTap: () => HomeWidgetSettingsScreen.open(context),
+            ),
             SettingAction(
               icon: Icons.edit_note,
               title: 'Reasons for quitting',

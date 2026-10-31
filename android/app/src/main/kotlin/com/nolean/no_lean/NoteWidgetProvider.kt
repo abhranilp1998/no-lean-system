@@ -61,6 +61,18 @@ class NoteWidgetProvider : AppWidgetProvider() {
             WidgetPack.schedule(context, tick(context), night.nextRefreshMillis)
         }
 
+        /** Live envelope, for a stretched NO LEAN widget. */
+        fun buildNow(context: Context, bucket: WidgetBucket): RemoteViews {
+            val night = NightTimeline.compute(
+                System.currentTimeMillis(),
+                WidgetPack.riskStart(context),
+                WidgetPack.riskEnd(context),
+                0L,
+            )
+            val status = status(WidgetPack.prefs(context).getBoolean(WidgetPack.KEY_HAS_NOTES, false), night.phase)
+            return build(context, status, night.hours.firstOrNull()?.label ?: "", bucket)
+        }
+
         private fun build(context: Context, status: Status, start: String, bucket: WidgetBucket): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.note_widget)
             views.setTextViewText(

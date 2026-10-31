@@ -61,4 +61,8 @@
     <string name="note_sealed">Sealed until %1$s</string>
     <string name="note_empty">Tap to write a note</string>
     <string name="note_description">A sealed note. It opens inside the app.</string>
+    <string name="wave_widget_title">Ride it out</string>
+    <string name="wave_widget_hint">Tap to start</string>
+    <string name="stretched_cycle">Change view</string>
+    <string name="stretched_description">Any full-screen view. Pick it in the app or tap the corner button.</string>
 </resources>

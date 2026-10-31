@@ -87,7 +87,7 @@ void main() {
     );
     expect(controller.positionNotification, isTrue);
     // The key itself needed no bump; v14 is the notes'.
-    expect(RecoveryController.stateVersion, 14);
+    expect(RecoveryController.stateVersion, 15);
 
     await controller.setPositionNotification(false);
     final saved = jsonDecode(store.value!) as Map;

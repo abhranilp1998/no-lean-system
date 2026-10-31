@@ -56,6 +56,7 @@ void main() {
     expect(args['radarZones'], 1);
     // Notes: only whether any exist, never their text.
     expect(args['hasNotes'], isFalse);
+    expect(args['stretchedView'], 'auto');
     for (final name in [
       'garden_today_day',
       'garden_today_evening',
