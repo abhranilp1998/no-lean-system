@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/shield_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/no_lean_widget_background"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <TextView
+        android:id="@+id/shield_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:letterSpacing="0.12"
+        android:textColor="@color/widget_cyan"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <Chronometer
+        android:id="@+id/shield_countdown"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="monospace"
+        android:textColor="#FFFFFF"
+        android:textSize="34sp"
+        android:textStyle="bold" />
+    <TextView
+        android:id="@+id/shield_action_call"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:minHeight="44dp"
+        android:background="@drawable/no_lean_widget_sos_button"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:text="@string/shield_action_call"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+    <TextView
+        android:id="@+id/shield_action_walk"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:minHeight="44dp"
+        android:background="@drawable/no_lean_widget_sos_button"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:text="@string/shield_action_walk"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+    <Chronometer
+        android:id="@+id/shield_walk_timer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:minHeight="44dp"
+        android:background="@drawable/no_lean_widget_sos_button"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:textColor="@color/widget_toxic"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+    <TextView
+        android:id="@+id/shield_action_ride"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:minHeight="44dp"
+        android:background="@drawable/no_lean_widget_sos_button"
+        android:fontFamily="monospace"
+        android:gravity="center"
+        android:text="@string/shield_action_ride"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+</LinearLayout>

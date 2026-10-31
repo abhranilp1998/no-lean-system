@@ -17,6 +17,8 @@ import '../domain/legacy_recovery_migration.dart';
 import '../domain/quantity_upgrade.dart';
 import '../domain/recovery_event.dart';
 import '../../zones/domain/danger_zone.dart';
+import '../../letters/domain/future_letter.dart';
+import '../../widgets/domain/fullscreen_widgets.dart';
 import 'android_document_export.dart';
 
 class BackupPreview {
@@ -27,6 +29,7 @@ class BackupPreview {
     required this.events,
     required this.preferences,
     this.zones = const [],
+    this.letters = const [],
   });
 
   final int eventCount;
@@ -37,6 +40,9 @@ class BackupPreview {
 
   /// Danger zones (backup format 4+). Merged by ID on import.
   final List<DangerZone> zones;
+
+  /// Notes to self (backup format 9+). Merged by ID on import.
+  final List<FutureLetter> letters;
 
   bool get hasPreferences => preferences != null && preferences!.isNotEmpty;
 }
@@ -72,7 +78,10 @@ class BackupService {
   /// bottle-only notes keep their unknown volume); older apps refuse newer formats instead of
   /// failing per event. Format 8 adds `appUnlock` events (app lock exit
   /// plan); the app-lock policy itself is device-specific and never exported.
-  static const int currentBackupVersion = 8;
+  /// Format 9 adds `futureLetters` (notes to self); older formats import with
+  /// none and imports merge notes by ID. Format 10 adds the
+  /// `stretchedWidgetView` preference; older formats keep the current choice.
+  static const int currentBackupVersion = 10;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
@@ -81,10 +90,16 @@ class BackupService {
     List<RecoveryEvent> events, {
     required Map<String, dynamic> preferences,
     List<DangerZone> zones = const [],
+    List<FutureLetter> letters = const [],
   }) {
     return exportJson(
       jsonEncode(
-        buildBackupPayload(events, preferences: preferences, zones: zones),
+        buildBackupPayload(
+          events,
+          preferences: preferences,
+          zones: zones,
+          letters: letters,
+        ),
       ),
     );
   }
@@ -94,12 +109,14 @@ class BackupService {
     List<RecoveryEvent> events, {
     required Map<String, dynamic> preferences,
     List<DangerZone> zones = const [],
+    List<FutureLetter> letters = const [],
   }) {
     return {
       'version': currentBackupVersion,
       'exportedAt': DateTime.now().toIso8601String(),
       'events': events.map((event) => event.toJson()).toList(),
       'zones': zones.map((zone) => zone.toJson()).toList(),
+      'futureLetters': letters.map((l) => l.toJson()).toList(),
       'preferences': preferences,
       'excludedSecureData': const ['relapsePin', 'trustedContact'],
     };
@@ -399,6 +416,8 @@ class BackupService {
               : map['events'],
           'preferences': legacyExportPreferences(map),
           if (map['zones'] != null) 'zones': map['zones'],
+          if (map['futureLetters'] != null)
+            'futureLetters': map['futureLetters'],
         };
       }
       final version = map['version'];
@@ -448,6 +467,7 @@ class BackupService {
       final zones = version >= 4 || map['zones'] != null
           ? DangerZone.decodeList(map['zones'])
           : const <DangerZone>[];
+      final letters = FutureLetter.decodeList(map['futureLetters']);
       return BackupPreview(
         eventCount: events.length,
         oldestEventDate: events.firstOrNull?.timestamp,
@@ -455,6 +475,7 @@ class BackupService {
         events: events,
         preferences: preferences,
         zones: zones,
+        letters: letters,
       );
     } on FormatException {
       rethrow;
@@ -540,7 +561,12 @@ class BackupService {
         throw FormatException('$key must be true or false.');
       }
     }
-    for (final key in ['feedbackSound', 'intensity', 'dashboardNoticeStyle']) {
+    for (final key in [
+      'feedbackSound',
+      'intensity',
+      'dashboardNoticeStyle',
+      'stretchedWidgetView',
+    ]) {
       final value = input[key];
       if (value != null && value is! String) {
         throw FormatException('$key must be text.');
@@ -564,6 +590,11 @@ class BackupService {
           (value) => value.name == dashboardNoticeStyle,
         )) {
       throw const FormatException('dashboardNoticeStyle is not supported.');
+    }
+    final stretched = input['stretchedWidgetView'];
+    if (stretched is String &&
+        !StretchedWidgetView.values.any((value) => value.name == stretched)) {
+      throw const FormatException('stretchedWidgetView is not supported.');
     }
 
     final reasons = stringList('reasons');
@@ -589,6 +620,7 @@ class BackupService {
       'feedbackSound',
       'intensity',
       'dashboardNoticeStyle',
+      'stretchedWidgetView',
     ]) {
       if (input.containsKey(key)) preferences[key] = input[key];
     }

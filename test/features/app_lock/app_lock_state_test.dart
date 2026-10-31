@@ -58,11 +58,11 @@ void main() {
       }),
     );
     expect(controller.loadStatus, RecoveryLoadStatus.ready);
-    expect(RecoveryController.stateVersion, 13);
+    expect(RecoveryController.stateVersion, 15);
     expect(controller.appLockPolicy, const AppLockPolicy());
     expect(controller.appLockPolicy.enabled, isFalse);
     final saved = jsonDecode(store.value!) as Map<String, dynamic>;
-    expect(saved['stateVersion'], 13);
+    expect(saved['stateVersion'], 15);
     expect(saved['appLockPolicy'], isA<Map>());
     expect(store.copies, isNotEmpty, reason: 'pre-migration copy kept');
   });
@@ -176,13 +176,13 @@ void main() {
       await controller.updateAppLockPolicy(policy);
       await controller.recordAppUnlock(unlockMetadata());
       final service = BackupService();
-      expect(BackupService.currentBackupVersion, 8);
+      expect(BackupService.currentBackupVersion, 10);
       final payload = service.buildBackupPayload(
         controller.events,
         preferences: controller.portablePreferences,
         zones: controller.zones,
       );
-      expect(payload['version'], 8);
+      expect(payload['version'], 10);
       expect(
         (payload['preferences'] as Map).containsKey('appLockPolicy'),
         isFalse,

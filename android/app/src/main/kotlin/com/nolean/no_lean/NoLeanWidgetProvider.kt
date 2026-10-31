@@ -25,10 +25,20 @@ enum class NoLeanWidgetSize(
     val hasCraving: Boolean,
     val hasRelapse: Boolean,
     val hasCode: Boolean,
+    /** Same classic look with button rows that share extra height. */
+    val tallLayout: Int = layout,
+    /** Smallest bucket that switches to [tallLayout]. */
+    val tallFrom: WidgetBucket = WidgetBucket.HUGE,
+    val counterSp: Float = 22f,
+    val buttonScaleMax: Float = 1f,
 ) {
     SMALL(R.layout.no_lean_widget_small, false, false, false, false, false),
-    MEDIUM(R.layout.no_lean_widget, true, true, true, true, false),
-    LARGE(R.layout.no_lean_widget_large, true, true, true, true, true),
+    MEDIUM(R.layout.no_lean_widget, true, true, true, true, false, R.layout.no_lean_widget_tall, WidgetBucket.FULL),
+    LARGE(R.layout.no_lean_widget_large, true, true, true, true, true, R.layout.no_lean_widget_large_tall, WidgetBucket.FULL, 28f, 1.3f),
+    ;
+
+    /** Pure: the layout for a bucket (tests). */
+    fun layoutFor(bucket: WidgetBucket): Int = if (this != SMALL && bucket >= tallFrom) tallLayout else layout
 }
 
 /** The original 4x2 widget. Subclasses only change the size. */
@@ -45,20 +55,92 @@ open class NoLeanWidgetProvider(
         } else {
             0L
         }
-        appWidgetIds.forEach { id ->
-            val views = RemoteViews(context.packageName, size.layout)
+        val classic = { bucket: WidgetBucket ->
+            val views = RemoteViews(context.packageName, size.layoutFor(bucket))
             if (privacy) {
                 bindPrivate(context, views)
             } else {
                 bindFull(context, views, prefs, lastDoseEpochMillis, elapsedMillis)
             }
             bindActions(context, views)
+            if (size.layoutFor(bucket) != size.layout) {
+                bindMiddle(context, views, privacy, elapsedMillis.takeIf { lastDoseEpochMillis > 0L })
+                scaleClassic(views, bucket)
+            }
+            views
+        }
+        appWidgetIds.forEach { id ->
+            // Classic look at every size, as before 1.4. Only a view the user
+            // picked for this widget in the app replaces it, and only once
+            // the widget is big enough to hold it.
+            val picked = StretchedViews.overrideFor(context, id)?.takeIf { it != StretchedViews.CLASSIC }
+            val views = when {
+                size == NoLeanWidgetSize.SMALL -> classic(WidgetBucket.COMPACT)
+                picked == null -> WidgetSizing.views(context, appWidgetManager, id) { classic(it) }
+                else -> WidgetSizing.views(context, appWidgetManager, id) { bucket ->
+                    if (bucket < WidgetBucket.FULL) classic(bucket) else StretchedViews.build(context, picked, bucket, privacy)
+                }
+            }
             appWidgetManager.updateAppWidget(id, views)
+        }
+        if (size != NoLeanWidgetSize.SMALL && appWidgetIds.isNotEmpty()) {
+            WidgetPack.schedule(
+                context,
+                WidgetPack.broadcast(context, NoLeanWidgetProvider::class.java, ACTION_REFRESH_BOUNDARY, 70),
+                NightTimelineWidgetProvider.nextRefresh(context),
+            )
         }
 
         if (appWidgetIds.isNotEmpty() && lastDoseEpochMillis > 0L) {
             scheduleNextFormatBoundary(context, elapsedMillis)
         }
+    }
+
+    override fun onAppWidgetOptionsChanged(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: android.os.Bundle,
+    ) = onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+
+    /** Middle of a tall classic widget: milestone progress, or only the date in privacy mode. */
+    private fun bindMiddle(context: Context, views: RemoteViews, privacy: Boolean, elapsedMillis: Long?) {
+        val progressIds = listOf(R.id.widget_milestone, R.id.widget_milestone_bar, R.id.widget_week)
+        progressIds.forEach { views.setViewVisibility(it, if (privacy) View.GONE else View.VISIBLE) }
+        views.setViewVisibility(R.id.widget_date, if (privacy) View.VISIBLE else View.GONE)
+        if (privacy || elapsedMillis == null) {
+            views.setProgressBar(R.id.widget_milestone_bar, 100, 0, false)
+            return
+        }
+        val m = milestone(elapsedMillis)
+        views.setTextViewText(
+            R.id.widget_milestone,
+            context.getString(R.string.widget_milestone, dayLabel(m.nextDays), m.left),
+        )
+        views.setProgressBar(R.id.widget_milestone_bar, 100, m.percent, false)
+        views.setTextViewText(R.id.widget_week, weekStrip(elapsedMillis / DAY_MILLIS))
+    }
+
+    /** Bigger text in a stretched classic widget, capped so nothing is cut. */
+    private fun scaleClassic(views: RemoteViews, bucket: WidgetBucket) {
+        val scale = bucket.textScale
+        if (scale == 1f) return
+        val sp = android.util.TypedValue.COMPLEX_UNIT_SP
+        val header = minOf(scale, 1.3f)
+        listOf(R.id.widget_title, R.id.widget_status, R.id.widget_streak, R.id.widget_pledge)
+            .forEach { views.setTextViewTextSize(it, sp, 11f * header) }
+        views.setTextViewTextSize(R.id.widget_milestone, sp, 12f * header)
+        views.setTextViewTextSize(R.id.widget_week, sp, 14f * header)
+        views.setTextViewTextSize(R.id.widget_date, sp, 16f * header)
+        views.setTextViewTextSize(R.id.widget_clean_time, sp, minOf(size.counterSp * scale, MAX_COUNTER_SP))
+        views.setTextViewTextSize(R.id.widget_neutral, sp, minOf(16f * scale, MAX_COUNTER_SP))
+        val button = 11f * minOf(scale, size.buttonScaleMax)
+        listOfNotNull(
+            R.id.widget_action_sos,
+            R.id.widget_action_craving.takeIf { size.hasCraving },
+            R.id.widget_action_relapse.takeIf { size.hasRelapse },
+            R.id.widget_action_code.takeIf { size.hasCode },
+        ).forEach { views.setTextViewTextSize(it, sp, button) }
     }
 
     /** Neutral copy only: no counter, streak, risk or pledge state. */
@@ -197,10 +279,17 @@ open class NoLeanWidgetProvider(
             intent.action == ACTION_REFRESH_BOUNDARY ||
                 intent.action == Intent.ACTION_TIME_CHANGED ||
                 intent.action == Intent.ACTION_TIMEZONE_CHANGED ||
-                intent.action == Intent.ACTION_BOOT_COMPLETED
+                intent.action == Intent.ACTION_BOOT_COMPLETED ||
+                intent.action == Intent.ACTION_MY_PACKAGE_REPLACED
         ) {
             updateAllWidgets(context)
         }
+    }
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        val edit = WidgetPack.prefs(context).edit()
+        appWidgetIds.forEach { edit.remove(StretchedViews.keyFor(it)) }
+        edit.apply()
     }
 
     override fun onDisabled(context: Context) {
@@ -269,7 +358,35 @@ open class NoLeanWidgetProvider(
         )
     }
 
+    data class Milestone(val nextDays: Int, val percent: Int, val left: String)
+
     companion object {
+        private val MILESTONES = intArrayOf(1, 3, 7, 14, 30, 60, 90, 180, 365)
+
+        /** Pure: next milestone, progress since the previous one, and time left. */
+        fun milestone(elapsedMillis: Long): Milestone {
+            val days = (elapsedMillis / DAY_MILLIS).toInt()
+            val next = MILESTONES.firstOrNull { it > days } ?: ((days / 365) + 1) * 365
+            val prev = if (days >= 365) (days / 365) * 365 else MILESTONES.lastOrNull { it <= days } ?: 0
+            val span = (next - prev) * DAY_MILLIS
+            val into = elapsedMillis - prev * DAY_MILLIS
+            val leftMillis = next * DAY_MILLIS - elapsedMillis
+            val left = if (leftMillis >= DAY_MILLIS) "${(leftMillis + DAY_MILLIS - 1) / DAY_MILLIS}D" else "${maxOf(1L, (leftMillis + HOUR_MILLIS - 1) / HOUR_MILLIS)}H"
+            return Milestone(next, (into * 100 / span).toInt().coerceIn(0, 100), left)
+        }
+
+        fun dayLabel(days: Int): String = if (days >= 365 && days % 365 == 0) "${days / 365}Y" else "${days}D"
+
+        /** Pure: this streak week as 7 squares, the done days filled. */
+        fun weekStrip(wholeDays: Long): String {
+            val week = wholeDays / 7 + 1
+            val done = (wholeDays % 7).toInt()
+            return "WK$week " + (0 until 7).joinToString(" ") { if (it < done) "\u25A0" else "\u25A1" }
+        }
+
+        /** "0d 00:00:00" still fits a 280dp-wide widget in monospace. */
+        const val MAX_COUNTER_SP = 36f
+
         const val PREFERENCES_NAME = "no_lean_widget"
         const val KEY_LAST_DOSE_EPOCH_MILLIS = "last_dose_epoch_millis"
         const val KEY_IS_RISK_WINDOW = "is_risk_window"
@@ -301,6 +418,7 @@ open class NoLeanWidgetProvider(
                 val ids = manager.getAppWidgetIds(ComponentName(context, type))
                 if (ids.isNotEmpty()) create().onUpdate(context, manager, ids)
             }
+            WidgetPack.updateAll(context)
         }
     }
 }
