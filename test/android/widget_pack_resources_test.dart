@@ -192,4 +192,22 @@ void main() {
       'NO LEAN Full',
     });
   });
+
+  test('tall classic layouts keep every id and fill the height', () {
+    for (final (normal, tall) in [
+      ('no_lean_widget', 'no_lean_widget_tall'),
+      ('no_lean_widget_large', 'no_lean_widget_large_tall'),
+    ]) {
+      expect(ids(tall), ids(normal), reason: tall);
+      final xml = File('$res/layout/$tall.xml').readAsStringSync();
+      expect(xml, isNot(contains('layout_height="48dp"')));
+      expect(xml, contains('android:layout_weight="1"'));
+    }
+  });
+
+  test('widget art is decoded once per file and capped in size', () {
+    final pack = File('$kt/WidgetPack.kt').readAsStringSync();
+    expect(pack, contains('artCache[key]?.let { return it }'));
+    expect(pack, contains('const val ART_MAX_SIDE = 540'));
+  });
 }

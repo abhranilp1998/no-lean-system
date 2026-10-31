@@ -110,15 +110,33 @@ object WidgetPack {
         return "$dir/garden_${day}_${if (evening) "evening" else "day"}.png"
     }
 
-    /** Decodes widget art small enough for the RemoteViews bitmap budget. */
-    fun decodeArt(path: String, maxSide: Int = 720): Bitmap? {
+    private val artCache = LinkedHashMap<String, Bitmap>()
+
+    /**
+     * Decodes widget art small enough for the RemoteViews bitmap budget.
+     * Responsive widgets build one RemoteViews per size bucket; returning
+     * the same Bitmap instance for the same file lets RemoteViews send it
+     * once instead of four times (four 2 MB copies per resize froze System
+     * UI on widgets.3).
+     */
+    @Synchronized
+    fun decodeArt(path: String, maxSide: Int = ART_MAX_SIDE): Bitmap? {
+        val file = java.io.File(path)
+        val key = "$path:${file.lastModified()}:$maxSide"
+        artCache[key]?.let { return it }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(path, bounds)
         if (bounds.outWidth <= 0) return null
         var sample = 1
         while (maxOf(bounds.outWidth, bounds.outHeight) / sample > maxSide) sample *= 2
-        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+        val bitmap = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        artCache[key] = bitmap
+        while (artCache.size > 4) artCache.remove(artCache.keys.first())
+        return bitmap
     }
+
+    /** Longest side of widget art; ~1.1 MB per bitmap at most. */
+    const val ART_MAX_SIDE = 540
 
     fun minutesOfDay(nowMillis: Long, calendar: Calendar = Calendar.getInstance()): Int {
         calendar.timeInMillis = nowMillis

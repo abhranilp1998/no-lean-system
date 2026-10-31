@@ -25,10 +25,20 @@ enum class NoLeanWidgetSize(
     val hasCraving: Boolean,
     val hasRelapse: Boolean,
     val hasCode: Boolean,
+    /** Same classic look with button rows that share extra height. */
+    val tallLayout: Int = layout,
+    /** Smallest bucket that switches to [tallLayout]. */
+    val tallFrom: WidgetBucket = WidgetBucket.HUGE,
+    val counterSp: Float = 22f,
+    val buttonScaleMax: Float = 1f,
 ) {
     SMALL(R.layout.no_lean_widget_small, false, false, false, false, false),
-    MEDIUM(R.layout.no_lean_widget, true, true, true, true, false),
-    LARGE(R.layout.no_lean_widget_large, true, true, true, true, true),
+    MEDIUM(R.layout.no_lean_widget, true, true, true, true, false, R.layout.no_lean_widget_tall, WidgetBucket.FULL),
+    LARGE(R.layout.no_lean_widget_large, true, true, true, true, true, R.layout.no_lean_widget_large_tall, WidgetBucket.LARGE, 28f, 1.3f),
+    ;
+
+    /** Pure: the layout for a bucket (tests). */
+    fun layoutFor(bucket: WidgetBucket): Int = if (this != SMALL && bucket >= tallFrom) tallLayout else layout
 }
 
 /** The original 4x2 widget. Subclasses only change the size. */
@@ -45,14 +55,15 @@ open class NoLeanWidgetProvider(
         } else {
             0L
         }
-        val classic = {
-            val views = RemoteViews(context.packageName, size.layout)
+        val classic = { bucket: WidgetBucket ->
+            val views = RemoteViews(context.packageName, size.layoutFor(bucket))
             if (privacy) {
                 bindPrivate(context, views)
             } else {
                 bindFull(context, views, prefs, lastDoseEpochMillis, elapsedMillis)
             }
             bindActions(context, views)
+            if (size.layoutFor(bucket) != size.layout) scaleClassic(views, bucket)
             views
         }
         appWidgetIds.forEach { id ->
@@ -60,11 +71,11 @@ open class NoLeanWidgetProvider(
             // picked for this widget in the app replaces it, and only once
             // the widget is big enough to hold it.
             val picked = StretchedViews.overrideFor(context, id)?.takeIf { it != StretchedViews.CLASSIC }
-            val views = if (size == NoLeanWidgetSize.SMALL || picked == null) {
-                classic()
-            } else {
-                WidgetSizing.views(context, appWidgetManager, id) { bucket ->
-                    if (bucket < WidgetBucket.FULL) classic() else StretchedViews.build(context, picked, bucket, privacy)
+            val views = when {
+                size == NoLeanWidgetSize.SMALL -> classic(WidgetBucket.COMPACT)
+                picked == null -> WidgetSizing.views(context, appWidgetManager, id) { classic(it) }
+                else -> WidgetSizing.views(context, appWidgetManager, id) { bucket ->
+                    if (bucket < WidgetBucket.FULL) classic(bucket) else StretchedViews.build(context, picked, bucket, privacy)
                 }
             }
             appWidgetManager.updateAppWidget(id, views)
@@ -88,6 +99,25 @@ open class NoLeanWidgetProvider(
         appWidgetId: Int,
         newOptions: android.os.Bundle,
     ) = onUpdate(context, appWidgetManager, intArrayOf(appWidgetId))
+
+    /** Bigger text in a stretched classic widget, capped so nothing is cut. */
+    private fun scaleClassic(views: RemoteViews, bucket: WidgetBucket) {
+        val scale = bucket.textScale
+        if (scale == 1f) return
+        val sp = android.util.TypedValue.COMPLEX_UNIT_SP
+        val header = minOf(scale, 1.3f)
+        listOf(R.id.widget_title, R.id.widget_status, R.id.widget_streak, R.id.widget_pledge)
+            .forEach { views.setTextViewTextSize(it, sp, 11f * header) }
+        views.setTextViewTextSize(R.id.widget_clean_time, sp, minOf(size.counterSp * scale, MAX_COUNTER_SP))
+        views.setTextViewTextSize(R.id.widget_neutral, sp, minOf(16f * scale, MAX_COUNTER_SP))
+        val button = 11f * minOf(scale, size.buttonScaleMax)
+        listOfNotNull(
+            R.id.widget_action_sos,
+            R.id.widget_action_craving.takeIf { size.hasCraving },
+            R.id.widget_action_relapse.takeIf { size.hasRelapse },
+            R.id.widget_action_code.takeIf { size.hasCode },
+        ).forEach { views.setTextViewTextSize(it, sp, button) }
+    }
 
     /** Neutral copy only: no counter, streak, risk or pledge state. */
     private fun bindPrivate(context: Context, views: RemoteViews) {
@@ -305,6 +335,9 @@ open class NoLeanWidgetProvider(
     }
 
     companion object {
+        /** "0d 00:00:00" still fits a 280dp-wide widget in monospace. */
+        const val MAX_COUNTER_SP = 36f
+
         const val PREFERENCES_NAME = "no_lean_widget"
         const val KEY_LAST_DOSE_EPOCH_MILLIS = "last_dose_epoch_millis"
         const val KEY_IS_RISK_WINDOW = "is_risk_window"
