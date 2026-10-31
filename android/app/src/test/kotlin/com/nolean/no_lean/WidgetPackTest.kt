@@ -70,6 +70,14 @@ class StretchedViewsTest {
     }
 
     @org.junit.Test
+    fun tonightShowsTwoRowsWhenJustBigEnough() {
+        val hours = listOf(1, 2, 3, 4)
+        org.junit.Assert.assertEquals(listOf(3, 4), NightTimelineWidgetProvider.visibleHours(hours, WidgetBucket.FULL) { it < 3 })
+        org.junit.Assert.assertEquals(listOf(4), NightTimelineWidgetProvider.visibleHours(hours, WidgetBucket.FULL) { true })
+        org.junit.Assert.assertEquals(hours, NightTimelineWidgetProvider.visibleHours(hours, WidgetBucket.HUGE) { it < 3 })
+    }
+
+    @org.junit.Test
     fun tallClassicShowsMilestoneProgress() {
         val day = 86_400_000L
         org.junit.Assert.assertEquals(NoLeanWidgetProvider.Milestone(1, 50, "12H"), NoLeanWidgetProvider.milestone(day / 2))

@@ -251,12 +251,14 @@ class _ClassicPreview extends StatelessWidget {
     final private = recovery.widgetPrivacy;
     final d = recovery.cleanDuration;
     final counter = private
-        ? 'Open'
+        ? 'Tap to open'
         : '${d.inDays}d ${(d.inHours % 24).toString().padLeft(2, '0')}:'
               '${(d.inMinutes % 60).toString().padLeft(2, '0')}';
-    final buttons = private
-        ? const ['OPEN', 'NOTE']
-        : const ['SOS', 'LOG CRAVING', 'LOG RELAPSE', 'CODE INSTEAD'];
+    // Same labels and count as the real widget (strings.xml).
+    final all = private
+        ? const ['HELP', 'NOTE', 'RECORD', 'FOCUS']
+        : const ['SOS', 'LOG CRAVING', 'LOG RELAPSES', 'CODE INSTEAD'];
+    final buttons = all.take(kind == WidgetKind.large ? 4 : 3).toList();
     final tall = kind == WidgetKind.large;
     return Container(
       color: const Color(0xFF131824),
@@ -266,7 +268,7 @@ class _ClassicPreview extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            private ? 'NO LEAN' : 'NO LEAN // LIVE',
+            private ? 'QUICK ACCESS' : 'NO LEAN // LIVE',
             style: const TextStyle(color: cyan, fontFamily: 'monospace'),
           ),
           Text(

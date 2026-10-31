@@ -119,7 +119,7 @@ class NightTimelineWidgetProvider : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.night_root, openApp(context, null, 30))
             if (full) {
                 views.removeAllViews(R.id.night_rows)
-                state.hours.forEach { hour ->
+                visibleHours(state.hours, bucket) { it.mark == NightTimeline.Mark.DONE || it.mark == NightTimeline.Mark.SLIPPED }.forEach { hour ->
                     val row = RemoteViews(context.packageName, R.layout.night_timeline_row)
                     row.setTextViewText(R.id.night_row_time, hour.label)
                     val (text, color) = when {
@@ -148,8 +148,18 @@ class NightTimelineWidgetProvider : AppWidgetProvider() {
                 R.id.night_headline to (if (full) 20f else 16f),
                 *(if (full) arrayOf(R.id.night_action_sos to 12f) else emptyArray()),
             )
+            // Keep the headline to two lines on very large widgets.
+            views.setTextViewTextSize(
+                R.id.night_headline,
+                android.util.TypedValue.COMPLEX_UNIT_SP,
+                minOf((if (full) 20f else 16f) * bucket.textScale, 28f),
+            )
             return views
         }
+
+        /** Pure: rows that fit. A just-big-enough widget shows two, from the current hour. */
+        fun <T> visibleHours(hours: List<T>, bucket: WidgetBucket, isPast: (T) -> Boolean = { false }): List<T> =
+            if (bucket > WidgetBucket.FULL) hours else hours.dropWhile(isPast).ifEmpty { hours.takeLast(1) }.take(2)
 
         /** Live timeline, for the stretched NO LEAN widget. */
         fun buildNow(context: Context, bucket: WidgetBucket): RemoteViews {

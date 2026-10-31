@@ -10,8 +10,11 @@
 
     <TextView
         android:id="@+id/night_row_time"
-        android:layout_width="64dp"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:minWidth="64dp"
+        android:paddingEnd="10dp"
+        android:singleLine="true"
         android:fontFamily="monospace"
         android:textColor="@color/widget_muted"
         android:textSize="13sp" />
@@ -21,6 +24,8 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
+        android:ellipsize="end"
+        android:singleLine="true"
         android:fontFamily="monospace"
         android:textColor="@color/widget_muted"
         android:textSize="13sp"
