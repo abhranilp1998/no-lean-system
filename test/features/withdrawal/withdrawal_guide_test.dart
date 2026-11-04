@@ -37,7 +37,7 @@ void main() {
     expect(tips.map((t) => t.title), contains('Loperamide for diarrhoea'));
     expect(
       tips.firstWhere((t) => t.title.startsWith('Loperamide')).body,
-      contains('8 mg'),
+      contains('12 mg'),
     );
     expect(generalDonts.first, contains('overdose'));
   });
@@ -55,14 +55,26 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('The peak'), findsOneWidget);
+    expect(find.textContaining('The peak'), findsWidgets);
+    expect(find.byKey(const Key('you-are-here')), findsOneWidget);
+    expect(find.byKey(const Key('comfort-card')), findsOneWidget);
     await tester.tap(find.byKey(const Key('sym-chestPain')));
     await tester.pump();
     await tester.ensureVisible(find.byKey(const Key('save-checkin')));
     await tester.tap(find.byKey(const Key('save-checkin')));
     await tester.pumpAndSettle();
-    expect(find.text('Please get help today'), findsOneWidget);
+    expect(find.byKey(const Key('red-flag-card')), findsOneWidget);
+    expect(find.text('See a doctor today'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('doctor-yes')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('doctor-card')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('support-no')));
+    await tester.pumpAndSettle();
+    expect(find.text('Your way'), findsOneWidget);
+    expect(find.textContaining('Call '), findsNothing);
     expect(find.byKey(const Key('open-sos')), findsWidgets);
     expect(find.textContaining('14416'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(minutes: 10));
   });
 }
