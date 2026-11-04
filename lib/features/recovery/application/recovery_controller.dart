@@ -9,6 +9,7 @@ import '../../companion/domain/companion_state.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
+import '../domain/double_tap.dart';
 import '../domain/relapse_cooldown.dart';
 import '../domain/craving_entry.dart';
 import '../domain/dose_units.dart';
@@ -812,20 +813,28 @@ class RecoveryController extends ChangeNotifier {
   }
 
   /// When the reset that started the current streak was written down. A
-  /// relapse logged "3 h ago" was recorded now, not 3 h ago.
+  /// relapse logged "3 h ago" was recorded now, not 3 h ago. The current
+  /// streak starts at the latest reset by *occurred* time, whatever order
+  /// the resets were saved in; old entries without `recordedAt` count as
+  /// recorded when they occurred.
   DateTime? _latestResetRecordedAt() {
     RecoveryEvent? latest;
     for (final e in events) {
-      if (e.type != RecoveryEventType.relapse) continue;
-      if (latest == null || e.timestamp.isAfter(latest.timestamp)) latest = e;
+      if (e.type != RecoveryEventType.relapse &&
+          e.type != RecoveryEventType.recoveryStart) {
+        continue;
+      }
+      if (latest == null || !e.timestamp.isBefore(latest.timestamp)) {
+        latest = e;
+      }
     }
-    final raw = latest?.metadata['recordedAt'];
-    return raw is String ? DateTime.tryParse(raw) : null;
+    if (latest == null) return null;
+    return recordedAtOf(latest) ?? latest.timestamp;
   }
 
   /// P0-5 one-tap "Used": logs a relapse at now. A second tap inside
-  /// [quickUseDedupWindow] is a double-tap, not a second use, and is ignored.
-  static const quickUseDedupWindow = Duration(seconds: 45);
+  /// [doubleTapWindow] is a double-tap, not a second use, and is ignored
+  /// (same rule as the v12 data fix, see double_tap.dart).
   bool _quickUseInFlight = false;
 
   Future<ProtectedActionResult> quickLogUsed({
@@ -834,14 +843,19 @@ class RecoveryController extends ChangeNotifier {
     bool tryBiometrics = true,
   }) async {
     final now = DateTime.now();
+    final candidate = RecoveryEvent.create(
+      type: RecoveryEventType.relapse,
+      timestamp: now,
+      metadata: {'recordedAt': now.toIso8601String(), 'quick': true},
+    );
     final duplicate =
         _quickUseInFlight ||
-        events.any((e) {
-          if (e.type != RecoveryEventType.relapse) return false;
-          if (e.metadata['quick'] != true) return false;
-          final at = DateTime.tryParse('${e.metadata['recordedAt']}');
-          return at != null && now.difference(at).abs() < quickUseDedupWindow;
-        });
+        events.any(
+          (e) =>
+              e.type == RecoveryEventType.relapse &&
+              e.metadata['quick'] == true &&
+              isDoubleTap(e, candidate),
+        );
     if (duplicate) return ProtectedActionResult.completed;
     _quickUseInFlight = true;
     try {

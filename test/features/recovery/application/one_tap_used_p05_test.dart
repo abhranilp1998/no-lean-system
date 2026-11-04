@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
+import 'package:no_lean/features/recovery/domain/double_tap.dart';
 import 'package:no_lean/features/recovery/domain/milestones.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
 import 'package:no_lean/features/recovery/presentation/relapse_log_sheet.dart';
@@ -98,6 +99,129 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  test('out-of-order backfills still never celebrate', () async {
+    final c = RecoveryController(relapseLock: FakeRelapseLock());
+    await c.load();
+    await c.recordRelapse(
+      occurredAt: [DateTime.now().subtract(const Duration(days: 3, hours: 1))],
+    );
+    await c.syncMilestones();
+    // An even older relapse saved afterwards must not change the streak's
+    // reset or wake any milestone.
+    await c.recordRelapse(
+      occurredAt: [DateTime.now().subtract(const Duration(days: 8))],
+    );
+    expect(await c.syncMilestones(), isNull);
+    expect(c.pendingCelebration, isNull);
+    final m = c.events.where((e) => e.type == RecoveryEventType.milestone);
+    expect(m.every((e) => e.metadata['backfilled'] == true), isTrue);
+  });
+
+  test('a live relapse does not mark future milestones as backfilled', () {
+    final now = DateTime(2026, 11, 4, 20);
+    for (final m in recoveryMilestones) {
+      expect(
+        milestoneIsBackfilled(
+          milestone: m,
+          lastDose: now,
+          resetRecordedAt: now,
+        ),
+        isFalse,
+      );
+    }
+  });
+
+  test('every entry of a multi-entry save shares one batchId', () async {
+    final c = RecoveryController(relapseLock: FakeRelapseLock());
+    await c.load();
+    await c.recordRelapse(occurredAt: [relapseHoursAgo(6), relapseHoursAgo(2)]);
+    await c.quickLogUsed();
+    final r = relapses(c);
+    final multi = r.sublist(r.length - 3, r.length - 1);
+    expect(multi.map((e) => e.metadata['batchId']).toSet(), hasLength(1));
+    expect(multi.first.metadata['batchId'], isA<String>());
+    expect(r.last.metadata['batchId'], isNot(multi.first.metadata['batchId']));
+  });
+
+  group('shared double-tap rule', () {
+    final t = DateTime(2026, 10, 6, 18, 44, 32);
+    RecoveryEvent ev(
+      RecoveryEventType type,
+      DateTime at, {
+      Map<String, dynamic> m = const {},
+    }) => RecoveryEvent.fromJson({
+      'id': '${type.name}-${at.millisecondsSinceEpoch}-${m.hashCode}',
+      'type': type.name,
+      'timestamp': at.toIso8601String(),
+      'metadata': m,
+    });
+    test('identical cravings 3 s apart are a double-tap', () {
+      final m = {'intensity': 5, 'trigger': 'stress', 'note': ''};
+      expect(
+        isDoubleTap(
+          ev(RecoveryEventType.craving, t, m: m),
+          ev(
+            RecoveryEventType.craving,
+            t.add(const Duration(seconds: 3)),
+            m: m,
+          ),
+        ),
+        isTrue,
+      );
+    });
+    test('same batch, pledges and blank-note backfills are never touched', () {
+      final rec = t.toIso8601String();
+      expect(
+        isDoubleTap(
+          ev(
+            RecoveryEventType.relapse,
+            t,
+            m: {'recordedAt': rec, 'note': 'x', 'batchId': 'b'},
+          ),
+          ev(
+            RecoveryEventType.relapse,
+            t,
+            m: {'recordedAt': rec, 'note': 'x', 'batchId': 'b'},
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        isDoubleTap(
+          ev(RecoveryEventType.pledge, t),
+          ev(RecoveryEventType.pledge, t),
+        ),
+        isFalse,
+      );
+      final past = t.subtract(const Duration(hours: 3));
+      expect(
+        isDoubleTap(
+          ev(
+            RecoveryEventType.relapse,
+            past,
+            m: {'recordedAt': rec, 'batchId': 'a'},
+          ),
+          ev(
+            RecoveryEventType.relapse,
+            past,
+            m: {'recordedAt': rec, 'batchId': 'b'},
+          ),
+        ),
+        isFalse,
+      );
+    });
+    test('outside the window is not a double-tap', () {
+      final m = {'intensity': 5, 'trigger': 'stress'};
+      expect(
+        isDoubleTap(
+          ev(RecoveryEventType.craving, t, m: m),
+          ev(RecoveryEventType.craving, t.add(doubleTapWindow * 2), m: m),
+        ),
+        isFalse,
+      );
+    });
   });
 
   test('relapseHoursAgo rounds to the minute, never future', () {
