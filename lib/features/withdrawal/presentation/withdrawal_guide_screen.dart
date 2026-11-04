@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -9,6 +11,7 @@ import '../../companion/presentation/struggling_screen.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/recovery_event.dart';
+import '../../recovery/domain/use_check.dart';
 import '../data/symptom_checkin_store.dart';
 import '../domain/companion.dart';
 import '../domain/withdrawal_guide.dart';
@@ -57,6 +60,13 @@ class _State extends ConsumerState<WithdrawalGuideScreen> {
   Future<void> _save() async {
     final c = SymptomCheckIn(at: DateTime.now(), severities: Map.of(_picked));
     await ref.read(symptomCheckInStoreProvider).add(c);
+    if (isWithdrawalSpike(c)) {
+      unawaited(
+        ref
+            .read(recoveryProvider)
+            .queueUseCheck(UseCheckTrigger.withdrawalSpike, at: c.at),
+      );
+    }
     setState(() {
       _history = [c, ..._history];
       _picked.clear();

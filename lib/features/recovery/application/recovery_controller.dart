@@ -21,6 +21,7 @@ import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
 import '../domain/relapse_log_entry.dart';
 import '../domain/milestones.dart';
+import '../domain/use_check.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
@@ -88,7 +89,10 @@ class RecoveryController extends ChangeNotifier {
     ZoneEntryInbox? zoneInbox,
     Future<bool> Function(DateTime at)? scheduleCravingCheck,
     Future<void> Function()? cancelCravingCheck,
-  }) : _scheduleCravingCheck =
+    Future<bool> Function(UseCheck check)? scheduleUseCheck,
+  }) : _scheduleUseCheck =
+           scheduleUseCheck ?? NotificationService.instance.scheduleUseCheck,
+       _scheduleCravingCheck =
            scheduleCravingCheck ??
            ((at) => NotificationService.instance.scheduleCravingCheck(at: at)),
        _cancelCravingCheck =
@@ -118,6 +122,17 @@ class RecoveryController extends ChangeNotifier {
   static const stateVersion = 16;
 
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
+  final Future<bool> Function(UseCheck check) _scheduleUseCheck;
+
+  /// (A) Queues the "Did you use?" follow-up. Never blocks local history.
+  Future<void> queueUseCheck(UseCheckTrigger trigger, {DateTime? at}) async {
+    try {
+      await _scheduleUseCheck(
+        UseCheck(trigger: trigger, triggeredAt: at ?? _now()),
+      );
+    } catch (_) {}
+  }
+
   final Future<void> Function() _cancelCravingCheck;
 
   final ZoneEntryInbox _zoneInbox;
@@ -1087,6 +1102,7 @@ class RecoveryController extends ChangeNotifier {
         /* Notifications never block local history. */
       }
     }
+    unawaited(queueUseCheck(UseCheckTrigger.craving, at: event.timestamp));
     return event.id;
   }
 
@@ -1277,13 +1293,18 @@ class RecoveryController extends ChangeNotifier {
     _sortAndRecompute();
   });
 
-  Future<String> startSosSession({String? id, DateTime? startedAt}) =>
-      _transaction(() async {
-        final startId = id ?? const Uuid().v4();
-        _ensureSosStart(startId, startedAt ?? DateTime.now());
-        _sortAndRecompute();
-        return startId;
-      });
+  /// Also queues (A)'s follow-up, so an SOS that ends without an outcome
+  /// (closed, killed) is still asked about.
+  Future<String> startSosSession({String? id, DateTime? startedAt}) async {
+    final startId = await _transaction(() async {
+      final startId = id ?? const Uuid().v4();
+      _ensureSosStart(startId, startedAt ?? DateTime.now());
+      _sortAndRecompute();
+      return startId;
+    });
+    unawaited(queueUseCheck(UseCheckTrigger.sos, at: startedAt));
+    return startId;
+  }
 
   RecoveryEvent _ensureSosStart(String startId, DateTime startedAt) {
     final existing = events.where((event) => event.id == startId).firstOrNull;

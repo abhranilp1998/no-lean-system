@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../features/recovery/domain/use_check.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/services/app_feedback.dart';
@@ -133,6 +135,8 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         await _openSos();
       } else if (choice == ZoneAlertChoice.craving) {
         await showCravingDialog(context, ref);
+      } else if (choice == ZoneAlertChoice.exit) {
+        unawaited(recovery.queueUseCheck(UseCheckTrigger.zoneExit));
       }
     } finally {
       _zoneAlertOpen = false;
@@ -353,6 +357,10 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       _openCodeInstead('notification');
     } else if (actionId == 'action_used') {
       _handleWidgetAction('used');
+    } else if (actionId == 'action_use_yes' ||
+        actionId == 'action_use_no' ||
+        actionId == 'action_use_later') {
+      unawaited(_answerUseCheck(actionId));
     } else if (actionId == 'action_safe') {
       unawaited(_checkIn());
     } else if (actionId == 'action_recheck') {
@@ -362,6 +370,37 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       } else {
         AppNotice.show(context, 'NO CRAVING WAITING FOR A RECHECK.');
       }
+    }
+  }
+
+  /// (A) YES opens the past-relapse logger prefilled with the trigger time;
+  /// NO counts as a safe check-in; LATER asks again in 30 minutes.
+  Future<void> _answerUseCheck(String actionId) async {
+    final service = NotificationService.instance;
+    final check = await service.takePendingUseCheck();
+    if (!mounted) return;
+    final now = DateTime.now();
+    if (actionId == 'action_use_later') {
+      if (check != null) {
+        await service.scheduleUseCheck(check, at: now.add(useCheckSnooze));
+      }
+      if (mounted) AppNotice.show(context, 'OK. I\'LL ASK AGAIN IN 30 MIN.');
+    } else if (actionId == 'action_use_no') {
+      await _checkIn();
+    } else {
+      if (_resolveLock() != null) {
+        _deferredRelapse = true;
+        AppNotice.show(
+          context,
+          'Unlock to log it. Thank you for being honest.',
+        );
+        return;
+      }
+      await showRelapseLogSheet(
+        context,
+        source: 'use_check',
+        initialOccurredAt: check == null ? null : useCheckPrefill(check, now),
+      );
     }
   }
 

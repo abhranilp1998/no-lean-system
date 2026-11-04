@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../domain/use_check.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -412,6 +415,77 @@ class NotificationService {
     } catch (_) {
       // Optional on tests and unsupported platforms.
     }
+  }
+
+  static const useCheckId = 740;
+  static const useCheckPrefsKey = 'use_check_pending_v1';
+
+  /// (A) "Did you use?" with YES / NO / LATER. The trigger is kept in prefs
+  /// so a tapped action (which carries no payload) can prefill the logger.
+  Future<bool> scheduleUseCheck(UseCheck check, {DateTime? at}) async {
+    final due = at ?? check.dueAt;
+    final store = await SharedPreferences.getInstance();
+    await store.setString(useCheckPrefsKey, check.encode());
+    if (!prefs.allows(NotificationKind.cravingCheck, due)) return false;
+    final text = prefs.textFor(
+      'DID YOU USE?',
+      '${check.trigger.body} Did you use? Either answer is OK.',
+    );
+    try {
+      await _initialize(requestPermission: true);
+      await scheduleWithExactFallback(
+        exactAllowed: await exactAlarmsAllowed(),
+        schedule: (mode) => _plugin.zonedSchedule(
+          useCheckId,
+          text.title,
+          text.body,
+          tz.TZDateTime.from(due, tz.local),
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              'use_check_v1',
+              'NO LEAN follow-up check-in',
+              channelDescription: 'Asks "did you use?" after a risky moment',
+              importance: Importance.defaultImportance,
+              priority: Priority.defaultPriority,
+              visibility: lockScreenVisibility,
+              category: AndroidNotificationCategory.reminder,
+              ticker: neutralNotificationText.title,
+              actions: [
+                AndroidNotificationAction(
+                  'action_use_yes',
+                  prefs.label('YES', 'YES'),
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+                AndroidNotificationAction(
+                  'action_use_no',
+                  prefs.label('NO', 'NO'),
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+                AndroidNotificationAction(
+                  'action_use_later',
+                  prefs.label('LATER', 'LATER'),
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+              ],
+            ),
+          ),
+          androidScheduleMode: mode,
+        ),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<UseCheck?> takePendingUseCheck({bool clear = true}) async {
+    final store = await SharedPreferences.getInstance();
+    final check = UseCheck.decode(store.getString(useCheckPrefsKey));
+    if (clear) await store.remove(useCheckPrefsKey);
+    return check;
   }
 
   static const cravingCheckId = 710;
