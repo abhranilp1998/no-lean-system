@@ -16,6 +16,7 @@ import '../domain/effect_intensity.dart';
 import '../domain/events_csv.dart';
 import '../domain/legacy_recovery_migration.dart';
 import '../domain/quantity_upgrade.dart';
+import '../domain/data_fixes_v12.dart';
 import '../domain/recovery_event.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../letters/domain/future_letter.dart';
@@ -93,7 +94,9 @@ class BackupService {
   /// `stretchedWidgetView` preference; older formats keep the current choice.
   /// Format 11 adds `companion` (substances, triggers, reach-out texts,
   /// message history, slip notes); older formats import without it.
-  static const int currentBackupVersion = 11;
+  /// v12: (C) data fixes — dose amount/unit consistency, lean brands,
+  /// double-tap dedupe. Older backups are fixed on read.
+  static const int currentBackupVersion = 12;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
@@ -420,9 +423,11 @@ class BackupService {
       }
       var map = Map<String, dynamic>.from(decoded);
       var upgradeQuantities = false;
+      var applyV12Fixes = false;
       if (!map.containsKey('version') && map['stateVersion'] is int) {
         final stateVersion = map['stateVersion'] as int;
         upgradeQuantities = stateVersion < 12;
+        applyV12Fixes = stateVersion < 17;
         if (stateVersion < 2 ||
             stateVersion > RecoveryController.stateVersion) {
           throw FormatException(
@@ -448,6 +453,7 @@ class BackupService {
       // Convert only quantities whose units establish the volume/count.
       // Legacy bottle notes stay text: no historical size was recorded.
       if (version <= 6) upgradeQuantities = true;
+      if (version < 12) applyV12Fixes = true;
 
       final rawEvents = map['events'];
       if (rawEvents is! List) {
@@ -479,6 +485,22 @@ class BackupService {
           );
         }
         events.add(upgradeQuantities ? upgradeEventQuantity(event) : event);
+      }
+      if (applyV12Fixes) {
+        final bottle =
+            map['bottleMl'] ??
+            (map['preferences'] is Map
+                ? (map['preferences'] as Map)['bottleMl']
+                : null);
+        final fixed = applyDataFixesV12(
+          events,
+          bottleMl: isValidBottleMl(bottle is num ? bottle : null)
+              ? (bottle as num).toDouble()
+              : defaultBottleMl,
+        );
+        events
+          ..clear()
+          ..addAll(fixed);
       }
       events.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 

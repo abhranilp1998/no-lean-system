@@ -62,7 +62,7 @@ final _alcoholWords = RegExp(
   caseSensitive: false,
 );
 final _codeineWords = RegExp(
-  r'\b(codeine|lean|syrup|cough|corex|phensedyl|tramadol)\b',
+  r'\b(codeine|lean|syrup|cough|corex|phensedyl|ascoril[\s-]*c|tramadol)\b',
   caseSensitive: false,
 );
 

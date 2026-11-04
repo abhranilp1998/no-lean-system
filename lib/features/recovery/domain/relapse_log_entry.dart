@@ -1,4 +1,5 @@
 import 'dose_units.dart';
+import 'data_fixes_v12.dart';
 
 enum RelapseType { fullLean, partial, alcohol, benzo, leanPlusAlcohol, other }
 
@@ -103,8 +104,16 @@ class RelapseLogEntry {
     }
   }
 
+  /// (C) "Ascoril C", "Phensedyl"… logged as OTHER are lean.
+  RelapseType get effectiveType =>
+      type == RelapseType.other &&
+          mentionsLeanBrand('$normalizedNote ${normalizedQuantity ?? ''}')
+      ? RelapseType.fullLean
+      : type;
+
   Map<String, dynamic> toMetadata() => {
-    'relapseType': type.name,
+    'relapseType': effectiveType.name,
+    if (effectiveType != type) 'relapseTypeFrom': type.name,
     'note': normalizedNote,
     'attemptedSos': attemptedSos,
     'quantity': ?normalizedQuantity,

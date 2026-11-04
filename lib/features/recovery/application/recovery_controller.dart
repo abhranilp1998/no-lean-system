@@ -18,6 +18,7 @@ import '../domain/effect_intensity.dart';
 import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
 import '../domain/relapse_log_entry.dart';
+import '../domain/data_fixes_v12.dart';
 import '../domain/milestones.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
@@ -113,7 +114,8 @@ class RecoveryController extends ChangeNotifier {
   /// Older states load with `auto`.
   /// v16 adds `companion` (substances, triggers, reach-out texts, message
   /// history, slip notes). v13–v15 snapshots load with defaults.
-  static const stateVersion = 16;
+  /// v17: (C) data fixes (see data_fixes_v12.dart), applied once on read.
+  static const stateVersion = 17;
 
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
   final Future<void> Function() _cancelCravingCheck;
@@ -352,6 +354,9 @@ class RecoveryController extends ChangeNotifier {
       _restoreSettings(map);
       if (stored != null && version is int && version < 12) {
         events = upgradeQuantityText(events);
+      }
+      if (stored != null && version is int && version < 17) {
+        events = applyDataFixesV12(events, bottleMl: bottleMl);
       }
       zones = DangerZone.decodeList(map['zones']);
       futureLetters = _decodeLetters(map['futureLetters']);
@@ -981,6 +986,19 @@ class RecoveryController extends ChangeNotifier {
   /// Logs a craving and schedules the 15-minute recheck prompt (unless it
   /// would land in quiet hours). Returns the new event id.
   Future<String> recordCraving(CravingEntry entry) async {
+    // (C) A double-tap on SAVE is one craving, not two.
+    final twin = events.reversed
+        .where(
+          (e) =>
+              e.type == RecoveryEventType.craving &&
+              e.timestamp.difference(entry.createdAt).abs() <=
+                  doubleTapWindow &&
+              e.metadata['intensity'] == entry.intensity &&
+              e.metadata['trigger'] == entry.trigger &&
+              e.metadata['note'] == entry.note,
+        )
+        .firstOrNull;
+    if (twin != null) return twin.id;
     final event = RecoveryEvent.create(
       type: RecoveryEventType.craving,
       timestamp: entry.createdAt,
