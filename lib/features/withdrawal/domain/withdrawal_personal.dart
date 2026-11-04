@@ -293,3 +293,33 @@ PersonalPlan buildPlan({
     noData: relapses.isEmpty && peak == null,
   );
 }
+
+/// Visual weights of the Early / Peak / Easing segments on the stage bar.
+/// Segments are drawn with these weights (not their raw hour spans) so short
+/// stages stay readable; [timelineFraction] maps hours piecewise-linearly onto
+/// the same weights so the marker lands at its true spot inside its segment.
+const List<double> kTimelineWeights = [1, 1.5, 1.5];
+
+/// 0..1 position of [hours] on the stage bar drawn with [kTimelineWeights].
+double timelineFraction(double hours, Course c) {
+  final bounds = [
+    0.0,
+    c.peakStartH.toDouble(),
+    c.peakEndH.toDouble(),
+    c.acuteEndH.toDouble(),
+  ];
+  final total = kTimelineWeights.reduce((a, b) => a + b);
+  if (hours.isNaN || hours <= 0) return 0;
+  if (hours >= bounds.last) return 1;
+  var acc = 0.0;
+  for (var i = 0; i < 3; i++) {
+    final from = bounds[i], to = bounds[i + 1];
+    if (hours < to) {
+      final span = to - from;
+      final local = span <= 0 ? 0.0 : (hours - from) / span;
+      return (acc + local * kTimelineWeights[i]) / total;
+    }
+    acc += kTimelineWeights[i];
+  }
+  return 1;
+}

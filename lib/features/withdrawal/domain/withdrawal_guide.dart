@@ -42,7 +42,10 @@ const withdrawalStages = <WithdrawalStage>[
     normalNow:
         'This is usually the hardest stretch: cramps, diarrhoea, nausea or '
         'vomiting, goosebumps, hot and cold spells, aches, strong cravings and '
-        'poor sleep. It feels awful but is rarely dangerous on its own.',
+        'poor sleep. The main danger is losing fluids from vomiting and '
+        'diarrhoea, so keep sipping. Going through it alone can be risky; '
+        'have someone check on you. Fainting, chest pain, confusion or not '
+        'keeping fluids down: go to a hospital or call your SOS contact.',
     comingNext:
         'Most people start to feel the worst lift between day 3 and day 5. '
         'Keep sipping fluids and resting; each hour you get through counts.',
@@ -302,7 +305,7 @@ const infoSections = <InfoSection>[
   InfoSection('What changes how bad it gets', [
     'Higher daily dose and more years of use mean stronger, longer symptoms.',
     'Stop-start use restarts the clock; a short slip usually gives a milder round.',
-    'Tapering with a doctor (or buprenorphine-assisted withdrawal) is gentler than stopping at once. Stopping at once is harder but rarely dangerous for a healthy adult.',
+    'Tapering with a doctor (or buprenorphine-assisted withdrawal) is gentler than stopping at once. Stopping at once is harder; the main risk is dehydration from vomiting and diarrhoea, and withdrawing alone can be dangerous. If you also take benzos (Valium, alprazolam) or drink heavily every day, never stop those suddenly: that can cause seizures, so taper with a doctor.',
     'Heart problems, epilepsy, pregnancy or mental health conditions need a doctor before stopping.',
   ]),
   InfoSection('Over-the-counter relief (adults)', [
