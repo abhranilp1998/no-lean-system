@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Art fills any size via centre-crop, so resizing never leaves dead space. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/garden_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/no_lean_widget_background"
+    android:clipToOutline="true">
+
+    <ImageView
+        android:id="@+id/garden_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/garden_description"
+        android:scaleType="centerCrop" />
+
+    <TextView
+        android:id="@+id/garden_empty"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:fontFamily="monospace"
+        android:text="@string/garden_empty"
+        android:textColor="@color/widget_muted"
+        android:textSize="12sp" />
+</FrameLayout>

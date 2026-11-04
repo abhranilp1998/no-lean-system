@@ -1,5 +1,8 @@
 package com.nolean.no_lean
 
+import android.os.Build
+import android.content.ComponentName
+import android.appwidget.AppWidgetManager
 import android.content.Intent
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -40,6 +43,8 @@ class MainActivity : FlutterFragmentActivity() {
                 val hasPledgedToday = call.argument<Boolean>("hasPledgedToday") ?: false
                 val lastDoseEpochMillis = call.argument<Number>("lastDoseEpochMillis")?.toLong()
                 val privacy = call.argument<Boolean>("privacy") ?: false
+                val riskStart = call.argument<Number>("riskStartMinutes")?.toInt()
+                val riskEnd = call.argument<Number>("riskEndMinutes")?.toInt()
                 val editor = getSharedPreferences(NoLeanWidgetProvider.PREFERENCES_NAME, MODE_PRIVATE).edit()
                     .putString("clean_time", cleanTime)
                     .putString("streak_days", streak)
@@ -55,10 +60,46 @@ class MainActivity : FlutterFragmentActivity() {
                 } else if (lastDoseEpochMillis != null && lastDoseEpochMillis > 0L) {
                     editor.putLong(NoLeanWidgetProvider.KEY_LAST_DOSE_EPOCH_MILLIS, lastDoseEpochMillis)
                 }
+                if (riskStart != null && riskEnd != null) {
+                    editor.putInt(NightTimelineWidgetProvider.KEY_RISK_START, riskStart)
+                        .putInt(NightTimelineWidgetProvider.KEY_RISK_END, riskEnd)
+                }
                 editor.apply()
 
                 NoLeanWidgetProvider.updateAllWidgets(this)
                 result.success(null)
+            } else if (call.method == "art") {
+                val editor = WidgetPack.prefs(this).edit()
+                call.argument<String>("gardenDir")?.let { editor.putString(WidgetPack.KEY_GARDEN_DIR, it) }
+                call.argument<String>("gardenToday")?.let { editor.putString(WidgetPack.KEY_GARDEN_TODAY, it) }
+                call.argument<String>("gardenTomorrow")?.let { editor.putString(WidgetPack.KEY_GARDEN_TOMORROW, it) }
+                call.argument<String>("radarPath")?.let { editor.putString(WidgetPack.KEY_RADAR_PATH, it) }
+                call.argument<Number>("radarZones")?.let { editor.putInt(WidgetPack.KEY_RADAR_ZONES, it.toInt()) }
+                call.argument<Boolean>("hasNotes")?.let { editor.putBoolean(WidgetPack.KEY_HAS_NOTES, it) }
+                call.argument<String>("stretchedView")?.let { editor.putString(StretchedViews.KEY_DEFAULT, it) }
+                editor.apply()
+                // Redraws every widget, so a new choice shows immediately.
+                NoLeanWidgetProvider.updateAllWidgets(this)
+                result.success(null)
+            } else if (call.method == "pinWidget") {
+                val type = call.argument<String>("kind")?.let { StretchedViews.providerFor(it) }
+                val manager = AppWidgetManager.getInstance(this)
+                if (type == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O || !manager.isRequestPinAppWidgetSupported) {
+                    result.success(false)
+                } else {
+                    result.success(manager.requestPinAppWidget(ComponentName(this, type), null, null))
+                }
+            } else if (call.method == "placedWidgets") {
+                result.success(StretchedViews.placed(this))
+            } else if (call.method == "setWidgetView") {
+                val id = call.argument<Number>("id")?.toInt()
+                if (id == null) {
+                    result.error("bad_args", "id is required", null)
+                } else {
+                    StretchedViews.setOverride(this, id, call.argument<String>("view"))
+                    NoLeanWidgetProvider.updateAllWidgets(this)
+                    result.success(null)
+                }
             } else {
                 result.notImplemented()
             }
@@ -136,6 +177,7 @@ class MainActivity : FlutterFragmentActivity() {
     private fun widgetActionFrom(intent: Intent?): String? {
         return when (val action = intent?.getStringExtra(EXTRA_WIDGET_ACTION)) {
             WIDGET_ACTION_SOS, WIDGET_ACTION_CRAVING, WIDGET_ACTION_RELAPSE, WIDGET_ACTION_CODE -> action
+            WIDGET_ACTION_WAVE, WIDGET_ACTION_MAP, WIDGET_ACTION_LETTER -> action
             else -> null
         }
     }
@@ -186,5 +228,8 @@ class MainActivity : FlutterFragmentActivity() {
         const val WIDGET_ACTION_CRAVING = "craving"
         const val WIDGET_ACTION_RELAPSE = "relapse"
         const val WIDGET_ACTION_CODE = "code"
+        const val WIDGET_ACTION_WAVE = "wave"
+        const val WIDGET_ACTION_MAP = "map"
+        const val WIDGET_ACTION_LETTER = "letter"
     }
 }

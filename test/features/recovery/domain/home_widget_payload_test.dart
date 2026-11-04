@@ -65,4 +65,30 @@ void main() {
     expect((calls.single.arguments as Map)['privacy'], isTrue);
     expect((calls.single.arguments as Map)['streak'], '');
   });
+
+  test('risk window minutes ride along for the night timeline', () {
+    final payload = homeWidgetPayload(
+      lastDose: lastDose,
+      cleanTime: '1d',
+      streak: 1,
+      isRiskWindow: false,
+      hasPledgedToday: false,
+      privacy: false,
+      riskStartMinutes: 18 * 60,
+      riskEndMinutes: 22 * 60,
+    );
+    expect(payload['riskStartMinutes'], 1080);
+    expect(payload['riskEndMinutes'], 1320);
+    final private = homeWidgetPayload(
+      lastDose: lastDose,
+      cleanTime: '1d',
+      streak: 1,
+      isRiskWindow: false,
+      hasPledgedToday: false,
+      privacy: true,
+      riskStartMinutes: 1080,
+      riskEndMinutes: 1320,
+    );
+    expect(private.containsKey('riskStartMinutes'), isFalse);
+  });
 }

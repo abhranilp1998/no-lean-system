@@ -63,12 +63,15 @@
         </activity>
         <receiver
             android:name=".NoLeanWidgetProvider"
-            android:exported="true">
+            android:exported="true"
+            android:label="NO LEAN 4x2">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <!-- Redraw placed widgets right after an app update. -->
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
@@ -98,6 +101,84 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/no_lean_widget_large_info" />
         </receiver>
+        <!-- Night timeline: risk window hour by hour, resizable to full screen. -->
+        <receiver
+            android:name=".NightTimelineWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN Tonight">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/night_timeline_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".GardenWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN Garden">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/garden_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".NoLeanFullWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN Full">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/no_lean_full_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".NoteWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN Note">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/note_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".EveningShieldWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN Evening">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/evening_shield_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".RadarWidgetProvider"
+            android:exported="true"
+            android:label="NO LEAN Map">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/radar_widget_info" />
+        </receiver>
+        <!-- Quick Settings tile: opens the wave screen. Discreet label. -->
+        <service
+            android:name=".CravingWaveTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_no_lean"
+            android:label="@string/wave_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
         <!-- Required by flutter_local_notifications 16+ to deliver scheduled
              notifications and restore them after a reboot or app update. -->
         <receiver

@@ -21,6 +21,7 @@ Future<void> exportRecoveryData(
       recovery.events,
       preferences: recovery.portablePreferences,
       zones: recovery.zones,
+      letters: recovery.futureLetters,
     );
     if (saved && context.mounted) {
       AppNotice.show(
@@ -88,6 +89,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
       var result = await recovery.mergeImportedEvents(
         preview.events,
         importedZones: preview.zones,
+        importedLetters: preview.letters,
         preferences: preview.preferences,
         restorePreferences: choice.restorePreferences,
       );
@@ -101,6 +103,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
         result = await recovery.mergeImportedEvents(
           preview.events,
           importedZones: preview.zones,
+          importedLetters: preview.letters,
           preferences: preview.preferences,
           restorePreferences: choice.restorePreferences,
           pin: pin,

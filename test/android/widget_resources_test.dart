@@ -18,7 +18,7 @@ void main() {
 
   test('each size layout has exactly the views its flags promise', () {
     final sizes = RegExp(
-      r'(SMALL|MEDIUM|LARGE)\(R\.layout\.(\w+), (\w+), (\w+), (\w+), (\w+), (\w+)\)',
+      r'(SMALL|MEDIUM|LARGE)\(R\.layout\.(\w+), (\w+), (\w+), (\w+), (\w+), (\w+)[,)]',
     ).allMatches(source).toList();
     expect(sizes, hasLength(3));
     for (final size in sizes) {

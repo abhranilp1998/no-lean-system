@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Any full-screen view (chosen in the app, Settings > Widgets).
+     No maximum size. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:previewImage="@drawable/no_lean_full_widget_preview"
+    android:minWidth="180dp"
+    android:minHeight="180dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="4"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/wave_widget"
+    android:description="@string/stretched_description"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen" />

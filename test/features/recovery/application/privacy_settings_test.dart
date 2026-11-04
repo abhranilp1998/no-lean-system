@@ -86,8 +86,8 @@ void main() {
       stored: v9State({'stateVersion': 12}),
     );
     expect(controller.positionNotification, isTrue);
-    // The key itself needed no bump; v13 is the app lock's.
-    expect(RecoveryController.stateVersion, 13);
+    // The key itself needed no bump; v14 is the notes'.
+    expect(RecoveryController.stateVersion, 15);
 
     await controller.setPositionNotification(false);
     final saved = jsonDecode(store.value!) as Map;
