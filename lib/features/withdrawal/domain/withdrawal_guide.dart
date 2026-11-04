@@ -143,7 +143,7 @@ class SymptomCheckIn {
     for (final e in s.entries) {
       final sym = Symptom.values.where((v) => v.name == e.key).firstOrNull;
       final v = e.value;
-      if (sym != null && v is int) out[sym] = v.clamp(1, 3);
+      if (sym != null && v is int) out[sym] = sym.isRedFlag ? 1 : v.clamp(1, 3);
     }
     return SymptomCheckIn(at: at, severities: out);
   }
@@ -192,7 +192,7 @@ List<GuideTip> reliefFor(Set<Symptom> s) {
     tips.add(
       const GuideTip(
         'Loperamide for diarrhoea',
-        'Adults: follow the pack (usually 4 mg first, then 2 mg after each loose stool, max 8 mg a day without a doctor). Never take more: high doses can cause dangerous heart rhythm problems. Don\'t use with fever or blood in stool.',
+        'Adults: follow the pack (usually 4 mg first, then 2 mg after each loose stool, max 12 mg in 24 hours and no more than 2 days without a doctor). Never take more: high doses can cause dangerous heart rhythm problems. Don\'t use with fever or blood in stool.',
       ),
     );
   }
@@ -242,7 +242,148 @@ class GuideSource {
   final String url;
 }
 
+class InfoSection {
+  const InfoSection(this.title, this.items);
+  final String title;
+  final List<String> items;
+}
+
+/// Hour-by-hour detail for the full stage view.
+const detailedStages = <InfoSection>[
+  InfoSection('0–6 hours', [
+    'Usually still comfortable.',
+    'First cravings, worry and restlessness.',
+    'Good time to prepare: ORS, water, simple food, a clean room, a plan for tonight.',
+  ]),
+  InfoSection('6–12 hours', [
+    'Yawning, watery eyes, runny nose, sweating.',
+    'Restless legs, anxiety, irritability.',
+    'Codeine wears off fast (half-life about 3 hours), so signs start early.',
+  ]),
+  InfoSection('12–24 hours', [
+    'Muscle and bone aches, goosebumps, hot and cold flushes.',
+    'Dilated pupils, poor sleep.',
+    'Antihistamines in the syrup (like chlorpheniramine) leave more slowly, so sleep and runny nose can lag a day or two.',
+  ]),
+  InfoSection('24–48 hours', [
+    'Peak begins: stomach cramps, diarrhoea, nausea or vomiting.',
+    'Strongest cravings, fast pulse, sweating, insomnia.',
+    'Dehydration is the main physical risk. Keep sipping ORS.',
+  ]),
+  InfoSection('48–72 hours', [
+    'Most people feel worst here.',
+    'Same symptoms as the peak, often with exhaustion.',
+    'Higher doses or years of use can push the peak to day 4.',
+  ]),
+  InfoSection('Day 3–5', [
+    'Physical symptoms start lifting.',
+    'Tired, low appetite, poor sleep, cravings still come in waves.',
+  ]),
+  InfoSection('Day 5–7', [
+    'Most body symptoms gone for typical doses.',
+    'Sleep and mood are still catching up.',
+  ]),
+  InfoSection('Day 7–14', [
+    'Heavy or long-term users may still have aches, gut upset and insomnia.',
+    'Rebound sleep problems from antihistamines usually settle.',
+  ]),
+  InfoSection('Weeks 2–4 (PAWS starts)', [
+    'Low mood, anxiety, low energy, poor focus, broken sleep.',
+    'Cravings triggered by places, people, evenings and stress.',
+  ]),
+  InfoSection('Months 1–6', [
+    'Waves get shorter and further apart.',
+    'Exercise, routine, sleep and talking to someone speed it up.',
+    'Relapse risk is highest here and tolerance is low: an old dose can be an overdose.',
+  ]),
+];
+
+const infoSections = <InfoSection>[
+  InfoSection('What changes how bad it gets', [
+    'Higher daily dose and more years of use mean stronger, longer symptoms.',
+    'Stop-start use restarts the clock; a short slip usually gives a milder round.',
+    'Tapering with a doctor (or buprenorphine-assisted withdrawal) is gentler than stopping at once. Stopping at once is harder but rarely dangerous for a healthy adult.',
+    'Heart problems, epilepsy, pregnancy or mental health conditions need a doctor before stopping.',
+  ]),
+  InfoSection('Over-the-counter relief (adults)', [
+    'ORS: one sachet in the stated amount of clean water; sip after each loose stool.',
+    'Paracetamol: 500 mg–1 g every 4–6 hours, max 4 g in 24 hours (less with liver problems, low weight or regular alcohol).',
+    'Ibuprofen: 200–400 mg every 6–8 hours with food, max 1,200 mg a day; avoid with ulcers, kidney or heart problems, some asthma, pregnancy.',
+    'Loperamide: 4 mg, then 2 mg after each loose stool; max 12 mg in 24 hours, no more than 2 days. Never more: risk of dangerous heart rhythms. Not with fever or blood in stool.',
+    'Hyoscine butylbromide (for cramps): 10–20 mg up to 4 times a day; not with glaucoma or trouble passing urine.',
+    'Cetirizine 10 mg once a day for runny nose. Sedating antihistamines only for an occasional night; never with alcohol or other sedatives.',
+    'Avoid all cough syrups.',
+  ]),
+  InfoSection('Doctor-only options', [
+    'Buprenorphine or methadone (supervised withdrawal or maintenance).',
+    'Clonidine or lofexidine for sweats, restlessness and cramps.',
+    'Anti-sickness medicines and short-term sleep help.',
+  ]),
+  InfoSection('Sleep', [
+    'Same bedtime and wake time, even after a bad night.',
+    'Dark, cool room; phone out of reach; no caffeine after noon.',
+    'Warm shower before bed relaxes aching muscles.',
+    'Resting with eyes closed still helps if sleep won\'t come.',
+    'Avoid sleeping pills and alcohol unless a doctor prescribes them.',
+  ]),
+  InfoSection('Food and hydration', [
+    'Aim for pale yellow urine; sip water or ORS all day.',
+    'Small bland meals: banana, rice, curd, khichdi, toast, dal.',
+    'Coconut water and soups help replace salts.',
+    'Skip spicy, oily food and lots of sugar during the peak.',
+  ]),
+  InfoSection('Red flags: see a doctor or go to the nearest hospital', [
+    'Can\'t keep fluids down for a day, very little dark urine, dizziness or fainting.',
+    'Blood in vomit or stool, chest pain or a racing heart.',
+    'Seizure, confusion, high fever.',
+    'Slow or shallow breathing or hard to wake after any use: emergency now.',
+    'Thoughts of hurting yourself: open SOS and reach your trusted contact now.',
+  ]),
+  InfoSection('PAWS (post-acute withdrawal)', [
+    'Weeks to months of up-and-down mood, anxiety, low energy, poor sleep and cravings.',
+    'It is a normal part of the brain healing, not failure.',
+    'Routine, movement, sunlight, protein-rich food and talking to someone help.',
+    'Keep your triggers list and evening plan close; cravings pass in minutes.',
+  ]),
+];
+
 const guideSources = <GuideSource>[
+  GuideSource(
+    'StatPearls (NIH): Codeine',
+    'https://www.ncbi.nlm.nih.gov/books/NBK526029/',
+  ),
+  GuideSource(
+    'StatPearls (NIH): Promethazine',
+    'https://www.ncbi.nlm.nih.gov/books/NBK544361/',
+  ),
+  GuideSource(
+    'MedlinePlus: Chlorpheniramine',
+    'https://medlineplus.gov/druginfo/meds/a682543.html',
+  ),
+  GuideSource(
+    'SAMHSA: Protracted Withdrawal advisory',
+    'https://store.samhsa.gov/product/advisory-protracted-withdrawal/sma10-4554',
+  ),
+  GuideSource(
+    'Wesson & Ling 2003: COWS scale',
+    'https://pubmed.ncbi.nlm.nih.gov/12924748/',
+  ),
+  GuideSource(
+    'Mattoo et al. 1997: Codeine cough syrup abuse in India',
+    'https://pubmed.ncbi.nlm.nih.gov/9581010/',
+  ),
+  GuideSource(
+    'Indian J Med Sci 1999: Subtypes of codeine syrup users',
+    'https://pubmed.ncbi.nlm.nih.gov/10798008/',
+  ),
+  GuideSource(
+    'NHS: Paracetamol',
+    'https://www.nhs.uk/medicines/paracetamol-for-adults/',
+  ),
+  GuideSource(
+    'NHS: Ibuprofen',
+    'https://www.nhs.uk/medicines/ibuprofen-for-adults/',
+  ),
   GuideSource(
     'MedlinePlus (NIH): Opiate and opioid withdrawal',
     'https://medlineplus.gov/ency/article/000949.htm',
