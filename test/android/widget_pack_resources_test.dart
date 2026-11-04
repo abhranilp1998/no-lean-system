@@ -207,7 +207,7 @@ void main() {
         'widget_date',
       }, reason: tall);
       final xml = File('$res/layout/$tall.xml').readAsStringSync();
-      // Buttons keep a normal height; the middle block takes the space.
+      // Buttons keep a slim fixed 38dp height; the middle block takes the space.
       expect(
         xml,
         isNot(
@@ -216,7 +216,7 @@ void main() {
           ),
         ),
       );
-      expect(xml, contains('android:layout_height="56dp"'));
+      expect(xml, contains('android:layout_height="38dp"'));
       expect(xml, contains('android:id="@+id/widget_middle"'));
     }
   });
