@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../emergency/presentation/emergency_screen.dart';
+import '../../zones/presentation/zones_screen.dart';
 import '../../letters/presentation/future_letters_screen.dart';
 import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
@@ -137,6 +138,18 @@ class _StrugglingState extends ConsumerState<StrugglingScreen> {
       Text(
         "You're not alone in this. Three quick taps and I'll pull up what helps right now.",
         style: Theme.of(context).textTheme.titleMedium,
+      ),
+      const SizedBox(height: 10),
+      // Plan P0-2: check "am I near a danger zone?" right from here.
+      OutlinedButton.icon(
+        key: const ValueKey('struggling-locate-me'),
+        icon: const Icon(Icons.my_location),
+        label: const Text('LOCATE ME: am I near a danger zone?'),
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const ZonesScreen(autoLocate: true),
+          ),
+        ),
       ),
       const SizedBox(height: 16),
       const Text(

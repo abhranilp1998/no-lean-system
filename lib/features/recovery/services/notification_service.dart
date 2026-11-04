@@ -282,6 +282,12 @@ class NotificationService {
                 cancelNotification: true,
               ),
               AndroidNotificationAction(
+                'action_locate',
+                policy.label('LOCATE ME', 'CHECK'),
+                showsUserInterface: true,
+                cancelNotification: true,
+              ),
+              AndroidNotificationAction(
                 'action_zone_exit',
                 policy.label('I\'M LEAVING', 'DISMISS'),
                 cancelNotification: true,

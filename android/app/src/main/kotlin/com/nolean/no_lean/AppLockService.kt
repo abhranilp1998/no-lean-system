@@ -170,12 +170,42 @@ class AppLockService : Service() {
                 } ?: continue
                 if (best == null || location.time > best.time) best = location
             }
-            val fix = best ?: return null
-            // A stale fix is not evidence of where the user is now.
-            if (System.currentTimeMillis() - fix.time > 10 * 60 * 1000L) return null
+            val now = System.currentTimeMillis()
+            // Plan P0-2: while armed, ask for a fresh fix instead of trusting a
+            // last-known one. The answer lands asynchronously in [freshFix].
+            requestFreshFix(manager, fine)
+            val fresh = freshFix
+            val fix = listOfNotNull(best, fresh).maxByOrNull { it.time } ?: return null
+            // Only a recent fix (2 min) is evidence of where the user is now.
+            if (now - fix.time > 2 * 60 * 1000L) return insideZone
             AppLockConfig.zoneFor(config.zones, fix, insideZone?.id)
         } catch (_: SecurityException) {
             null
+        }
+    }
+
+    @Volatile private var freshFix: Location? = null
+    private var lastFreshRequest = 0L
+
+    @Suppress("MissingPermission", "DEPRECATION")
+    private fun requestFreshFix(manager: LocationManager, fine: Boolean) {
+        val now = System.currentTimeMillis()
+        if (now - lastFreshRequest < 25_000L) return
+        lastFreshRequest = now
+        val provider = when {
+            fine && manager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+            manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
+            else -> return
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                manager.getCurrentLocation(provider, null, mainExecutor) { location ->
+                    if (location != null) freshFix = location
+                }
+            } else {
+                manager.requestSingleUpdate(provider, { location -> freshFix = location }, Looper.getMainLooper())
+            }
+        } catch (_: Exception) {
         }
     }
 

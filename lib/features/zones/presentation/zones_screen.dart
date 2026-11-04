@@ -25,7 +25,11 @@ import '../../timeline/presentation/timeline_screen.dart';
 import '../../timeline/domain/history_projection.dart';
 
 class ZonesScreen extends ConsumerStatefulWidget {
-  const ZonesScreen({super.key});
+  const ZonesScreen({this.autoLocate = false, super.key});
+
+  /// Opened from "Locate me" (I'm struggling, zone notification): get a
+  /// fresh fix straight away (plan P0-2).
+  final bool autoLocate;
 
   @override
   ConsumerState<ZonesScreen> createState() => _ZonesScreenState();
@@ -37,6 +41,16 @@ class _ZonesScreenState extends ConsumerState<ZonesScreen> {
   bool _locating = false;
   bool _tilesFailing = false;
   bool _tilesOkScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoLocate) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _locate();
+      });
+    }
+  }
 
   void _onTileError(TileImage tile, Object error, StackTrace? stackTrace) {
     if (!_tilesFailing && mounted) setState(() => _tilesFailing = true);
