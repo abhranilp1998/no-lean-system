@@ -184,8 +184,8 @@ class _State extends ConsumerState<WithdrawalGuideScreen> {
     // Timeline with "you are here".
     final c = plan.course;
     final total = c.acuteEndH.toDouble();
-    Widget seg(double fromH, double toH, Color color, String label) => Expanded(
-      flex: ((toH - fromH) / total * 1000).round().clamp(1, 1000),
+    Widget seg(int i, Color color, String label) => Expanded(
+      flex: (kTimelineWeights[i] * 100).round(),
       child: Column(
         children: [
           Container(height: 10, color: color),
@@ -201,32 +201,29 @@ class _State extends ConsumerState<WithdrawalGuideScreen> {
     );
     final timeline = LayoutBuilder(
       builder: (ctx, box) {
-        final x = (plan.acuteProgress * box.maxWidth).clamp(
-          0.0,
-          box.maxWidth - 2,
-        );
+        final w = box.maxWidth;
+        final frac = timelineFraction(plan.sinceLastUse.inMinutes / 60, c);
+        // Marker centre, kept 1px inside so the 2px line never clips.
+        final x = (frac * w).clamp(1.0, w - 1);
+        const labelW = 72.0;
+        final paws = h >= c.acuteEndH;
+        final labelLeft = (x - labelW / 2).clamp(0.0, w - labelW);
         return Stack(
+          key: const Key('stage-bar'),
           clipBehavior: Clip.none,
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 28),
               child: Row(
                 children: [
+                  seg(0, Colors.amber.shade300, 'Early\n0–${c.peakStartH}h'),
                   seg(
-                    0,
-                    c.peakStartH.toDouble(),
-                    Colors.amber.shade300,
-                    'Early\n0–${c.peakStartH}h',
-                  ),
-                  seg(
-                    c.peakStartH.toDouble(),
-                    c.peakEndH.toDouble(),
+                    1,
                     Colors.deepOrange.shade400,
                     'Peak\n${c.peakStartH}–${c.peakEndH}h',
                   ),
                   seg(
-                    c.peakEndH.toDouble(),
-                    total,
+                    2,
                     Colors.teal.shade300,
                     'Easing\nto day ${(total / 24).round()}',
                   ),
@@ -234,25 +231,31 @@ class _State extends ConsumerState<WithdrawalGuideScreen> {
               ),
             ),
             Positioned(
-              left: (x - 40).clamp(0.0, box.maxWidth - 80),
+              left: labelLeft,
               top: 0,
-              child: SizedBox(
-                width: 80,
-                child: Text(
-                  h >= c.acuteEndH ? 'PAWS ▶' : 'You ▼',
-                  key: const Key('you-are-here'),
-                  textAlign: TextAlign.center,
-                  style: t.labelMedium?.copyWith(
-                    color: accent,
-                    fontWeight: FontWeight.bold,
-                  ),
+              width: labelW,
+              child: Text(
+                paws ? 'PAWS' : 'You',
+                key: const Key('you-are-here'),
+                textAlign: TextAlign.center,
+                style: t.labelMedium?.copyWith(
+                  color: accent,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
+            // Triangle centred exactly on the marker line.
             Positioned(
-              left: x,
-              top: 22,
-              child: Container(width: 2, height: 22, color: accent),
+              key: const Key('you-triangle'),
+              left: x - 6,
+              top: 14,
+              child: Icon(Icons.arrow_drop_down, size: 12, color: accent),
+            ),
+            Positioned(
+              key: const Key('you-line'),
+              left: x - 1,
+              top: 24,
+              child: Container(width: 2, height: 20, color: accent),
             ),
           ],
         );
