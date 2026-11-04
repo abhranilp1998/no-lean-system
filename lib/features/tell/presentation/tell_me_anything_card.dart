@@ -99,6 +99,15 @@ class _TellState extends ConsumerState<TellMeAnythingCard> {
       const Text(
         'Saved for AP (the developer). It stays on this phone until you export it.',
       ),
+      _action(
+        'tell-export-feedback',
+        'SEND NOTES TO AP',
+        Icons.ios_share,
+        () => exportFeedbackToAp(
+          ref.read(feedbackStoreProvider),
+          share: ref.read(feedbackSharerProvider),
+        ),
+      ),
     ],
     TellKind.other => [
       const Text(
