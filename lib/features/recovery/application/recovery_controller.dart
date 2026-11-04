@@ -870,6 +870,7 @@ class RecoveryController extends ChangeNotifier {
     }
     zones = [...zones, ...newZones];
     if (restorePreferences && preferences != null) {
+      final previousWindow = riskWindow;
       _restoreSettings(
         Map<String, dynamic>.from(preferences)
           ..remove('requirePinAfterRelapse')
@@ -889,6 +890,23 @@ class RecoveryController extends ChangeNotifier {
           ..remove('insightPreferences')
           ..remove('pin'),
       );
+      if (riskWindow.startMinutes != previousWindow.startMinutes ||
+          riskWindow.endMinutes != previousWindow.endMinutes) {
+        // Same audit trail as a manual edit, so imports can't move the
+        // window silently.
+        events.add(
+          RecoveryEvent.create(
+            type: RecoveryEventType.settingsChange,
+            timestamp: _now(),
+            metadata: {
+              'setting': 'riskWindow',
+              'from': previousWindow.label,
+              'newValue': riskWindow.label,
+              'source': 'import',
+            },
+          ),
+        );
+      }
     }
     _ensureBaselineEvent();
     _sortAndRecompute();

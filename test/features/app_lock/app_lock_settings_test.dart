@@ -224,6 +224,73 @@ void main() {
     );
   });
 
+  testWidgets('settings shows Off as requested until native acknowledgement '
+      'and fixes permissions without stacking settings routes', (tester) async {
+    final gateway = FakeAppLockGateway(
+      currentStatus: const AppLockStatus(
+        supported: true,
+        usageAccess: true,
+        serviceRunning: true,
+      ),
+    );
+    final container = await pump(
+      tester,
+      const AppLockSettingsScreen(),
+      gateway,
+    );
+    container.read(appLockSyncPendingProvider.notifier).state = true;
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Off requested // waiting for Android confirmation'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('APP LOCK TURNING OFF'), findsOneWidget);
+    container.read(appLockSyncPendingProvider.notifier).state = false;
+    container.read(appLockSyncFailureProvider.notifier).state =
+        AppLockSyncFailure.deactivation;
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Off requested // Android has not confirmed stopping'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('APP LOCK UPDATE FAILED'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('app-lock-health-banner')),
+        matching: find.textContaining('Display over other apps'),
+      ),
+      findsOneWidget,
+    );
+    final fix = find.byKey(const ValueKey('app-lock-health-fix'));
+    await tester.ensureVisible(fix);
+    await tester.tap(fix);
+    await tester.pumpAndSettle();
+    expect(gateway.overlayRequests, 1);
+    expect(
+      find.byKey(const ValueKey('app-lock-settings'), skipOffstage: false),
+      findsOneWidget,
+    );
+    expect(
+      tester.state<NavigatorState>(find.byType(Navigator)).canPop(),
+      isFalse,
+    );
+    container.read(appLockSyncFailureProvider.notifier).state = null;
+    await tester.pumpAndSettle();
+    // Removing the warning shrinks the list above the toggle. Reveal it again
+    // before checking the acknowledged Off presentation.
+    final toggle = find.byKey(const ValueKey('app-lock-enabled'));
+    await tester.scrollUntilVisible(toggle, -200);
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('app-lock-enabled')),
+        matching: find.text('Off'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('revoked usage access shows a re-grant banner', (tester) async {
     final gateway = FakeAppLockGateway(
       currentStatus: const AppLockStatus(supported: true, overlay: true),

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
@@ -79,10 +80,11 @@ internal class DocumentExportChannel(
         val resolver = activity.applicationContext.contentResolver
         worker.execute {
             val failure = try {
-                DocumentBytes.writeAndVerify(
+                DocumentBytes.writeAndVerifyOrDelete(
                     request.bytes,
                     { resolver.openOutputStream(uri, "wt") },
                     { resolver.openInputStream(uri) },
+                    { DocumentsContract.deleteDocument(resolver, uri) },
                 )
                 false
             } catch (_: Exception) {

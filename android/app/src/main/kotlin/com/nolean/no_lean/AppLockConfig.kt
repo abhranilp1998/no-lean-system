@@ -164,12 +164,19 @@ class AppLockConfig private constructor(
             }
             prefs.edit().remove(KEY_PENDING_BLOCKS).commit()
             val now = System.currentTimeMillis()
+            val config = load(context)
             return (0 until array.length()).mapNotNull { i ->
                 val obj = array.optJSONObject(i) ?: return@mapNotNull null
                 // Stale requests (older than 2 minutes) are dropped.
                 if (now - obj.optLong("at", 0L) > 2 * 60 * 1000L) return@mapNotNull null
+                val packageName = obj.optString("packageName")
+                // Re-check device-specific essential apps at handoff time,
+                // even if Dart is waiting for a failed/pending policy update.
+                // External activity intents only trigger draining; they never
+                // supply this private service-validated queue's package data.
+                if (AppLockProtected.isProtected(context, packageName, config)) return@mapNotNull null
                 mapOf(
-                    "packageName" to obj.optString("packageName"),
+                    "packageName" to packageName,
                     "label" to obj.optString("label"),
                     "zoneName" to obj.optString("zoneName").takeIf { it.isNotBlank() },
                     "cause" to obj.optString("cause", "schedule"),

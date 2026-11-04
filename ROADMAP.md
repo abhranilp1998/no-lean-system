@@ -4,6 +4,17 @@ This roadmap describes direction, not promised dates. Work is ordered by user
 safety and data integrity first, recovery usefulness second, and visual polish
 third.
 
+## Active feedback-driven delivery plan
+
+The [27 October D1–D8 action plan](docs/DELIVERY_ACTION_PLAN_2026-10-27.md)
+sets the current implementation order and combines the export feedback,
+logging/progress fixes, protection diagnosis, three histories and multi-tagging.
+Use its [SOPs](docs/DELIVERY_SOPS.md),
+[verification matrix](docs/DELIVERY_VERIFICATION_MATRIX.md) and
+[starting baseline](docs/DELIVERY_BASELINE_2026-10-27.md).
+That sequence supersedes the older suggested sequence below; the production
+gates and product principles in this roadmap still apply.
+
 ## Product principles
 
 - Emergency actions must remain reachable in one deliberate tap.

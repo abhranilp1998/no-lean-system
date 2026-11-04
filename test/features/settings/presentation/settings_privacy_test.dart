@@ -50,6 +50,22 @@ void main() {
     return container;
   }
 
+  testWidgets('Settings opens its separate settings history', (tester) async {
+    final container = await pumpSettings(tester);
+    final c = container.read(recoveryProvider);
+    final before = c.events.map((e) => e.toJson()).toList();
+    final action = find.byKey(const ValueKey('settings-history'));
+    await tester.scrollUntilVisible(action, 250);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.text('History'), findsOneWidget);
+    expect(
+      DefaultTabController.of(tester.element(find.byType(TabBar))).index,
+      1,
+    );
+    expect(c.events.map((e) => e.toJson()).toList(), before);
+  });
+
   testWidgets('hide sensitive content toggles neutral notifications', (
     tester,
   ) async {

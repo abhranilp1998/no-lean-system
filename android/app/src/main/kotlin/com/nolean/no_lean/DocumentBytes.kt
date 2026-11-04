@@ -6,6 +6,25 @@ import java.io.OutputStream
 
 /** Success means the provider closed the write and returned exactly the same bytes. */
 internal object DocumentBytes {
+    /** SAF has already created a new document. A failed copy is removed best-effort. */
+    fun writeAndVerifyOrDelete(
+        bytes: ByteArray,
+        openOutput: () -> OutputStream?,
+        openInput: () -> InputStream?,
+        deleteDocument: () -> Boolean,
+    ) {
+        try {
+            writeAndVerify(bytes, openOutput, openInput)
+        } catch (failure: Exception) {
+            try {
+                deleteDocument()
+            } catch (_: Exception) {
+                // Some providers reject deletion. Keep the original save failure.
+            }
+            throw failure
+        }
+    }
+
     fun writeAndVerify(
         bytes: ByteArray,
         openOutput: () -> OutputStream?,

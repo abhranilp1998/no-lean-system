@@ -97,6 +97,21 @@ Future<void> reveal(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  testWidgets('Progress opens recovery history without changing progress', (
+    tester,
+  ) async {
+    final c = await pumpProgress(tester);
+    final before = c.events.map((e) => e.toJson()).toList();
+    await tester.tap(find.byKey(const ValueKey('progress-recovery-history')));
+    await tester.pumpAndSettle();
+    expect(find.text('History'), findsOneWidget);
+    expect(
+      DefaultTabController.of(tester.element(find.byType(TabBar))).index,
+      0,
+    );
+    expect(c.events.map((e) => e.toJson()).toList(), before);
+  });
+
   testWidgets('heat map modes switch and the weekday card follows', (
     tester,
   ) async {
