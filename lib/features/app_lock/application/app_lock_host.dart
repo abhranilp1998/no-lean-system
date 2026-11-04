@@ -39,6 +39,10 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
   bool _syncAgain = false;
   bool _syncAgainForce = false;
 
+  /// Re-reads lock health (heartbeat) while NO LEAN is in front, so the
+  /// Shield pill flips to OFF without waiting for a restart (plan P0-1).
+  Timer? _healthTimer;
+
   AppLockGateway get _gateway => ref.read(appLockGatewayProvider);
 
   @override
@@ -50,11 +54,29 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
       unawaited(_sync(force: true));
       unawaited(_drain());
     });
+    _startHealthTimer();
+  }
+
+  void _startHealthTimer() {
+    _healthTimer?.cancel();
+    _healthTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => unawaited(_refreshHealth()),
+    );
+  }
+
+  Future<void> _refreshHealth() async {
+    if (!mounted || _syncing || !_gateway.isSupportedPlatform) return;
+    try {
+      final status = await _gateway.status();
+      if (mounted) ref.read(appLockStatusProvider.notifier).state = status;
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _healthTimer?.cancel();
     _blocks?.cancel();
     super.dispose();
   }
@@ -62,8 +84,11 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      _startHealthTimer();
       unawaited(_sync(force: true));
       unawaited(_drain());
+    } else if (state == AppLifecycleState.paused) {
+      _healthTimer?.cancel();
     }
   }
 

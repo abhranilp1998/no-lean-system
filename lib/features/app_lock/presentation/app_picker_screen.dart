@@ -28,7 +28,24 @@ class AppPickerScreen extends ConsumerStatefulWidget {
 class _AppPickerScreenState extends ConsumerState<AppPickerScreen> {
   late final Future<List<InstalledAppInfo>> _apps = ref
       .read(appLockGatewayProvider)
-      .installedApps();
+      .installedApps()
+      .then((apps) {
+        // Payment apps are locked by default (plan P0-1): on first setup the
+        // installed ones start ticked. The user can still untick them.
+        if (widget.selected.isEmpty) {
+          for (final app in apps) {
+            if (app.neverLockable || !isSuggestedPaymentApp(app.packageName)) {
+              continue;
+            }
+            _picked[app.packageName] = LockedApp(
+              packageName: app.packageName,
+              label: app.label,
+              paymentApp: true,
+            );
+          }
+        }
+        return apps;
+      });
   late final Map<String, LockedApp> _picked = {
     for (final app in widget.selected) app.packageName: app,
   };

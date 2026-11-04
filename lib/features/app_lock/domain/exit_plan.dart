@@ -4,7 +4,9 @@
 //
 // 1. "I need this app" -> pick a reason.
 // 2. Within the daily budget: a mindful wait showing the user's own reasons
-//    (30 s; payment apps 10 s), then that app only opens for 5 minutes.
+//    (30 s; payment apps 45 s, or 120 s inside a danger zone or the risk
+//    window, because paying is how a craving becomes a purchase), then that
+//    app only opens for 5 minutes.
 // 3. Budget used up: the existing PIN (or biometrics) with its lockout rules.
 // 4. No PIN set, or PIN entry paused by a lockout: a long 120 s wait still
 //    opens the app. SOS, Call 112 and Go home are always on the screen.
@@ -60,7 +62,11 @@ class ExitStep {
 
 abstract final class ExitPlanTimings {
   static const standardWait = Duration(seconds: 30);
-  static const paymentWait = Duration(seconds: 10);
+
+  /// Payment apps are locked by default (plan P0-1): a real pause before
+  /// paying, longer at risky times. Still never a dead end.
+  static const paymentWait = Duration(seconds: 45);
+  static const paymentRiskyWait = Duration(seconds: 120);
   static const longWait = Duration(seconds: 120);
   static const unlockFor = Duration(minutes: 5);
 }
@@ -72,12 +78,15 @@ ExitStep planUnlock({
   required int dailyBudget,
   required bool pinConfigured,
   bool pinLockedOut = false,
+  bool riskyTime = false,
 }) {
   if (usedToday < dailyBudget) {
     return ExitStep(
       method: UnlockMethod.budget,
       wait: paymentApp
-          ? ExitPlanTimings.paymentWait
+          ? (riskyTime
+                ? ExitPlanTimings.paymentRiskyWait
+                : ExitPlanTimings.paymentWait)
           : ExitPlanTimings.standardWait,
       unlockFor: ExitPlanTimings.unlockFor,
     );

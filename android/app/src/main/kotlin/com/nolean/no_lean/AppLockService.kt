@@ -33,8 +33,9 @@ import java.util.Calendar
  * comes to the front it brings NO LEAN's blocking screen over it.
  *
  * Fail-safe: no usage access, a broken config or any error means nothing
- * is blocked. The service stops itself when usage access is revoked; the
- * app shows a re-grant banner. It never consumes Home/Back and never draws
+ * is blocked. When usage access is revoked the service stops (not sticky),
+ * records why and posts a persistent "Shield OFF" alert; the app shows a
+ * banner and a WorkManager watchdog keeps checking the heartbeat. It never consumes Home/Back and never draws
  * over other apps itself, so the user can always leave.
  */
 class AppLockService : Service() {
@@ -46,6 +47,7 @@ class AppLockService : Service() {
     private var lastBlockAt = 0L
     private var lastPermissionCheck = 0L
     private var lastZoneCheck = 0L
+    private var lastBeat = 0L
     private var insideZone: AppLockConfig.Zone? = null
 
     private val tick = object : Runnable {
@@ -71,10 +73,13 @@ class AppLockService : Service() {
         config = AppLockConfig.load(this)
         if (!config.armed || !hasUsageAccess(this)) {
             startInForeground()
-            stopSelfSafely()
+            stopSelfSafely(if (config.armed) "usage_access" else null)
             return START_NOT_STICKY
         }
         startInForeground()
+        AppLockHealth.beat(this)
+        AppLockHealth.clearAlert(this)
+        AppLockHealth.scheduleWatchdog(this)
         handler.removeCallbacks(tick)
         lastEventQuery = System.currentTimeMillis() - 10_000L
         handler.post(tick)
@@ -87,7 +92,15 @@ class AppLockService : Service() {
         super.onDestroy()
     }
 
-    private fun stopSelfSafely() {
+    private fun stopSelfSafely(reason: String? = null) {
+        if (reason != null) {
+            // Never a silent stop while armed: tell the user the shield is off.
+            AppLockHealth.recordStop(this, reason)
+            try {
+                AppLockHealth.showAlert(this, reason, config.hideSensitive)
+            } catch (_: Exception) {
+            }
+        }
         running = false
         handler.removeCallbacks(tick)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -102,12 +115,22 @@ class AppLockService : Service() {
     /** One poll. Returns the delay until the next one. */
     private fun poll(): Long {
         val now = System.currentTimeMillis()
+        // Heartbeat on every poll (throttled to one write per 10 s).
+        if (now - lastBeat > 10_000L) {
+            lastBeat = now
+            AppLockHealth.beat(this, now)
+        }
         if (now - lastPermissionCheck > 10_000L) {
             lastPermissionCheck = now
             config = AppLockConfig.load(this)
             if (!config.armed || !hasUsageAccess(this)) {
-                stopSelfSafely()
+                stopSelfSafely(if (config.armed) "usage_access" else null)
                 return 60_000L
+            }
+            if (!AppLockHealth.canDrawOverlays(this)) {
+                AppLockHealth.showAlert(this, "overlay", config.hideSensitive)
+            } else {
+                AppLockHealth.clearAlert(this)
             }
         }
         val power = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -318,8 +341,13 @@ class AppLockService : Service() {
         fun sync(context: Context): Boolean {
             val config = AppLockConfig.load(context)
             val intent = Intent(context, AppLockService::class.java)
+            AppLockHealth.scheduleWatchdog(context)
             if (!config.armed || !hasUsageAccess(context)) {
                 if (running) context.stopService(intent)
+                if (config.armed) {
+                    AppLockHealth.recordStop(context, "usage_access")
+                    AppLockHealth.showAlert(context, "usage_access", config.hideSensitive)
+                }
                 return false
             }
             startRequestedAt = System.currentTimeMillis()

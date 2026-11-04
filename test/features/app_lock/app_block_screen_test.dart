@@ -193,7 +193,7 @@ void main() {
     expect(unlocks(container), isEmpty);
   });
 
-  testWidgets('payment apps take the 10 s quick path', (tester) async {
+  testWidgets('payment apps inside a zone wait 120 s first', (tester) async {
     final (container, gateway, _) = await pump(
       tester,
       request: const AppBlockRequest(
@@ -203,17 +203,22 @@ void main() {
         cause: 'zone',
       ),
     );
-    expect(find.textContaining('Payment app: 10 s wait.'), findsOneWidget);
+    expect(
+      find.textContaining('Payment app: 120 s pause first.'),
+      findsOneWidget,
+    );
     await tapKey(tester, 'app-block-need');
     await tapKey(tester, 'app-block-reason-payment');
-    expect(find.text('BREATHE // 10 s'), findsOneWidget);
-    await tester.pump(const Duration(seconds: 10));
+    expect(find.text('BREATHE // 120 s'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 60));
+    expect(find.byKey(const ValueKey('app-block-open')), findsNothing);
+    await tester.pump(const Duration(seconds: 60));
     await tapKey(tester, 'app-block-open');
     await tester.pumpAndSettle();
     expect(gateway.grants.single.$1, 'com.phonepe.app');
     final event = unlocks(container).single;
     expect(event.metadata['paymentApp'], isTrue);
-    expect(event.metadata['waitSeconds'], 10);
+    expect(event.metadata['waitSeconds'], 120);
   });
 
   testWidgets('budget used up: the existing PIN opens it', (tester) async {

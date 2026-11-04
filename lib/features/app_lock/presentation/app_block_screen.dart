@@ -61,6 +61,14 @@ class _AppBlockScreenState extends ConsumerState<AppBlockScreen> {
 
   bool get _paymentApp => _app?.paymentApp ?? false;
 
+  /// Inside a danger zone or the risk window: payment apps wait longer.
+  bool get _riskyTime =>
+      _request.cause == 'zone' || ref.read(recoveryProvider).isRiskWindow;
+
+  Duration get _paymentWaitNow => _riskyTime
+      ? ExitPlanTimings.paymentRiskyWait
+      : ExitPlanTimings.paymentWait;
+
   @override
   void dispose() {
     _timer?.cancel();
@@ -113,6 +121,7 @@ class _AppBlockScreenState extends ConsumerState<AppBlockScreen> {
       usedToday: recovery.appUnlocksUsedToday,
       dailyBudget: recovery.appLockPolicy.dailyUnlockBudget,
       pinConfigured: recovery.appUnlockPinConfigured,
+      riskyTime: _riskyTime,
     );
     _reason = reason;
     if (step.needsPin) {
@@ -159,6 +168,7 @@ class _AppBlockScreenState extends ConsumerState<AppBlockScreen> {
             dailyBudget: recovery.appLockPolicy.dailyUnlockBudget,
             pinConfigured: true,
             pinLockedOut: true,
+            riskyTime: _riskyTime,
           ),
         );
       case ProtectedActionResult.denied:
@@ -350,7 +360,7 @@ class _AppBlockScreenState extends ConsumerState<AppBlockScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            '${_paymentApp ? 'Payment app: 10 s wait. ' : ''}$budgetText',
+            '${_paymentApp ? 'Payment app: ${_paymentWaitNow.inSeconds} s pause first. ' : ''}$budgetText',
             key: const ValueKey('app-block-budget'),
             style: microStyle,
           ),

@@ -55,6 +55,10 @@ class AppLockChannel(private val activity: Activity, messenger: BinaryMessenger)
                         )
                         result.success(true)
                     }
+                    "checkHealth" -> {
+                        AppLockHealth.check(activity)
+                        result.success(true)
+                    }
                     "drainBlocks" -> result.success(AppLockConfig.drainBlocks(activity))
                     else -> result.notImplemented()
                 }
@@ -83,6 +87,8 @@ class AppLockChannel(private val activity: Activity, messenger: BinaryMessenger)
             "overlay" to (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(activity)),
             "serviceRunning" to AppLockService.runningOrStarting,
             "notifications" to notifications,
+            "heartbeatAt" to AppLockHealth.heartbeatAt(activity),
+            "stopReason" to (AppLockHealth.stopReason(activity) ?: ""),
         )
     }
 

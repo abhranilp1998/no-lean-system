@@ -17,7 +17,7 @@ void main() {
       expect(step.needsPin, isFalse);
     });
 
-    test('payment apps take the 10 s quick path', () {
+    test('payment apps get a real 45 s pause, 120 s at risky times', () {
       final step = planUnlock(
         paymentApp: true,
         usedToday: 2,
@@ -25,8 +25,27 @@ void main() {
         pinConfigured: false,
       );
       expect(step.method, UnlockMethod.budget);
-      expect(step.wait, const Duration(seconds: 10));
+      expect(step.wait, const Duration(seconds: 45));
       expect(step.unlockFor, const Duration(minutes: 5));
+      final risky = planUnlock(
+        paymentApp: true,
+        usedToday: 0,
+        dailyBudget: 3,
+        pinConfigured: false,
+        riskyTime: true,
+      );
+      expect(risky.wait, const Duration(seconds: 120));
+      // Non-payment apps keep the standard wait even at risky times.
+      expect(
+        planUnlock(
+          paymentApp: false,
+          usedToday: 0,
+          dailyBudget: 3,
+          pinConfigured: false,
+          riskyTime: true,
+        ).wait,
+        const Duration(seconds: 30),
+      );
     });
 
     test('budget used up: the PIN is required, no extra wait', () {
@@ -123,7 +142,7 @@ void main() {
         'appLabel': 'PhonePe',
         'reason': 'payment',
         'method': 'budget',
-        'waitSeconds': 10,
+        'waitSeconds': 45,
         'unlockMinutes': 5,
         'paymentApp': true,
         'zoneName': 'Station corner',
