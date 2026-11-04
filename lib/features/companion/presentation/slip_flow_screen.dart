@@ -74,7 +74,15 @@ class _SlipState extends ConsumerState<SlipFlowScreen> {
           for (final l in _lines)
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text('•  $l', style: const TextStyle(height: 1.35)),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('•  ', style: TextStyle(height: 1.35)),
+                  Expanded(
+                    child: Text(l, style: const TextStyle(height: 1.35)),
+                  ),
+                ],
+              ),
             ),
           const SizedBox(height: 6),
           for (final n in notes) SafetyCard(n),

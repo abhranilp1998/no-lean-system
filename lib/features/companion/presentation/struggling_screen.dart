@@ -154,8 +154,19 @@ class _StrugglingState extends ConsumerState<StrugglingScreen> {
                 () => v ? _symptoms.add(e.key) : _symptoms.remove(e.key),
               ),
             ),
+        ],
+      ),
+      const SizedBox(height: 10),
+      const Text(
+        'Any of these? (get help fast)',
+        style: TextStyle(fontWeight: FontWeight.w700, color: red),
+      ),
+      Wrap(
+        spacing: 8,
+        children: [
           for (final f in _redFlagChips)
             FilterChip(
+              side: BorderSide(color: red.withValues(alpha: .7)),
               label: Text(f),
               selectedColor: red.withValues(alpha: .3),
               selected: _flags.contains(f),
@@ -242,7 +253,7 @@ class _StrugglingState extends ConsumerState<StrugglingScreen> {
             onRate: (ok) => rate(view.messages.first.id, ok),
           ),
         const SizedBox(height: 4),
-        const Text('RIGHT NOW, 5 MINUTES', style: eyebrowStyle),
+        const Text('TRY ONE NOW', style: eyebrowStyle),
         const SizedBox(height: 8),
         for (final i in view.ideas)
           _IdeaTile(
@@ -301,6 +312,7 @@ class _IdeaTile extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 10),
     child: GlassCard(
       accent: toxic,
+      padding: const EdgeInsets.fromLTRB(18, 16, 8, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -321,8 +333,14 @@ class _IdeaTile extends StatelessWidget {
           const SizedBox(height: 6),
           for (final s in idea.steps)
             Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Text('•  $s', style: const TextStyle(height: 1.3)),
+              padding: const EdgeInsets.only(bottom: 2, right: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('•  ', style: TextStyle(height: 1.3)),
+                  Expanded(child: Text(s, style: const TextStyle(height: 1.3))),
+                ],
+              ),
             ),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,

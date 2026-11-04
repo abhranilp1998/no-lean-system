@@ -43,7 +43,7 @@ void main() {
     expect(find.text('Show me what helps'), findsOneWidget);
     await t.tap(find.text('Show me what helps'));
     await t.pump(const Duration(milliseconds: 300));
-    expect(find.text('RIGHT NOW, 5 MINUTES'), findsOneWidget);
+    expect(find.text('TRY ONE NOW'), findsOneWidget);
     expect(find.text('Ride the wave'), findsOneWidget);
     expect(find.textContaining('{'), findsNothing);
     expect(find.textContaining('helpline'), findsNothing);

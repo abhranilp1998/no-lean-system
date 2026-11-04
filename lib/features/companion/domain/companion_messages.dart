@@ -735,7 +735,7 @@ const companionMessages = <CompanionMessage>[
   _M(
     't16',
     _t,
-    'The friend who set this up for you is in your corner. That stays true on bad days.',
+    'People who care about you are still in your corner on the bad days, even if they don\'t know the details.',
   ),
   _M(
     't17',
