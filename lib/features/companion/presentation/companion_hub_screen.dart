@@ -162,8 +162,10 @@ class _HubState extends ConsumerState<CompanionHubScreen> {
           for (final n in safetyNotesFor(
             recovery.companion,
             recentSlip: c.recentSlip,
+            events: recovery.events,
+            now: _now,
           ))
-            SafetyCard(n),
+            SafetyCard(n, urgent: n == mixingCheckIn),
           if (view != null)
             for (final m in view.messages)
               MessageCard(

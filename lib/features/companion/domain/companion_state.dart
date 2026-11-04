@@ -36,15 +36,25 @@ const defaultReachOutTexts = <String>[
 ];
 
 class SlipNote {
-  const SlipNote({required this.at, this.trigger = '', this.ifThen = ''});
+  const SlipNote({
+    required this.at,
+    this.trigger = '',
+    this.ifThen = '',
+    this.substances = const {},
+  });
   final DateTime at;
   final String trigger;
   final String ifThen;
+
+  /// What was taken in this slip (optional, user-picked).
+  final Set<Substance> substances;
 
   Map<String, Object> toJson() => {
     'at': at.toUtc().toIso8601String(),
     'trigger': trigger,
     'ifThen': ifThen,
+    if (substances.isNotEmpty)
+      'substances': [for (final x in substances) x.name],
   };
 
   static SlipNote? fromJson(Object? raw) {
@@ -55,6 +65,11 @@ class SlipNote {
       at: at,
       trigger: _str(raw['trigger'], 200),
       ifThen: _str(raw['ifThen'], 300),
+      substances: {
+        if (raw['substances'] is List)
+          for (final n in raw['substances'] as List)
+            ...Substance.values.where((x) => x.name == n),
+      },
     );
   }
 }

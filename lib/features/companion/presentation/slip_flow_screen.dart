@@ -24,6 +24,7 @@ class SlipFlowScreen extends ConsumerStatefulWidget {
 
 class _SlipState extends ConsumerState<SlipFlowScreen> {
   String? _trigger;
+  final _took = <Substance>{};
   final _plan = TextEditingController();
   late final List<String> _lines;
 
@@ -60,7 +61,21 @@ class _SlipState extends ConsumerState<SlipFlowScreen> {
     final triggers = recovery.companion.triggers.isEmpty
         ? defaultTriggerOptions
         : recovery.companion.triggers;
-    final notes = safetyNotesFor(recovery.companion, recentSlip: true);
+    final mixed =
+        _took.contains(Substance.codeine) &&
+        (_took.contains(Substance.benzo) || _took.contains(Substance.alcohol));
+    final notes = [
+      if (mixed) mixingCheckIn,
+      ...safetyNotesFor(
+        recovery.companion,
+        recentSlip: !mixed,
+        events: recovery.events,
+        now: DateTime.now(),
+      ).where((n) => !(mixed && n == mixingCheckIn)),
+    ];
+    if (_took.contains(Substance.benzo) && !notes.contains(taperWarning)) {
+      notes.add(taperWarning);
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('I slipped')),
       body: ListView(
@@ -85,8 +100,27 @@ class _SlipState extends ConsumerState<SlipFlowScreen> {
               ),
             ),
           const SizedBox(height: 6),
-          for (final n in notes) SafetyCard(n),
+          for (final n in notes) SafetyCard(n, urgent: n == mixingCheckIn),
           const RedFlagsTile(),
+          const SizedBox(height: 10),
+          const Text(
+            'What did you take? (pick all, optional)',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final x in Substance.values)
+                FilterChip(
+                  key: Key('slip-took-${x.name}'),
+                  label: Text(x.label),
+                  selected: _took.contains(x),
+                  onSelected: (v) =>
+                      setState(() => v ? _took.add(x) : _took.remove(x)),
+                ),
+            ],
+          ),
+          if (mixed) const RedFlagsTile(open: true),
           const SizedBox(height: 10),
           const Text(
             'What happened just before?',
@@ -125,6 +159,7 @@ class _SlipState extends ConsumerState<SlipFlowScreen> {
                       at: DateTime.now(),
                       trigger: _trigger ?? '',
                       ifThen: _plan.text.trim(),
+                      substances: {..._took},
                     ),
                     ...s.slips,
                   ].take(100).toList(),

@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/features/companion/presentation/companion_common.dart';
 import 'package:no_lean/features/companion/presentation/companion_hub_screen.dart';
 import 'package:no_lean/features/companion/presentation/struggling_screen.dart';
+import 'package:no_lean/features/companion/presentation/slip_flow_screen.dart';
+import 'package:no_lean/features/companion/domain/substance_safety.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/application/recovery_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -68,5 +70,22 @@ void main() {
     expect(find.text("I'M STRUGGLING"), findsOneWidget);
     expect(find.text('MILESTONES (YOURS TO KEEP)'), findsOneWidget);
     expect(find.textContaining('{'), findsNothing);
+  });
+
+  testWidgets('slip flow: picking codeine + benzo shows mixing check-in', (
+    t,
+  ) async {
+    await pump(t, const SlipFlowScreen());
+    expect(find.text(mixingCheckIn.title), findsNothing);
+    await t.tap(find.byKey(const Key('slip-took-codeine')));
+    await t.pump();
+    await t.tap(find.byKey(const Key('slip-took-benzo')));
+    await t.pump();
+    expect(find.text(mixingCheckIn.title), findsOneWidget);
+    expect(find.text(taperWarning.title), findsOneWidget);
+    expect(
+      find.textContaining(RegExp('helpline', caseSensitive: false)),
+      findsNothing,
+    );
   });
 }

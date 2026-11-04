@@ -317,7 +317,12 @@ class _State extends ConsumerState<WithdrawalGuideScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          if (recovery.companion.needsTaperWarning) SafetyCard(taperWarning),
+          for (final n in safetyNotesFor(
+            recovery.companion,
+            events: recovery.events,
+            now: DateTime.now(),
+          ))
+            SafetyCard(n, urgent: n == mixingCheckIn),
           if (plan.inRelapse)
             card('You used recently', [
               const Text(

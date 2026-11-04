@@ -235,7 +235,12 @@ class _StrugglingState extends ConsumerState<StrugglingScreen> {
       );
     }
 
-    final notes = safetyNotesFor(recovery.companion, recentSlip: c.recentSlip);
+    final notes = safetyNotesFor(
+      recovery.companion,
+      recentSlip: c.recentSlip,
+      events: recovery.events,
+      now: now,
+    );
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -245,7 +250,7 @@ class _StrugglingState extends ConsumerState<StrugglingScreen> {
         ),
         const SizedBox(height: 12),
         if (_flags.isNotEmpty) const RedFlagsTile(open: true),
-        for (final n in notes) SafetyCard(n),
+        for (final n in notes) SafetyCard(n, urgent: n == mixingCheckIn),
         if (view.messages.isNotEmpty)
           MessageCard(
             message: view.messages.first,
