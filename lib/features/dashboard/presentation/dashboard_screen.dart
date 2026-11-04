@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../recovery/presentation/relapse_log_sheet.dart';
+import '../../tell/presentation/tell_me_anything_card.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
@@ -343,6 +344,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 14),
+          const TellMeAnythingCard(),
         ],
       ),
     );
