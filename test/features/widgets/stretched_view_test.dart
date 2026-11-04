@@ -48,7 +48,7 @@ void main() {
     expect(c.stretchedWidgetView, StretchedWidgetView.auto);
     await c.setStretchedWidgetView(StretchedWidgetView.wave);
     final saved = jsonDecode(store.value!) as Map<String, dynamic>;
-    expect(saved['stateVersion'], 15);
+    expect(saved['stateVersion'], 16);
     expect(saved['stretchedWidgetView'], 'wave');
     final (reloaded, _) = await load(store.value);
     expect(reloaded.stretchedWidgetView, StretchedWidgetView.wave);

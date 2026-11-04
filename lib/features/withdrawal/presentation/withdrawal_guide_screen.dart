@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../companion/domain/substance_safety.dart';
+import '../../companion/presentation/companion_common.dart';
+import '../../companion/presentation/companion_hub_screen.dart';
+import '../../companion/presentation/struggling_screen.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/recovery_event.dart';
@@ -292,6 +296,33 @@ class _State extends ConsumerState<WithdrawalGuideScreen> {
                 child: const Text('Add your name'),
               ),
           ]),
+          Row(
+            key: const Key('guide-companion-links'),
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => StrugglingScreen.open(context),
+                  icon: const Icon(Icons.favorite_border),
+                  label: const Text("I'm struggling"),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => CompanionHubScreen.open(context),
+                  icon: const Icon(Icons.handshake_outlined),
+                  label: const Text('Companion'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final n in safetyNotesFor(
+            recovery.companion,
+            events: recovery.events,
+            now: DateTime.now(),
+          ))
+            SafetyCard(n, urgent: n == mixingCheckIn),
           if (plan.inRelapse)
             card('You used recently', [
               const Text(

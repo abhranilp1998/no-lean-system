@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../companion/domain/companion_state.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
@@ -110,7 +111,9 @@ class RecoveryController extends ChangeNotifier {
   /// v14 adds `futureLetters` (notes to self). Older states load with none.
   /// v15 adds `stretchedWidgetView` (what a big NO LEAN widget shows).
   /// Older states load with `auto`.
-  static const stateVersion = 15;
+  /// v16 adds `companion` (substances, triggers, reach-out texts, message
+  /// history, slip notes). v13–v15 snapshots load with defaults.
+  static const stateVersion = 16;
 
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
   final Future<void> Function() _cancelCravingCheck;
@@ -186,6 +189,7 @@ class RecoveryController extends ChangeNotifier {
 
   /// Notes to self (state v14+). Shown only inside the app, behind the PIN.
   List<FutureLetter> futureLetters = [];
+  CompanionState companion = const CompanionState();
 
   /// In-app distance checks while NO LEAN is open (opt-in).
   bool zoneMonitoring = false;
@@ -351,6 +355,7 @@ class RecoveryController extends ChangeNotifier {
       }
       zones = DangerZone.decodeList(map['zones']);
       futureLetters = _decodeLetters(map['futureLetters']);
+      companion = CompanionState.fromJson(map['companion']);
       relapseCooldownUntil = DateTime.tryParse(
         map['relapseCooldownUntil']?.toString() ?? '',
       );
@@ -625,6 +630,7 @@ class RecoveryController extends ChangeNotifier {
     'appLockPending': appLockPending,
     'zones': zones.map((zone) => zone.toJson()).toList(),
     'futureLetters': futureLetters.map((l) => l.toJson()).toList(),
+    'companion': companion.toJson(),
     'zoneMonitoring': zoneMonitoring,
     'streetTiles': streetTiles,
     'positionNotification': positionNotification,
@@ -644,6 +650,7 @@ class RecoveryController extends ChangeNotifier {
     _restoreSettings(map);
     zones = DangerZone.decodeList(map['zones']);
     futureLetters = _decodeLetters(map['futureLetters']);
+    companion = CompanionState.fromJson(map['companion']);
     relapseCooldownUntil = DateTime.tryParse(
       map['relapseCooldownUntil']?.toString() ?? '',
     );
@@ -865,6 +872,7 @@ class RecoveryController extends ChangeNotifier {
     List<RecoveryEvent> importedEvents, {
     List<DangerZone> importedZones = const [],
     List<FutureLetter> importedLetters = const [],
+    CompanionState? importedCompanion,
     Map<String, dynamic>? preferences,
     bool restorePreferences = false,
     String? pin,
@@ -898,6 +906,9 @@ class RecoveryController extends ChangeNotifier {
       throw StateError('This backup would exceed 100 notes.');
     }
     futureLetters = [...futureLetters, ...newLetters];
+    if (importedCompanion != null) {
+      companion = companion.mergeImported(importedCompanion);
+    }
     if (restorePreferences && preferences != null) {
       final previousWindow = riskWindow;
       _restoreSettings(
@@ -1634,6 +1645,16 @@ class RecoveryController extends ChangeNotifier {
     }
     futureLetters = [...futureLetters, FutureLetter.create(text, at: _now())];
   });
+
+  Future<void> updateCompanion(
+    CompanionState Function(CompanionState) change,
+  ) => _transaction(() async {
+    companion = change(companion);
+  });
+
+  /// Clean-hours ever reached (best streak or current): milestones below
+  /// this stay earned after a slip.
+  int get bestCleanHours => math.max(longestStreak * 24, cleanDuration.inHours);
 
   Future<void> deleteFutureLetter(String id) => _transaction(() async {
     futureLetters = futureLetters.where((l) => l.id != id).toList();

@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../companion/domain/companion_state.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../application/recovery_controller.dart';
@@ -31,6 +32,7 @@ class BackupPreview {
     this.zones = const [],
     this.letters = const [],
     this.withdrawal,
+    this.companion,
   });
 
   final int eventCount;
@@ -48,6 +50,9 @@ class BackupPreview {
   /// Optional withdrawal check-ins and companion answers. Not versioned:
   /// older apps ignore the key, newer apps merge it when present.
   final Object? withdrawal;
+
+  /// Companion data (backup format 11+). Merged on import.
+  final CompanionState? companion;
 
   bool get hasPreferences => preferences != null && preferences!.isNotEmpty;
 }
@@ -86,7 +91,9 @@ class BackupService {
   /// Format 9 adds `futureLetters` (notes to self); older formats import with
   /// none and imports merge notes by ID. Format 10 adds the
   /// `stretchedWidgetView` preference; older formats keep the current choice.
-  static const int currentBackupVersion = 10;
+  /// Format 11 adds `companion` (substances, triggers, reach-out texts,
+  /// message history, slip notes); older formats import without it.
+  static const int currentBackupVersion = 11;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
@@ -97,6 +104,7 @@ class BackupService {
     List<DangerZone> zones = const [],
     List<FutureLetter> letters = const [],
     Map<String, Object>? withdrawal,
+    CompanionState? companion,
   }) {
     return exportJson(
       jsonEncode(
@@ -106,6 +114,7 @@ class BackupService {
           zones: zones,
           letters: letters,
           withdrawal: withdrawal,
+          companion: companion,
         ),
       ),
     );
@@ -118,6 +127,7 @@ class BackupService {
     List<DangerZone> zones = const [],
     List<FutureLetter> letters = const [],
     Map<String, Object>? withdrawal,
+    CompanionState? companion,
   }) {
     return {
       'version': currentBackupVersion,
@@ -128,6 +138,7 @@ class BackupService {
       'preferences': preferences,
       'excludedSecureData': const ['relapsePin', 'trustedContact'],
       'withdrawal': ?withdrawal,
+      if (companion != null) 'companion': companion.toJson(),
     };
   }
 
@@ -427,6 +438,7 @@ class BackupService {
           if (map['zones'] != null) 'zones': map['zones'],
           if (map['futureLetters'] != null)
             'futureLetters': map['futureLetters'],
+          if (map['companion'] != null) 'companion': map['companion'],
         };
       }
       final version = map['version'];
@@ -486,6 +498,9 @@ class BackupService {
         zones: zones,
         letters: letters,
         withdrawal: map['withdrawal'],
+        companion: map['companion'] is Map
+            ? CompanionState.fromJson(map['companion'])
+            : null,
       );
     } on FormatException {
       rethrow;
