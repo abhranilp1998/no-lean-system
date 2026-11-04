@@ -259,7 +259,7 @@ void main() {
       'recovery_state': jsonEncode({
         'stateVersion': RecoveryController.stateVersion,
         'events': [],
-        'relapseCooldownUntil': DateTime(2026, 8, 1).toIso8601String(),
+        'relapseCooldownUntil': DateTime(2099, 8, 1).toIso8601String(),
         'cooldownMinutes': 30,
       }),
     });
@@ -269,10 +269,10 @@ void main() {
     await controller.load();
 
     await controller.load();
-    expect(controller.relapseCooldownUntil, DateTime(2026, 8, 1));
+    expect(controller.relapseCooldownUntil, DateTime(2099, 8, 1));
     expect(controller.cooldownMinutes, 30);
 
-    controller.relapseCooldownUntil = DateTime(2026, 8, 2);
+    controller.relapseCooldownUntil = DateTime(2099, 8, 2);
     await controller.updateCooldownMinutes(20);
 
     final preferences = await SharedPreferences.getInstance();
@@ -282,7 +282,7 @@ void main() {
 
     expect(
       migratedState['relapseCooldownUntil'],
-      DateTime(2026, 8, 2).toIso8601String(),
+      DateTime(2099, 8, 2).toIso8601String(),
     );
     expect(migratedState['cooldownMinutes'], 20);
   });

@@ -9,6 +9,7 @@ import '../../companion/domain/companion_state.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
+import '../domain/relapse_cooldown.dart';
 import '../domain/craving_entry.dart';
 import '../domain/dose_units.dart';
 import '../domain/quantity_upgrade.dart';
@@ -362,6 +363,7 @@ class RecoveryController extends ChangeNotifier {
       relapseCooldownEventId = map['relapseCooldownEventId'] is String
           ? map['relapseCooldownEventId'] as String
           : null;
+      _reconcileCooldown();
       lastOpenedAt = DateTime.tryParse(map['lastOpenedAt']?.toString() ?? '');
       _ensureBaselineEvent();
       _sortAndRecompute();
@@ -654,7 +656,10 @@ class RecoveryController extends ChangeNotifier {
     relapseCooldownUntil = DateTime.tryParse(
       map['relapseCooldownUntil']?.toString() ?? '',
     );
-    relapseCooldownEventId = map['relapseCooldownEventId'] as String?;
+    relapseCooldownEventId = map['relapseCooldownEventId'] is String
+        ? map['relapseCooldownEventId'] as String
+        : null;
+    _reconcileCooldown();
     lastOpenedAt = DateTime.tryParse(map['lastOpenedAt']?.toString() ?? '');
     _sortAndRecompute();
   }
@@ -777,6 +782,18 @@ class RecoveryController extends ChangeNotifier {
       _notify();
     }
     return reached;
+  }
+
+  /// Drops an expired or orphaned cooldown (plan P0-4).
+  void _reconcileCooldown([DateTime? now]) {
+    final state = reconcileCooldown(
+      until: relapseCooldownUntil,
+      eventId: relapseCooldownEventId,
+      events: events,
+      now: now ?? DateTime.now(),
+    );
+    relapseCooldownUntil = state.until;
+    relapseCooldownEventId = state.eventId;
   }
 
   void consumeCelebration() {
@@ -1155,7 +1172,8 @@ class RecoveryController extends ChangeNotifier {
       );
       // Preserve the current debrief owner. Historical logs do not impose a
       // new cooldown, and another event does not extend an existing reset.
-      if (relapseCooldownEventId == null && deadline.isAfter(DateTime.now())) {
+      _reconcileCooldown();
+      if (relapseCooldownUntil == null && deadline.isAfter(DateTime.now())) {
         relapseCooldownUntil = deadline;
         relapseCooldownEventId = latest.id;
       }
