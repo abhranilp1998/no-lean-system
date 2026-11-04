@@ -24,6 +24,7 @@ Future<void> exportRecoveryData(
       zones: recovery.zones,
       letters: recovery.futureLetters,
       withdrawal: await _withdrawalSection(),
+      companion: recovery.companion,
     );
     if (saved && context.mounted) {
       AppNotice.show(
@@ -100,6 +101,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
         preview.events,
         importedZones: preview.zones,
         importedLetters: preview.letters,
+        importedCompanion: preview.companion,
         preferences: preview.preferences,
         restorePreferences: choice.restorePreferences,
       );
@@ -114,6 +116,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
           preview.events,
           importedZones: preview.zones,
           importedLetters: preview.letters,
+          importedCompanion: preview.companion,
           preferences: preview.preferences,
           restorePreferences: choice.restorePreferences,
           pin: pin,

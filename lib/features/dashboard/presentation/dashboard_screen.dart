@@ -1,3 +1,5 @@
+import '../../companion/presentation/companion_hub_screen.dart';
+import '../../companion/presentation/struggling_screen.dart';
 import '../../settings/presentation/settings_dialogs.dart';
 import '../../code_instead/presentation/code_instead_screen.dart';
 import '../../../core/layout/tab_layout.dart';
@@ -212,6 +214,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           const SizedBox(height: 22),
           Text('FAST INTERRUPTS', style: eyebrowStyle.copyWith(color: muted)),
           const SizedBox(height: 10),
+          ActionTile(
+            icon: Icons.favorite,
+            title: "I'M STRUGGLING",
+            subtitle: 'Right-now help, ideas and your people',
+            color: magenta,
+            onTap: () => StrugglingScreen.open(context),
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -252,6 +262,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             subtitle: 'Where you are now + symptom check-in',
             color: cyan,
             onTap: () => WithdrawalGuideScreen.open(context),
+          ),
+          const SizedBox(height: 10),
+          ActionTile(
+            icon: Icons.handshake_outlined,
+            title: 'COMPANION',
+            subtitle: 'Messages, milestones, letters, slip plan',
+            color: toxic,
+            onTap: () => CompanionHubScreen.open(context),
           ),
           const SizedBox(height: 22),
           SectionHeader(
