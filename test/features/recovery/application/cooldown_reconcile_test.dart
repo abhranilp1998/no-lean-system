@@ -64,7 +64,14 @@ void main() {
     store.value = jsonEncode(map);
 
     final reload = RecoveryController(store: store);
+    final writesBefore = store.writes;
     await reload.load();
+    // The stale fix is persisted exactly once.
+    expect(store.writes, writesBefore + 1);
+    expect(jsonDecode(store.value!)['relapseCooldownEventId'], isNull);
+    final again = RecoveryController(store: store);
+    await again.load();
+    expect(store.writes, writesBefore + 1);
     expect(reload.relapseCooldownUntil, isNull);
     expect(reload.relapseCooldownEventId, isNull);
     await reload.recordRelapse();

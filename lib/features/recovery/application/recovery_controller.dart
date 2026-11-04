@@ -363,7 +363,7 @@ class RecoveryController extends ChangeNotifier {
       relapseCooldownEventId = map['relapseCooldownEventId'] is String
           ? map['relapseCooldownEventId'] as String
           : null;
-      _reconcileCooldown();
+      final staleCooldownFixed = _reconcileCooldown();
       lastOpenedAt = DateTime.tryParse(map['lastOpenedAt']?.toString() ?? '');
       _ensureBaselineEvent();
       _sortAndRecompute();
@@ -375,7 +375,10 @@ class RecoveryController extends ChangeNotifier {
                   const Duration(hours: 6)
           ? previousVisit
           : null;
-      if (version != stateVersion) await _store.write(jsonEncode(_snapshot()));
+      // One write covers both a migration and a stale-cooldown fix.
+      if (version != stateVersion || staleCooldownFixed) {
+        await _store.write(jsonEncode(_snapshot()));
+      }
       isLoaded = true;
       loadStatus = RecoveryLoadStatus.ready;
       _notify();
@@ -785,7 +788,9 @@ class RecoveryController extends ChangeNotifier {
   }
 
   /// Drops an expired or orphaned cooldown (plan P0-4).
-  void _reconcileCooldown([DateTime? now]) {
+  /// Returns true when the stored cooldown changed.
+  bool _reconcileCooldown([DateTime? now]) {
+    final before = (relapseCooldownUntil, relapseCooldownEventId);
     final state = reconcileCooldown(
       until: relapseCooldownUntil,
       eventId: relapseCooldownEventId,
@@ -794,6 +799,7 @@ class RecoveryController extends ChangeNotifier {
     );
     relapseCooldownUntil = state.until;
     relapseCooldownEventId = state.eventId;
+    return before != (relapseCooldownUntil, relapseCooldownEventId);
   }
 
   void consumeCelebration() {
