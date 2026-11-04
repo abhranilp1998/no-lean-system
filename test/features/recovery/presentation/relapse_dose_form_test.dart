@@ -1,3 +1,4 @@
+import 'package:no_lean/features/recovery/domain/relapse_log_entry.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -259,5 +260,13 @@ void main() {
     expect(parseMixingSafetyNet(null), MixingSafetyNet.contactAnd112);
     expect(parseMixingSafetyNet('nope'), MixingSafetyNet.contactAnd112);
     expect(parseMixingSafetyNet('off'), MixingSafetyNet.off);
+  });
+
+  test('(B) any mixed save shows the safety net', () {
+    expect(isMixedSave([RelapseType.leanPlusAlcohol]), isTrue);
+    expect(isMixedSave([RelapseType.fullLean, RelapseType.benzo]), isTrue);
+    expect(isMixedSave([RelapseType.partial, RelapseType.alcohol]), isTrue);
+    expect(isMixedSave([RelapseType.fullLean]), isFalse);
+    expect(isMixedSave([RelapseType.alcohol, RelapseType.benzo]), isFalse);
   });
 }

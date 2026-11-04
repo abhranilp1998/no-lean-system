@@ -220,3 +220,33 @@ class OverdoseSignsCard extends StatelessWidget {
     );
   }
 }
+
+/// (B) Shown after any mixed relapse save. Contact first; 112 stays behind
+/// the card's own second tap.
+Future<void> showMixingSafetyNetSheet(BuildContext context) =>
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          key: const ValueKey('mixing-after-save'),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'You mixed. Please let someone know tonight.',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              const MixingSafetyNetCard(),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('CLOSE'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );

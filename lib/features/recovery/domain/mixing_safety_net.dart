@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'relapse_log_entry.dart';
+
 /// (B) What the mixing / overdose safety net offers. Contact first, always;
 /// 112 only behind a second tap. No hotline buttons anywhere else.
 enum MixingSafetyNet { off, contactOnly, contactAnd112 }
@@ -46,3 +48,14 @@ final mixingSafetyNetProvider =
     AsyncNotifierProvider<MixingSafetyNetNotifier, MixingSafetyNet>(
       MixingSafetyNetNotifier.new,
     );
+
+/// A save is mixed when it combines codeine with alcohol or benzos, in one
+/// entry (lean + alcohol) or across the entries of one save.
+bool isMixedSave(Iterable<RelapseType> types) {
+  final t = types.toSet();
+  if (t.contains(RelapseType.leanPlusAlcohol)) return true;
+  final codeine =
+      t.contains(RelapseType.fullLean) || t.contains(RelapseType.partial);
+  return codeine &&
+      (t.contains(RelapseType.alcohol) || t.contains(RelapseType.benzo));
+}
