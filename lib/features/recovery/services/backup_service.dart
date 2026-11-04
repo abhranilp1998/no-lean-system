@@ -44,6 +44,7 @@ class BackupPreview {
 
   /// Notes to self (backup format 9+). Merged by ID on import.
   final List<FutureLetter> letters;
+
   /// Optional withdrawal check-ins and companion answers. Not versioned:
   /// older apps ignore the key, newer apps merge it when present.
   final Object? withdrawal;

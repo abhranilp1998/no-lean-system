@@ -27,12 +27,14 @@ void main() {
     await c.load();
     final now = DateTime.now();
     for (var i = 1; i <= 5; i++) {
-      await c.recordCraving(CravingEntry(
-        intensity: 6,
-        trigger: 'evening',
-        note: 'synthetic',
-        createdAt: now.subtract(Duration(days: i, hours: 2)),
-      ));
+      await c.recordCraving(
+        CravingEntry(
+          intensity: 6,
+          trigger: 'evening',
+          note: 'synthetic',
+          createdAt: now.subtract(Duration(days: i, hours: 2)),
+        ),
+      );
     }
     await c.recordRelapse(
       occurredAt: [now.subtract(const Duration(days: 3))],
@@ -59,9 +61,9 @@ void main() {
   });
 
   for (final v in [13, 14, 15]) {
-    test('state v$v snapshot opens without the compatibility screen',
-        () async {
-      final map = await syntheticV15()..['stateVersion'] = v;
+    test('state v$v snapshot opens without the compatibility screen', () async {
+      final map = await syntheticV15()
+        ..['stateVersion'] = v;
       final expected = (map['events'] as List).length;
       final c = await open(jsonEncode(map));
       expect(c.loadStatus, RecoveryLoadStatus.ready, reason: c.loadMessage);
@@ -77,8 +79,10 @@ void main() {
       final c = await open(jsonEncode(copy));
       final n = (copy['events'] as List?)?.length;
       // ignore: avoid_print
-      print('copy v${copy['stateVersion']}: ${c.loadStatus.name}, '
-          'stored events $n, loaded ${c.events.length}');
+      print(
+        'copy v${copy['stateVersion']}: ${c.loadStatus.name}, '
+        'stored events $n, loaded ${c.events.length}',
+      );
       expect(c.loadStatus, RecoveryLoadStatus.ready, reason: c.loadMessage);
       if (n != null) expect(c.events.length, greaterThanOrEqualTo(n));
     }
