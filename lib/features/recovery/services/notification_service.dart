@@ -9,6 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/theme/app_theme.dart';
+import '../../zones/domain/zone_entry_recency.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
@@ -543,12 +544,7 @@ class NotificationService {
     var scheduled = 0;
     for (var i = 0; i < zoneFollowUpIds.length; i++) {
       final at = enteredAt.add(zoneFollowUpDelays[i]);
-      final text = prefs.textFor(
-        'CHECKING IN',
-        i == 0
-            ? 'It\'s been 15 minutes since $zoneName. Still OK? Tap if you need SOS.'
-            : 'Quick check: how are you doing after $zoneName? No judgement either way.',
-      );
+      final text = zoneFollowUpText(prefs, i, zoneName);
       try {
         await _initialize(requestPermission: true);
         await scheduleWithExactFallback(

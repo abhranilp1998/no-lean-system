@@ -34,6 +34,7 @@ import '../features/zones/application/zone_monitor.dart';
 import '../features/zones/domain/danger_zone.dart';
 import '../features/zones/domain/zone_alert_copy.dart';
 import '../features/zones/domain/zone_entry.dart';
+import '../features/zones/domain/zone_entry_recency.dart';
 import '../features/zones/presentation/zone_alert_screen.dart';
 import '../features/zones/services/location_service.dart';
 
@@ -118,10 +119,9 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   Future<void> _openZoneAlertFromNotification() async {
     if (!mounted || _zoneAlertOpen) return;
     final recovery = ref.read(recoveryProvider);
-    final entries = recovery.events
-        .where((e) => e.type == RecoveryEventType.zoneEntry)
-        .toList();
-    final zoneId = entries.isEmpty ? null : entries.last.metadata['zoneId'];
+    // Only an entry from the last 30 min counts; older ones are history.
+    final entry = recentZoneEntry(recovery.events, DateTime.now());
+    final zoneId = entry?.metadata['zoneId'];
     final zone = recovery.zones.where((z) => z.id == zoneId).firstOrNull;
     if (zone != null) {
       await _onZoneEntered(zone, record: false);
@@ -140,7 +140,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       unawaited(
         NotificationService.instance
             .scheduleZoneFollowUps(
-              enteredAt: DateTime.now(),
+              enteredAt: entry?.timestamp ?? DateTime.now(),
               zoneName: 'the zone',
             )
             .catchError((Object _) => 0),
