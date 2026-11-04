@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:no_lean/features/emergency/presentation/emergency_screen.dart';
 import 'package:no_lean/features/withdrawal/domain/withdrawal_guide.dart';
 import 'package:no_lean/features/withdrawal/presentation/withdrawal_guide_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -74,6 +75,10 @@ void main() {
     expect(find.textContaining('Call '), findsNothing);
     expect(find.byKey(const Key('open-sos')), findsWidgets);
     expect(find.textContaining('14416'), findsNothing);
+    await tester.tap(find.byKey(const Key('open-sos')).first);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(EmergencyScreen), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(minutes: 10));
   });
