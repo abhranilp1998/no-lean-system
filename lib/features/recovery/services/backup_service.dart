@@ -27,6 +27,7 @@ class BackupPreview {
     required this.events,
     required this.preferences,
     this.zones = const [],
+    this.withdrawal,
   });
 
   final int eventCount;
@@ -37,6 +38,10 @@ class BackupPreview {
 
   /// Danger zones (backup format 4+). Merged by ID on import.
   final List<DangerZone> zones;
+
+  /// Optional withdrawal check-ins and companion answers. Not versioned:
+  /// older apps ignore the key, newer apps merge it when present.
+  final Object? withdrawal;
 
   bool get hasPreferences => preferences != null && preferences!.isNotEmpty;
 }
@@ -81,10 +86,16 @@ class BackupService {
     List<RecoveryEvent> events, {
     required Map<String, dynamic> preferences,
     List<DangerZone> zones = const [],
+    Map<String, Object>? withdrawal,
   }) {
     return exportJson(
       jsonEncode(
-        buildBackupPayload(events, preferences: preferences, zones: zones),
+        buildBackupPayload(
+          events,
+          preferences: preferences,
+          zones: zones,
+          withdrawal: withdrawal,
+        ),
       ),
     );
   }
@@ -94,6 +105,7 @@ class BackupService {
     List<RecoveryEvent> events, {
     required Map<String, dynamic> preferences,
     List<DangerZone> zones = const [],
+    Map<String, Object>? withdrawal,
   }) {
     return {
       'version': currentBackupVersion,
@@ -102,6 +114,7 @@ class BackupService {
       'zones': zones.map((zone) => zone.toJson()).toList(),
       'preferences': preferences,
       'excludedSecureData': const ['relapsePin', 'trustedContact'],
+      'withdrawal': ?withdrawal,
     };
   }
 
@@ -455,6 +468,7 @@ class BackupService {
         events: events,
         preferences: preferences,
         zones: zones,
+        withdrawal: map['withdrawal'],
       );
     } on FormatException {
       rethrow;
