@@ -26,15 +26,15 @@ void main() {
     );
   });
 
-  test('privacy mode follow-ups never show the zone name', () {
+  test('follow-ups never name the zone, privacy mode on or off', () {
     const hidden = NotificationPrefs(hideSensitive: true);
-    final t = zoneFollowUpText(hidden, 0, 'Test Zone A');
-    expect(t.title, neutralNotificationText.title);
-    expect('${t.title} ${t.body}', isNot(contains('Test Zone A')));
+    expect(zoneFollowUpText(hidden, 0).title, neutralNotificationText.title);
     const open = NotificationPrefs();
-    expect(
-      zoneFollowUpText(open, 1, 'Test Zone A').body,
-      contains('Test Zone A'),
-    );
+    for (final i in [0, 1]) {
+      final t = zoneFollowUpText(open, i);
+      expect(t.title, 'CHECKING IN');
+      expect(t.body, isNot(contains('zone')));
+      expect(t.body, isNot(contains('since')));
+    }
   });
 }

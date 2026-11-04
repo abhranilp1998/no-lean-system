@@ -544,7 +544,7 @@ class NotificationService {
     var scheduled = 0;
     for (var i = 0; i < zoneFollowUpIds.length; i++) {
       final at = enteredAt.add(zoneFollowUpDelays[i]);
-      final text = zoneFollowUpText(prefs, i, zoneName);
+      final text = zoneFollowUpText(prefs, i);
       try {
         await _initialize(requestPermission: true);
         await scheduleWithExactFallback(

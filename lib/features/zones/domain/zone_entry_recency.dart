@@ -17,15 +17,14 @@ RecoveryEvent? recentZoneEntry(Iterable<RecoveryEvent> events, DateTime now) {
   return latest;
 }
 
-/// Follow-up copy after a zone entry. Goes through [NotificationPrefs.textFor]
-/// so privacy mode posts the neutral text, never the zone name.
-NotificationText zoneFollowUpText(
-  NotificationPrefs prefs,
-  int index,
-  String zoneName,
-) => prefs.textFor(
-  'CHECKING IN',
-  index == 0
-      ? 'It\'s been 15 minutes since $zoneName. Still OK? Tap if you need SOS.'
-      : 'Quick check: how are you doing after $zoneName? No judgement either way.',
-);
+/// Follow-up copy after a zone entry. Neutral by default: it never names
+/// the zone (a notification can be read over a shoulder), privacy mode or
+/// not. Privacy mode still swaps in the fully neutral text via
+/// [NotificationPrefs.textFor].
+NotificationText zoneFollowUpText(NotificationPrefs prefs, int index) =>
+    prefs.textFor(
+      'CHECKING IN',
+      index == 0
+          ? 'It\'s been 15 minutes. Still OK? Tap if you need SOS.'
+          : 'Quick check: how are you doing? No judgement either way.',
+    );

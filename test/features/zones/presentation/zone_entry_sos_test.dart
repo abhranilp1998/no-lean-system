@@ -17,7 +17,7 @@ void main() {
     await tester.pumpWidget(
       const MaterialApp(
         home: ZoneAlertScreen(
-          copy: ZoneAlertCopy(title: 'PANACEA', body: 'Turn around.'),
+          copy: ZoneAlertCopy(title: 'TEST ZONE A', body: 'Turn around.'),
         ),
       ),
     );
