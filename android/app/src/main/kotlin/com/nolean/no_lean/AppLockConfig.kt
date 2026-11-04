@@ -112,7 +112,7 @@ class AppLockConfig private constructor(
                 schedule = root.optString("schedule", "off"),
                 windowStart = optInt("windowStart"),
                 windowEnd = optInt("windowEnd"),
-                lockInsideDangerZones = root.optBoolean("lockInsideDangerZones", false),
+                lockInsideDangerZones = root.optBoolean("lockInsideDangerZones", true) || root.optString("schedule", "off") == "off",
                 zones = zones,
                 // Fail private: anything but an explicit false hides details.
                 hideSensitive = root.opt("hideSensitive") != false,

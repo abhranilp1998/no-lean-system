@@ -164,7 +164,10 @@ class AppLockPolicy {
       apps: clean,
       schedule: schedule,
       customWindow: customWindow,
-      lockInsideDangerZones: lockInsideDangerZones,
+      // "Danger zones only" (schedule off) always locks inside zones; with
+      // the zone rule off it would silently lock nothing.
+      lockInsideDangerZones:
+          schedule == AppLockSchedule.off || lockInsideDangerZones,
       dailyUnlockBudget: dailyUnlockBudget.clamp(0, maxDailyUnlockBudget),
     );
   }
