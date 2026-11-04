@@ -458,6 +458,12 @@ class NotificationService {
                   showsUserInterface: true,
                   cancelNotification: true,
                 ),
+                AndroidNotificationAction(
+                  'action_used',
+                  prefs.label('I USED', 'LOG'),
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
               ],
             ),
           ),

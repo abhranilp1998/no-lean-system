@@ -764,7 +764,15 @@ class RecoveryController extends ChangeNotifier {
         now: _now(),
       );
       if (due.isEmpty) return null;
+      final resetRecordedAt = _latestResetRecordedAt();
+      int? celebrate;
       for (final milestone in due) {
+        final backfilled = milestoneIsBackfilled(
+          milestone: milestone,
+          lastDose: lastDose,
+          resetRecordedAt: resetRecordedAt,
+        );
+        if (!backfilled) celebrate = milestone.days;
         events.add(
           RecoveryEvent.create(
             type: RecoveryEventType.milestone,
@@ -773,12 +781,13 @@ class RecoveryController extends ChangeNotifier {
               'days': milestone.days,
               'label': milestone.label,
               'source': 'auto',
+              if (backfilled) 'backfilled': true,
             },
           ),
         );
       }
       _sortAndRecompute();
-      return due.last.days;
+      return celebrate;
     });
     if (reached != null) {
       pendingCelebration = reached;
@@ -800,6 +809,52 @@ class RecoveryController extends ChangeNotifier {
     relapseCooldownUntil = state.until;
     relapseCooldownEventId = state.eventId;
     return before != (relapseCooldownUntil, relapseCooldownEventId);
+  }
+
+  /// When the reset that started the current streak was written down. A
+  /// relapse logged "3 h ago" was recorded now, not 3 h ago.
+  DateTime? _latestResetRecordedAt() {
+    RecoveryEvent? latest;
+    for (final e in events) {
+      if (e.type != RecoveryEventType.relapse) continue;
+      if (latest == null || e.timestamp.isAfter(latest.timestamp)) latest = e;
+    }
+    final raw = latest?.metadata['recordedAt'];
+    return raw is String ? DateTime.tryParse(raw) : null;
+  }
+
+  /// P0-5 one-tap "Used": logs a relapse at now. A second tap inside
+  /// [quickUseDedupWindow] is a double-tap, not a second use, and is ignored.
+  static const quickUseDedupWindow = Duration(seconds: 45);
+  bool _quickUseInFlight = false;
+
+  Future<ProtectedActionResult> quickLogUsed({
+    String source = 'one_tap',
+    String? pin,
+    bool tryBiometrics = true,
+  }) async {
+    final now = DateTime.now();
+    final duplicate =
+        _quickUseInFlight ||
+        events.any((e) {
+          if (e.type != RecoveryEventType.relapse) return false;
+          if (e.metadata['quick'] != true) return false;
+          final at = DateTime.tryParse('${e.metadata['recordedAt']}');
+          return at != null && now.difference(at).abs() < quickUseDedupWindow;
+        });
+    if (duplicate) return ProtectedActionResult.completed;
+    _quickUseInFlight = true;
+    try {
+      return await recordRelapse(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        occurredAt: [now],
+        source: source,
+        extraMetadata: const {'quick': true},
+      );
+    } finally {
+      _quickUseInFlight = false;
+    }
   }
 
   void consumeCelebration() {
@@ -1081,6 +1136,7 @@ class RecoveryController extends ChangeNotifier {
     List<RelapseLogEntry>? entries,
     String? operationId,
     String source = 'app',
+    Map<String, dynamic> extraMetadata = const {},
   }) {
     if (occurredAt != null && entries != null) {
       throw ArgumentError('Use occurredAt or entries, not both.');
@@ -1165,6 +1221,7 @@ class RecoveryController extends ChangeNotifier {
             'recordedAt': DateTime.now().toIso8601String(),
             'postSos': postSos,
             'streakLost': lost,
+            ...extraMetadata,
             if (richEntry != null) ...richEntry.toMetadata(),
           },
         });

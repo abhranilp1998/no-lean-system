@@ -15,7 +15,7 @@
         <item quantity="one">%d DAY CLEAN</item>
         <item quantity="other">%d DAYS CLEAN</item>
     </plurals>
-    <string name="widget_action_relapse">LOG RELAPSES</string>
+    <string name="widget_action_relapse">I USED</string>
     <string name="widget_action_code">CODE INSTEAD</string>
     <string name="widget_description_small">Clean-time counter with one-tap SOS</string>
     <string name="widget_description_large">Recovery timer with SOS, craving, relapse logging and Code Instead</string>

@@ -19,9 +19,49 @@ import 'peak_hour_gate_dialog.dart';
 import 'relapse_auth_dialog.dart';
 import '../../cravings/presentation/craving_dialog.dart';
 
+/// Rounds "about [hours] h ago" to the minute; never in the future.
+DateTime relapseHoursAgo(int hours, {DateTime? now}) {
+  final at = (now ?? DateTime.now()).subtract(Duration(hours: hours));
+  return DateTime(at.year, at.month, at.day, at.hour, at.minute);
+}
+
+const relapseAgoChoices = [1, 2, 3, 6, 12];
+
+/// P0-5 one-tap "Used": records a relapse at now, no form. Double-taps are
+/// absorbed by the controller. If the history lock needs a PIN, or the
+/// write fails, falls back to the full logger.
+Future<void> quickLogUsed(
+  BuildContext context, {
+  String source = 'one_tap',
+}) async {
+  final recovery = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(recoveryProvider);
+  ProtectedActionResult result;
+  try {
+    result = await recovery.quickLogUsed(source: source);
+  } catch (_) {
+    result = ProtectedActionResult.denied;
+  }
+  if (!context.mounted) return;
+  if (result != ProtectedActionResult.completed) {
+    await showRelapseLogSheet(context, source: source);
+    return;
+  }
+  AppNotice.show(
+    context,
+    'LOGGED. THANK YOU FOR BEING HONEST // ADD DETAILS ANY TIME.',
+    type: AppNoticeType.success,
+    actionLabel: 'LOG A PAST ONE',
+    onAction: () => showRelapseLogSheet(context, source: source),
+  );
+}
+
 Future<void> showRelapseLogSheet(
   BuildContext context, {
   String source = 'app',
+  DateTime? initialOccurredAt,
 }) async {
   final recovery = ProviderScope.containerOf(
     context,
@@ -46,7 +86,8 @@ Future<void> showRelapseLogSheet(
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.black,
-    builder: (_) => RelapseLogSheet(source: source),
+    builder: (_) =>
+        RelapseLogSheet(source: source, initialOccurredAt: initialOccurredAt),
   );
   if (result == null || !context.mounted) return;
   AppNotice.show(
@@ -66,9 +107,16 @@ Future<void> showRelapseLogSheet(
 }
 
 class RelapseLogSheet extends ConsumerStatefulWidget {
-  const RelapseLogSheet({this.source = 'app', super.key});
+  const RelapseLogSheet({
+    this.source = 'app',
+    this.initialOccurredAt,
+    super.key,
+  });
 
   final String source;
+
+  /// Prefills the first entry's time (a backfill "about X h ago").
+  final DateTime? initialOccurredAt;
 
   @override
   ConsumerState<RelapseLogSheet> createState() => _RelapseLogSheetState();
@@ -81,6 +129,20 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   bool _saving = false;
   bool _openSosAfterSave = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final at = widget.initialOccurredAt;
+    if (at != null && !at.isAfter(DateTime.now())) {
+      _entries.first.occurredAt = at;
+    }
+  }
+
+  void _setAgo(int index, int hours) => setState(() {
+    _entries[index].occurredAt = relapseHoursAgo(hours);
+    _error = null;
+  });
 
   @override
   void dispose() {
@@ -412,6 +474,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                               canRemove: _entries.length > 1,
                               onDate: () => _pickDate(index),
                               onTime: () => _pickTime(index),
+                              onAgo: (hours) => _setAgo(index, hours),
                               onRemove: () => _removeEntry(index),
                               onChanged: () => setState(() => _error = null),
                             ),
@@ -569,6 +632,7 @@ class _RelapseEntryCard extends StatelessWidget {
     required this.canRemove,
     required this.onDate,
     required this.onTime,
+    required this.onAgo,
     required this.onRemove,
     required this.onChanged,
   });
@@ -580,6 +644,7 @@ class _RelapseEntryCard extends StatelessWidget {
   final bool canRemove;
   final VoidCallback onDate;
   final VoidCallback onTime;
+  final ValueChanged<int> onAgo;
   final VoidCallback onRemove;
   final VoidCallback onChanged;
 
@@ -621,6 +686,18 @@ class _RelapseEntryCard extends StatelessWidget {
                 icon: const Icon(Icons.schedule),
                 label: Text(DateFormat.jm().format(entry.occurredAt)),
               ),
+            ],
+          ),
+          Wrap(
+            spacing: 6,
+            children: [
+              Text('ABOUT', style: microStyle),
+              for (final hours in relapseAgoChoices)
+                ActionChip(
+                  key: ValueKey('relapse-ago-$index-$hours'),
+                  label: Text('${hours}H AGO'),
+                  onPressed: saving ? null : () => onAgo(hours),
+                ),
             ],
           ),
           const SizedBox(height: 12),

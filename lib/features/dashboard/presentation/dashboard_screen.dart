@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../recovery/presentation/relapse_log_sheet.dart';
+
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/action_tile.dart';
@@ -141,6 +143,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               recovery.relapseCooldownUntil != null)
             const SizedBox(height: 14),
           const CravingRecheckCard(),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const ValueKey('dashboard-used-now'),
+                  onPressed: () => quickLogUsed(context, source: 'home'),
+                  icon: const Icon(Icons.touch_app_outlined),
+                  label: const Text('I USED · 1 TAP'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  key: const ValueKey('dashboard-log-past'),
+                  onPressed: () => showRelapseDialog(context, ref),
+                  icon: const Icon(Icons.history),
+                  label: const Text('LOG A PAST ONE'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
           GlowButton(
             label: 'I WILL NOT BUY LEAN TODAY',
             icon: Icons.lock_outline,

@@ -49,3 +49,15 @@ List<RecoveryMilestone> dueMilestones({
         milestone,
   ];
 }
+
+/// P0-5: a milestone whose reach time is before the moment the latest reset
+/// was *recorded* was only "reached" on paper because the relapse was
+/// backfilled later. It is logged silently and never celebrated.
+bool milestoneIsBackfilled({
+  required RecoveryMilestone milestone,
+  required DateTime lastDose,
+  required DateTime? resetRecordedAt,
+}) {
+  if (resetRecordedAt == null) return false;
+  return lastDose.add(Duration(days: milestone.days)).isBefore(resetRecordedAt);
+}
