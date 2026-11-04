@@ -9,7 +9,7 @@ import 'package:no_lean/features/zones/services/native_geofence_gateway.dart';
 void main() {
   final zone = DangerZone(
     id: 'z1',
-    name: 'Panacea',
+    name: 'Test Zone A',
     latitude: 22.5,
     longitude: 88.3,
     radiusMeters: 200,
@@ -38,7 +38,7 @@ void main() {
       rawState: state(),
       geofenceIds: ['nolean_near_z1'],
     );
-    expect(copy!.title, contains('Panacea'));
+    expect(copy!.title, contains('Test Zone A'));
     expect(copy.body, contains('getting close'));
     expect(
       backgroundNearAlert(
@@ -50,6 +50,26 @@ void main() {
     expect(
       backgroundNearAlert(rawState: state(), geofenceIds: ['nolean_zone_z1']),
       isNull,
+    );
+  });
+  test('geofences are capped: 2 per zone, 100 in total', () {
+    final many = [
+      for (var i = 0; i < 70; i++)
+        DangerZone(
+          id: 'z$i',
+          name: 'Zone $i',
+          latitude: 10,
+          longitude: 10,
+          radiusMeters: 150,
+          createdAt: DateTime(2026),
+        ),
+    ];
+    final kept = NativeGeofenceGateway.geofencedZones(many);
+    expect(kept.length * NativeGeofenceGateway.geofencesPerZone, 100);
+    expect(kept.first.id, 'z0');
+    expect(
+      NativeGeofenceGateway.geofencedZones(many.take(3).toList()),
+      hasLength(3),
     );
   });
 }

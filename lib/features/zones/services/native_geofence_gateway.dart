@@ -46,6 +46,14 @@ class NativeGeofenceGateway implements GeofenceGateway {
 
   static const dwellDelay = Duration(minutes: 3);
 
+  /// Android allows 100 geofences per app; each zone uses 2 (zone + ring).
+  static const geofencesPerZone = 2;
+  static const maxGeofences = 100;
+
+  /// The zones that get OS geofences: the first 50, in the user's order.
+  static List<DangerZone> geofencedZones(List<DangerZone> zones) =>
+      zones.take(maxGeofences ~/ geofencesPerZone).toList();
+
   /// Wider early-warning ring around [zone]; ENTER only, no initial trigger
   /// (being near on arming is not news).
   static Geofence nearGeofenceFor(DangerZone zone) => Geofence(
@@ -64,7 +72,7 @@ class NativeGeofenceGateway implements GeofenceGateway {
   Future<void> sync(List<DangerZone> zones) async {
     await _init();
     final wanted = <String, Geofence>{
-      for (final zone in zones) ...{
+      for (final zone in geofencedZones(zones)) ...{
         geofenceIdForZone(zone): geofenceFor(zone),
         nearGeofenceIdForZone(zone): nearGeofenceFor(zone),
       },
