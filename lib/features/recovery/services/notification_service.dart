@@ -57,7 +57,11 @@ class NotificationService {
           android: AndroidInitializationSettings(notificationSmallIcon),
         ),
         onDidReceiveNotificationResponse: (response) {
-          final action = actionFor(response.actionId, response.id);
+          final action = actionFor(
+            response.actionId,
+            response.id,
+            response.payload,
+          );
           if (action != null) _actionStreamController.add(action);
         },
       );
@@ -221,7 +225,7 @@ class NotificationService {
       final details = await _plugin.getNotificationAppLaunchDetails();
       if (details?.didNotificationLaunchApp ?? false) {
         final r = details?.notificationResponse;
-        return actionFor(r?.actionId, r?.id);
+        return actionFor(r?.actionId, r?.id, r?.payload);
       }
     } catch (_) {
       // No launch details on this platform.
@@ -248,6 +252,7 @@ class NotificationService {
         zoneAlertId,
         text.title,
         text.body,
+        payload: zoneAlertPayload,
         NotificationDetails(
           android: AndroidNotificationDetails(
             'danger_zone_v1',
@@ -490,8 +495,14 @@ class NotificationService {
   /// A tap on the body of the use-check notification opens the prompt.
   static const useCheckOpenAction = 'use_check_open';
 
-  static String? actionFor(String? actionId, int? notificationId) {
+  /// Tapping the zone alert itself opens the full-screen SOS (P0-3).
+  static String? actionFor(
+    String? actionId,
+    int? notificationId, [
+    String? payload,
+  ]) {
     if (actionId != null && actionId.isNotEmpty) return actionId;
+    if (payload == zoneAlertPayload) return 'action_zone_open';
     return notificationId == useCheckId ? useCheckOpenAction : null;
   }
 
@@ -512,6 +523,73 @@ class NotificationService {
     final check = UseCheck.decode(store.getString(useCheckPrefsKey));
     if (clear) await store.remove(useCheckPrefsKey);
     return check;
+  }
+
+  static const zoneAlertPayload = 'zone_alert';
+
+  /// Follow-up check-ins after a zone entry (plan P0-3), 15 and 45 min on.
+  static const zoneFollowUpIds = [720, 721];
+  static const zoneFollowUpDelays = [
+    Duration(minutes: 15),
+    Duration(minutes: 45),
+  ];
+
+  /// Schedules "are you OK?" check-ins after a zone entry. Safety-relevant,
+  /// so quiet hours don't mute them. Returns how many were scheduled.
+  Future<int> scheduleZoneFollowUps({
+    required DateTime enteredAt,
+    required String zoneName,
+  }) async {
+    var scheduled = 0;
+    for (var i = 0; i < zoneFollowUpIds.length; i++) {
+      final at = enteredAt.add(zoneFollowUpDelays[i]);
+      final text = prefs.textFor(
+        'CHECKING IN',
+        i == 0
+            ? 'It\'s been 15 minutes since $zoneName. Still OK? Tap if you need SOS.'
+            : 'Quick check: how are you doing after $zoneName? No judgement either way.',
+      );
+      try {
+        await _initialize(requestPermission: true);
+        await scheduleWithExactFallback(
+          exactAllowed: await exactAlarmsAllowed(),
+          schedule: (mode) => _plugin.zonedSchedule(
+            zoneFollowUpIds[i],
+            text.title,
+            text.body,
+            tz.TZDateTime.from(at, tz.local),
+            NotificationDetails(
+              android: AndroidNotificationDetails(
+                'zone_followup_v1',
+                'NO LEAN check-ins',
+                channelDescription: 'Checks on you after a danger zone',
+                importance: Importance.high,
+                priority: Priority.high,
+                visibility: lockScreenVisibility,
+                category: AndroidNotificationCategory.reminder,
+                ticker: neutralNotificationText.title,
+                actions: [
+                  AndroidNotificationAction(
+                    'action_safe',
+                    prefs.label('I\'M OK', 'OK'),
+                    cancelNotification: true,
+                  ),
+                  AndroidNotificationAction(
+                    'action_sos',
+                    prefs.label('OPEN SOS', 'OPEN'),
+                    showsUserInterface: true,
+                    cancelNotification: true,
+                  ),
+                ],
+              ),
+            ),
+            androidScheduleMode: mode,
+          ),
+        );
+        scheduled++;
+      } catch (_) {}
+    }
+    return scheduled;
   }
 
   static const cravingCheckId = 710;

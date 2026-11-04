@@ -426,6 +426,12 @@ class SettingsScreen extends ConsumerWidget {
 String _appLockSubtitle(AppLockPolicy policy, AppLockStatus? status) {
   if (!policy.enabled) return 'Off // lock chosen apps, with an exit plan';
   final apps = policy.enabledPackages.length;
+  // P0-3 audit: "danger zones only" with the zone rule off locks nothing.
+  if (!policy.armed) {
+    return apps == 0
+        ? 'On // no apps chosen, nothing is locked'
+        : 'On // nothing is locked: turn on "Lock inside danger zones" or pick a schedule';
+  }
   final when = policy.schedule == AppLockSchedule.off
       ? 'danger zones'
       : policy.schedule.label.toLowerCase();
