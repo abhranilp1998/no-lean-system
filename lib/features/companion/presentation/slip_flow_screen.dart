@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../recovery/presentation/dose_safety_cards.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -100,6 +102,10 @@ class _SlipState extends ConsumerState<SlipFlowScreen> {
               ),
             ),
           const SizedBox(height: 6),
+          if (mixed) ...[
+            const MixingSafetyNetCard(),
+            const SizedBox(height: 8),
+          ],
           for (final n in notes) SafetyCard(n, urgent: n == mixingCheckIn),
           const RedFlagsTile(),
           const SizedBox(height: 10),

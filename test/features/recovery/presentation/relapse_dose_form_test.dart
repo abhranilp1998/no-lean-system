@@ -7,7 +7,10 @@ import 'package:no_lean/core/theme/app_theme.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/application/recovery_provider.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
+import 'package:no_lean/features/recovery/domain/mixing_safety_net.dart';
 import 'package:no_lean/features/recovery/presentation/dose_safety_cards.dart';
+import 'package:no_lean/features/settings/services/trusted_contact_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:no_lean/features/recovery/presentation/relapse_log_sheet.dart';
 
 import '../../../support/recovery_fakes.dart';
@@ -195,24 +198,66 @@ void main() {
     }
   });
 
-  testWidgets('CALL 112 dials 112', (tester) async {
-    Uri? dialed;
+  Future<List<Uri>> pumpNet(
+    WidgetTester tester, {
+    TrustedContact? contact,
+    Map<String, Object> prefs = const {},
+  }) async {
+    SharedPreferences.setMockInitialValues(prefs);
+    final opened = <Uri>[];
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: OverdoseSignsCard(
-              launcher: (uri) async {
-                dialed = uri;
-                return true;
-              },
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: OverdoseSignsCard(
+                contact: contact,
+                launcher: (uri) async {
+                  opened.add(uri);
+                  return true;
+                },
+              ),
             ),
           ),
         ),
       ),
     );
+    await tester.pumpAndSettle();
+    return opened;
+  }
+
+  testWidgets('(B) contact first; 112 only behind a second tap', (
+    tester,
+  ) async {
+    final opened = await pumpNet(
+      tester,
+      contact: const TrustedContact(name: 'Riya', phone: '+919999999999'),
+    );
+    expect(find.text('PING RIYA NOW'), findsOneWidget);
+    expect(find.byKey(const ValueKey('call-112')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('mixing-ping-contact')));
+    await tester.pump();
+    expect(opened.single.scheme, 'sms');
+    expect(opened.single.path, '+919999999999');
+    await tester.tap(find.byKey(const ValueKey('mixing-reveal-112')));
+    await tester.pump();
     await tester.tap(find.byKey(const ValueKey('call-112')));
     await tester.pump();
-    expect(dialed, Uri(scheme: 'tel', path: '112'));
+    expect(opened.last, Uri(scheme: 'tel', path: '112'));
+  });
+
+  testWidgets('(B) contact-only hides 112; off hides the net', (tester) async {
+    await pumpNet(tester, prefs: {mixingSafetyNetKey: 'contactOnly'});
+    expect(find.byKey(const ValueKey('mixing-ping-contact')), findsOneWidget);
+    expect(find.byKey(const ValueKey('mixing-reveal-112')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await pumpNet(tester, prefs: {mixingSafetyNetKey: 'off'});
+    expect(find.byKey(const ValueKey('mixing-ping-contact')), findsNothing);
+  });
+
+  test('(B) default is contact + 112; junk parses to default', () {
+    expect(parseMixingSafetyNet(null), MixingSafetyNet.contactAnd112);
+    expect(parseMixingSafetyNet('nope'), MixingSafetyNet.contactAnd112);
+    expect(parseMixingSafetyNet('off'), MixingSafetyNet.off);
   });
 }

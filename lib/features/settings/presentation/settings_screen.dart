@@ -1,6 +1,8 @@
 import '../../../core/layout/tab_layout.dart';
 import 'package:flutter/material.dart';
 
+import '../../recovery/domain/mixing_safety_net.dart';
+
 import '../../widgets/presentation/widgets_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -199,6 +201,15 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: 'Emergency dial during SOS',
               color: cyan,
               onTap: () => showTrustedContactDialog(context, ref),
+            ),
+            SettingAction(
+              key: const ValueKey('settings-mixing-net'),
+              icon: Icons.health_and_safety_outlined,
+              title: 'Mixing safety net',
+              subtitle:
+                  '${(ref.watch(mixingSafetyNetProvider).valueOrNull ?? defaultMixingSafetyNet).label} // after a mixed or risky dose',
+              color: red,
+              onTap: () => _pickMixingNet(context, ref),
             ),
             SettingAction(
               icon: Icons.schedule,
@@ -433,4 +444,36 @@ String _appLockSubtitle(AppLockPolicy policy, AppLockStatus? status) {
       ? ' // needs usage access'
       : '';
   return '$apps app(s) // $when${policy.lockInsideDangerZones && policy.schedule != AppLockSchedule.off ? ' + zones' : ''}$health';
+}
+
+Future<void> _pickMixingNet(BuildContext context, WidgetRef ref) async {
+  final current =
+      ref.read(mixingSafetyNetProvider).valueOrNull ?? defaultMixingSafetyNet;
+  final picked = await showDialog<MixingSafetyNet>(
+    context: context,
+    builder: (ctx) => SimpleDialog(
+      title: const Text('Mixing safety net'),
+      children: [
+        for (final v in MixingSafetyNet.values)
+          SimpleDialogOption(
+            key: ValueKey('mixing-net-${v.name}'),
+            onPressed: () => Navigator.pop(ctx, v),
+            child: Row(
+              children: [
+                Icon(
+                  v == current
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                ),
+                const SizedBox(width: 10),
+                Text(v.label),
+              ],
+            ),
+          ),
+      ],
+    ),
+  );
+  if (picked != null) {
+    await ref.read(mixingSafetyNetProvider.notifier).set(picked);
+  }
 }
