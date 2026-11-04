@@ -57,6 +57,9 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   final _lockSession = AppLockSession();
   AppLockReason? _lastLockReason;
   bool _deferredRelapse = false;
+
+  /// (A) "Yes" while locked: the prefilled time survives the unlock.
+  DateTime? _deferredUseCheckAt;
   bool _deferredLetter = false;
   Timer? _lockTicker;
   late final ZoneMonitor _zoneMonitor = ZoneMonitor(
@@ -225,7 +228,18 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     _lockSession.onUnlocked();
     setState(() {});
     _maybeCelebrate();
-    if (_deferredRelapse) {
+    final useCheckAt = _deferredUseCheckAt;
+    if (useCheckAt != null) {
+      _deferredUseCheckAt = null;
+      _deferredRelapse = false;
+      unawaited(
+        showRelapseLogSheet(
+          context,
+          source: 'use_check',
+          initialOccurredAt: useCheckAt,
+        ),
+      );
+    } else if (_deferredRelapse) {
       _deferredRelapse = false;
       _pendingActions.add('relapse');
       unawaited(_drainActions());
@@ -361,6 +375,8 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         actionId == 'action_use_no' ||
         actionId == 'action_use_later') {
       unawaited(_answerUseCheck(actionId));
+    } else if (actionId == NotificationService.useCheckOpenAction) {
+      unawaited(_openUseCheckPrompt());
     } else if (actionId == 'action_safe') {
       unawaited(_checkIn());
     } else if (actionId == 'action_recheck') {
@@ -375,6 +391,40 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
 
   /// (A) YES opens the past-relapse logger prefilled with the trigger time;
   /// NO counts as a safe check-in; LATER asks again in 30 minutes.
+  /// Body tap on the "Did you use?" notification: ask in the app.
+  Future<void> _openUseCheckPrompt() async {
+    final check = await NotificationService.instance.peekPendingUseCheck();
+    if (!mounted) return;
+    final answer = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        key: const ValueKey('use-check-prompt'),
+        title: const Text('Did you use?'),
+        content: Text(
+          '${check?.trigger.body ?? ''} Either answer is OK.'.trim(),
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('use-check-later'),
+            onPressed: () => Navigator.pop(ctx, 'action_use_later'),
+            child: const Text('LATER'),
+          ),
+          TextButton(
+            key: const ValueKey('use-check-no'),
+            onPressed: () => Navigator.pop(ctx, 'action_use_no'),
+            child: const Text('NO'),
+          ),
+          TextButton(
+            key: const ValueKey('use-check-yes'),
+            onPressed: () => Navigator.pop(ctx, 'action_use_yes'),
+            child: const Text('YES'),
+          ),
+        ],
+      ),
+    );
+    if (answer != null && mounted) await _answerUseCheck(answer);
+  }
+
   Future<void> _answerUseCheck(String actionId) async {
     final service = NotificationService.instance;
     final check = await service.takePendingUseCheck();
@@ -388,8 +438,9 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     } else if (actionId == 'action_use_no') {
       await _checkIn();
     } else {
+      final prefill = check == null ? now : useCheckPrefill(check, now);
       if (_resolveLock() != null) {
-        _deferredRelapse = true;
+        _deferredUseCheckAt = prefill;
         AppNotice.show(
           context,
           'Unlock to log it. Thank you for being honest.',
@@ -399,7 +450,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       await showRelapseLogSheet(
         context,
         source: 'use_check',
-        initialOccurredAt: check == null ? null : useCheckPrefill(check, now),
+        initialOccurredAt: prefill,
       );
     }
   }

@@ -90,8 +90,11 @@ class RecoveryController extends ChangeNotifier {
     Future<bool> Function(DateTime at)? scheduleCravingCheck,
     Future<void> Function()? cancelCravingCheck,
     Future<bool> Function(UseCheck check)? scheduleUseCheck,
+    Future<void> Function()? cancelUseCheck,
   }) : _scheduleUseCheck =
            scheduleUseCheck ?? NotificationService.instance.scheduleUseCheck,
+       _cancelUseCheck =
+           cancelUseCheck ?? NotificationService.instance.cancelUseCheck,
        _scheduleCravingCheck =
            scheduleCravingCheck ??
            ((at) => NotificationService.instance.scheduleCravingCheck(at: at)),
@@ -123,6 +126,15 @@ class RecoveryController extends ChangeNotifier {
 
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
   final Future<bool> Function(UseCheck check) _scheduleUseCheck;
+  final Future<void> Function() _cancelUseCheck;
+
+  /// The question is answered: a relapse was logged or SOS ended with an
+  /// outcome, so the pending "Did you use?" (id 740) must not fire.
+  Future<void> cancelUseCheck() async {
+    try {
+      await _cancelUseCheck();
+    } catch (_) {}
+  }
 
   /// (A) Queues the "Did you use?" follow-up. Never blocks local history.
   Future<void> queueUseCheck(UseCheckTrigger trigger, {DateTime? at}) async {
@@ -1167,6 +1179,30 @@ class RecoveryController extends ChangeNotifier {
     String? operationId,
     String source = 'app',
     Map<String, dynamic> extraMetadata = const {},
+  }) async {
+    final result = await _recordRelapse(
+      pin: pin,
+      tryBiometrics: tryBiometrics,
+      occurredAt: occurredAt,
+      entries: entries,
+      operationId: operationId,
+      source: source,
+      extraMetadata: extraMetadata,
+    );
+    if (result == ProtectedActionResult.completed) {
+      unawaited(cancelUseCheck());
+    }
+    return result;
+  }
+
+  Future<ProtectedActionResult> _recordRelapse({
+    String? pin,
+    bool tryBiometrics = true,
+    List<DateTime>? occurredAt,
+    List<RelapseLogEntry>? entries,
+    String? operationId,
+    String source = 'app',
+    Map<String, dynamic> extraMetadata = const {},
   }) {
     if (occurredAt != null && entries != null) {
       throw ArgumentError('Use occurredAt or entries, not both.');
@@ -1276,7 +1312,14 @@ class RecoveryController extends ChangeNotifier {
     });
   }
 
-  Future<void> recordSosSession(SosSession session) => _transaction(() async {
+  Future<void> recordSosSession(SosSession session) async {
+    await _recordSosSession(session);
+    if (session.isCompleted) {
+      _afterSosEnded(session.completedAt!, session.debrief);
+    }
+  }
+
+  Future<void> _recordSosSession(SosSession session) => _transaction(() async {
     final startId = session.id ?? const Uuid().v4();
     final start = _ensureSosStart(startId, session.startedAt);
 
@@ -1293,17 +1336,22 @@ class RecoveryController extends ChangeNotifier {
     _sortAndRecompute();
   });
 
-  /// Also queues (A)'s follow-up, so an SOS that ends without an outcome
-  /// (closed, killed) is still asked about.
-  Future<String> startSosSession({String? id, DateTime? startedAt}) async {
-    final startId = await _transaction(() async {
-      final startId = id ?? const Uuid().v4();
-      _ensureSosStart(startId, startedAt ?? DateTime.now());
-      _sortAndRecompute();
-      return startId;
-    });
-    unawaited(queueUseCheck(UseCheckTrigger.sos, at: startedAt));
-    return startId;
+  Future<String> startSosSession({String? id, DateTime? startedAt}) =>
+      _transaction(() async {
+        final startId = id ?? const Uuid().v4();
+        _ensureSosStart(startId, startedAt ?? DateTime.now());
+        _sortAndRecompute();
+        return startId;
+      });
+
+  /// (A): SOS that ends with an outcome answers the question; one that ends
+  /// with none is asked about later.
+  void _afterSosEnded(DateTime completedAt, String? debrief) {
+    if (debrief != null && debrief.trim().isNotEmpty) {
+      unawaited(cancelUseCheck());
+    } else {
+      unawaited(queueUseCheck(UseCheckTrigger.sos, at: completedAt));
+    }
   }
 
   RecoveryEvent _ensureSosStart(String startId, DateTime startedAt) {
@@ -1328,6 +1376,19 @@ class RecoveryController extends ChangeNotifier {
   }
 
   Future<void> completeSosSession({
+    required String startId,
+    required DateTime completedAt,
+    String? debrief,
+  }) async {
+    await _completeSosSession(
+      startId: startId,
+      completedAt: completedAt,
+      debrief: debrief,
+    );
+    _afterSosEnded(completedAt, debrief);
+  }
+
+  Future<void> _completeSosSession({
     required String startId,
     required DateTime completedAt,
     String? debrief,

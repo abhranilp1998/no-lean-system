@@ -57,9 +57,8 @@ class NotificationService {
           android: AndroidInitializationSettings(notificationSmallIcon),
         ),
         onDidReceiveNotificationResponse: (response) {
-          if (response.actionId != null) {
-            _actionStreamController.add(response.actionId!);
-          }
+          final action = actionFor(response.actionId, response.id);
+          if (action != null) _actionStreamController.add(action);
         },
       );
       _initialized = true;
@@ -221,7 +220,8 @@ class NotificationService {
       await _initialize(requestPermission: false);
       final details = await _plugin.getNotificationAppLaunchDetails();
       if (details?.didNotificationLaunchApp ?? false) {
-        return details?.notificationResponse?.actionId;
+        final r = details?.notificationResponse;
+        return actionFor(r?.actionId, r?.id);
       }
     } catch (_) {
       // No launch details on this platform.
@@ -480,6 +480,26 @@ class NotificationService {
       return false;
     }
   }
+
+  /// A tap on the body of the use-check notification opens the prompt.
+  static const useCheckOpenAction = 'use_check_open';
+
+  static String? actionFor(String? actionId, int? notificationId) {
+    if (actionId != null && actionId.isNotEmpty) return actionId;
+    return notificationId == useCheckId ? useCheckOpenAction : null;
+  }
+
+  Future<void> cancelUseCheck() async {
+    final store = await SharedPreferences.getInstance();
+    await store.remove(useCheckPrefsKey);
+    try {
+      await _initialize(requestPermission: false);
+      await _plugin.cancel(useCheckId);
+    } catch (_) {}
+  }
+
+  /// Reads the pending check without clearing it.
+  Future<UseCheck?> peekPendingUseCheck() => takePendingUseCheck(clear: false);
 
   Future<UseCheck?> takePendingUseCheck({bool clear = true}) async {
     final store = await SharedPreferences.getInstance();
