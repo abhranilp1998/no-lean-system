@@ -19,7 +19,7 @@ import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
 import '../domain/relapse_log_entry.dart';
 import '../domain/data_fixes_v12.dart';
-import '../domain/double_tap.dart';
+import '../domain/double_tap.dart' as double_tap;
 import '../domain/milestones.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
@@ -1031,7 +1031,7 @@ class RecoveryController extends ChangeNotifier {
     );
     // (C) A double-tap on SAVE is one craving, not two (shared rule).
     final twin = events.reversed
-        .where((e) => isDoubleTap(e, event))
+        .where((e) => double_tap.isDoubleTap(e, event))
         .firstOrNull;
     if (twin != null) return twin.id;
     await appendEvent(event);
