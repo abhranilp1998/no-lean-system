@@ -34,7 +34,15 @@ class BackupPreview {
     this.letters = const [],
     this.withdrawal,
     this.companion,
+    this.hiddenDuplicates = const [],
+    this.feedbackNotes,
   });
+
+  /// (C) Double-tap copies hidden (not deleted) by the v12 fixes.
+  final List<RecoveryEvent> hiddenDuplicates;
+
+  /// (C) Raw feedback notes (backup v12+); see feedback_notes_backup.dart.
+  final Object? feedbackNotes;
 
   final int eventCount;
   final DateTime? oldestEventDate;
@@ -108,6 +116,8 @@ class BackupService {
     List<FutureLetter> letters = const [],
     Map<String, Object>? withdrawal,
     CompanionState? companion,
+    List<RecoveryEvent> hiddenDuplicates = const [],
+    Object? feedbackNotes,
   }) {
     return exportJson(
       jsonEncode(
@@ -118,6 +128,8 @@ class BackupService {
           letters: letters,
           withdrawal: withdrawal,
           companion: companion,
+          hiddenDuplicates: hiddenDuplicates,
+          feedbackNotes: feedbackNotes,
         ),
       ),
     );
@@ -131,6 +143,8 @@ class BackupService {
     List<FutureLetter> letters = const [],
     Map<String, Object>? withdrawal,
     CompanionState? companion,
+    List<RecoveryEvent> hiddenDuplicates = const [],
+    Object? feedbackNotes,
   }) {
     return {
       'version': currentBackupVersion,
@@ -142,6 +156,9 @@ class BackupService {
       'excludedSecureData': const ['relapsePin', 'trustedContact'],
       'withdrawal': ?withdrawal,
       if (companion != null) 'companion': companion.toJson(),
+      if (hiddenDuplicates.isNotEmpty)
+        'hiddenDuplicates': hiddenDuplicates.map((e) => e.toJson()).toList(),
+      'feedbackNotes': ?feedbackNotes,
     };
   }
 
@@ -444,6 +461,8 @@ class BackupService {
           if (map['futureLetters'] != null)
             'futureLetters': map['futureLetters'],
           if (map['companion'] != null) 'companion': map['companion'],
+          if (map['hiddenDuplicates'] != null)
+            'hiddenDuplicates': map['hiddenDuplicates'],
         };
       }
       final version = map['version'];
@@ -467,6 +486,17 @@ class BackupService {
       final nowLimit = DateTime.now().add(const Duration(days: 1));
       final earliest = DateTime.utc(2000);
       final events = <RecoveryEvent>[];
+      final hidden = <RecoveryEvent>[];
+      final rawHidden = map['hiddenDuplicates'];
+      if (rawHidden is List) {
+        for (final raw in rawHidden.take(maxEventCount)) {
+          if (raw is! Map) continue;
+          try {
+            final e = RecoveryEvent.fromJson(Map<String, dynamic>.from(raw));
+            if (ids.add(e.id)) hidden.add(e);
+          } catch (_) {}
+        }
+      }
       for (final rawEvent in rawEvents) {
         if (rawEvent is! Map) {
           throw const FormatException('Every event must be a JSON object.');
@@ -500,7 +530,8 @@ class BackupService {
         );
         events
           ..clear()
-          ..addAll(fixed);
+          ..addAll(fixed.events);
+        hidden.addAll(fixed.hidden);
       }
       events.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
@@ -523,6 +554,8 @@ class BackupService {
         companion: map['companion'] is Map
             ? CompanionState.fromJson(map['companion'])
             : null,
+        hiddenDuplicates: hidden,
+        feedbackNotes: map['feedbackNotes'],
       );
     } on FormatException {
       rethrow;

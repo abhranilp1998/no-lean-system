@@ -8,6 +8,7 @@ import '../../recovery/presentation/backup_preview_sheet.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
 import '../../recovery/services/backup_service.dart';
 import '../../recovery/services/android_document_export.dart';
+import '../../recovery/services/feedback_notes_backup.dart';
 import '../../withdrawal/data/symptom_checkin_store.dart';
 
 /// Saves a JSON backup. Cancelling the Save screen shows nothing: no error
@@ -25,6 +26,8 @@ Future<void> exportRecoveryData(
       letters: recovery.futureLetters,
       withdrawal: await _withdrawalSection(),
       companion: recovery.companion,
+      hiddenDuplicates: recovery.hiddenDuplicates,
+      feedbackNotes: await exportFeedbackNotes(),
     );
     if (saved && context.mounted) {
       AppNotice.show(
@@ -102,6 +105,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
         importedZones: preview.zones,
         importedLetters: preview.letters,
         importedCompanion: preview.companion,
+        importedHidden: preview.hiddenDuplicates,
         preferences: preview.preferences,
         restorePreferences: choice.restorePreferences,
       );
@@ -117,6 +121,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
           importedZones: preview.zones,
           importedLetters: preview.letters,
           importedCompanion: preview.companion,
+          importedHidden: preview.hiddenDuplicates,
           preferences: preview.preferences,
           restorePreferences: choice.restorePreferences,
           pin: pin,
@@ -137,6 +142,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
       }
       try {
         await SymptomCheckInStore().importSection(preview.withdrawal);
+        await importFeedbackNotes(preview.feedbackNotes);
       } catch (_) {
         // Check-ins are optional; events already merged.
       }

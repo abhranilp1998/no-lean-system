@@ -19,6 +19,7 @@ import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
 import '../domain/relapse_log_entry.dart';
 import '../domain/data_fixes_v12.dart';
+import '../domain/double_tap.dart';
 import '../domain/milestones.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
@@ -147,6 +148,10 @@ class RecoveryController extends ChangeNotifier {
   }
 
   List<RecoveryEvent> events = [];
+
+  /// (C) Double-tap copies hidden by the v12 fixes. Never deleted: kept in
+  /// state and in backups, each marked `duplicateOf` the kept event.
+  List<RecoveryEvent> hiddenDuplicates = [];
   DateTime? relapseCooldownUntil;
   String? relapseCooldownEventId;
   int cooldownMinutes = 15;
@@ -355,8 +360,11 @@ class RecoveryController extends ChangeNotifier {
       if (stored != null && version is int && version < 12) {
         events = upgradeQuantityText(events);
       }
+      hiddenDuplicates = _decodeHidden(map['hiddenDuplicates']);
       if (stored != null && version is int && version < 17) {
-        events = applyDataFixesV12(events, bottleMl: bottleMl);
+        final fixed = applyDataFixesV12(events, bottleMl: bottleMl);
+        events = fixed.events;
+        hiddenDuplicates = _mergeHidden(hiddenDuplicates, fixed.hidden);
       }
       zones = DangerZone.decodeList(map['zones']);
       futureLetters = _decodeLetters(map['futureLetters']);
@@ -607,11 +615,33 @@ class RecoveryController extends ChangeNotifier {
     userMessages: reminderMessages,
   );
 
+  static List<RecoveryEvent> _decodeHidden(Object? raw) {
+    if (raw is! List) return [];
+    final out = <RecoveryEvent>[];
+    for (final e in raw) {
+      try {
+        if (e is Map) {
+          out.add(RecoveryEvent.fromJson(Map<String, dynamic>.from(e)));
+        }
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  static List<RecoveryEvent> _mergeHidden(
+    List<RecoveryEvent> current,
+    Iterable<RecoveryEvent> extra,
+  ) {
+    final ids = current.map((e) => e.id).toSet();
+    return [...current, ...extra.where((e) => ids.add(e.id))];
+  }
+
   Map<String, dynamic> _snapshot() => {
     ..._extraState,
     'stateVersion': stateVersion,
     'lastOpenedAt': lastOpenedAt?.toIso8601String(),
     'events': events.map((e) => e.toJson()).toList(),
+    'hiddenDuplicates': hiddenDuplicates.map((e) => e.toJson()).toList(),
     'relapseCooldownUntil': relapseCooldownUntil?.toIso8601String(),
     'relapseCooldownEventId': relapseCooldownEventId,
     'cooldownMinutes': cooldownMinutes,
@@ -877,6 +907,7 @@ class RecoveryController extends ChangeNotifier {
     List<RecoveryEvent> importedEvents, {
     List<DangerZone> importedZones = const [],
     List<FutureLetter> importedLetters = const [],
+    List<RecoveryEvent> importedHidden = const [],
     CompanionState? importedCompanion,
     Map<String, dynamic>? preferences,
     bool restorePreferences = false,
@@ -889,10 +920,17 @@ class RecoveryController extends ChangeNotifier {
       tryBiometrics: tryBiometrics,
     );
     if (authorization != ProtectedActionResult.completed) return authorization;
-    final existingIds = events.map((e) => e.id).toSet();
+    final existingIds = {
+      ...events.map((e) => e.id),
+      ...hiddenDuplicates.map((e) => e.id),
+    };
     for (final event in importedEvents) {
       if (existingIds.add(event.id)) events.add(event);
     }
+    hiddenDuplicates = _mergeHidden(
+      hiddenDuplicates,
+      importedHidden.where((e) => !events.any((v) => v.id == e.id)),
+    );
     final zoneIds = zones.map((zone) => zone.id).toSet();
     final newZones = importedZones
         .where((zone) => zoneIds.add(zone.id))
@@ -986,24 +1024,16 @@ class RecoveryController extends ChangeNotifier {
   /// Logs a craving and schedules the 15-minute recheck prompt (unless it
   /// would land in quiet hours). Returns the new event id.
   Future<String> recordCraving(CravingEntry entry) async {
-    // (C) A double-tap on SAVE is one craving, not two.
-    final twin = events.reversed
-        .where(
-          (e) =>
-              e.type == RecoveryEventType.craving &&
-              e.timestamp.difference(entry.createdAt).abs() <=
-                  doubleTapWindow &&
-              e.metadata['intensity'] == entry.intensity &&
-              e.metadata['trigger'] == entry.trigger &&
-              e.metadata['note'] == entry.note,
-        )
-        .firstOrNull;
-    if (twin != null) return twin.id;
     final event = RecoveryEvent.create(
       type: RecoveryEventType.craving,
       timestamp: entry.createdAt,
       metadata: entry.toJson()..remove('id'),
     );
+    // (C) A double-tap on SAVE is one craving, not two (shared rule).
+    final twin = events.reversed
+        .where((e) => isDoubleTap(e, event))
+        .firstOrNull;
+    if (twin != null) return twin.id;
     await appendEvent(event);
     final due = event.timestamp.add(cravingCheckDelay);
     if (due.isAfter(_now())) {

@@ -1,17 +1,36 @@
 import 'dose_units.dart';
+import 'double_tap.dart';
 import 'recovery_event.dart';
 
 /// (C) Data fixes applied once when reading state older than v17 or a backup
 /// older than v12. Every fix is idempotent and pure.
 
-/// Codeine cough syrups people call lean, by brand.
+/// Codeine cough syrups, by brand (plus codeine itself). Generic words like
+/// "lean" or "syrup" are too broad ("lean on a friend", "maple syrup").
 final _leanBrand = RegExp(
-  r'\b(ascoril[\s-]*c|phensedyl|corex|codeine|lean|syrup)\b',
+  r'\b(ascoril[\s-]*c|phensedyl|corex|codeine)\b',
   caseSensitive: false,
 );
 
-bool mentionsLeanBrand(String? text) =>
-    text != null && _leanBrand.hasMatch(text);
+/// "no", "not", "without", "didn't have", "instead of"… shortly before the
+/// brand cancels the mention ("skipped the Phensedyl", "no corex today").
+final _negatedBefore = RegExp(
+  r"\b(no|not|never|without|instead of|skipped|avoided|didn'?t (have|take|buy|drink|use)|did not (have|take|buy|drink|use))\b(\s+\S+){0,2}\s*$",
+  caseSensitive: false,
+);
+
+bool mentionsLeanBrand(String? text) {
+  if (text == null) return false;
+  for (final m in _leanBrand.allMatches(text)) {
+    // Negation applies per clause: "no beer, two corex" is a mention.
+    final clause = text
+        .substring(0, m.start)
+        .split(RegExp(r'[,.;!?]|\b(but|though|then)\b', caseSensitive: false))
+        .last;
+    if (!_negatedBefore.hasMatch(clause)) return true;
+  }
+  return false;
+}
 
 /// "1x100 ml", "2 x 100ml" → total; otherwise the normal parser.
 DoseAmount? parseQuantityTextV12(String text, {required double bottleMl}) {
@@ -108,48 +127,44 @@ RecoveryEvent fixLeanBrand(RecoveryEvent event) {
   );
 }
 
-const doubleTapWindow = Duration(seconds: 60);
+/// Result of the v12 fixes: the visible history plus double-tap copies that
+/// are kept but hidden (marked `duplicateOf`), never deleted.
+class DataFixResult {
+  const DataFixResult(this.events, this.hidden);
+  final List<RecoveryEvent> events;
+  final List<RecoveryEvent> hidden;
+}
 
-String? _doubleTapKey(RecoveryEvent e) => switch (e.type) {
-  RecoveryEventType.relapse =>
-    'r|${e.metadata['relapseType']}|${e.metadata['note']}|${e.metadata['quantity']}|${e.metadata['amount']}|${e.metadata['unit']}',
-  RecoveryEventType.craving =>
-    'c|${e.metadata['intensity']}|${e.metadata['trigger']}|${e.metadata['note']}',
-  RecoveryEventType.pledge => 'p',
-  _ => null,
-};
-
-/// Drops a later copy of the same relapse / craving / pledge saved within
-/// [doubleTapWindow] in a *different* save (a double-tap). Entries of one
-/// multi-entry save (same batchId) are never touched.
-List<RecoveryEvent> dedupeDoubleTaps(List<RecoveryEvent> events) {
+/// Hides a later copy of the same relapse / craving saved within
+/// [doubleTapWindow] in a *different* save, using the one shared rule in
+/// double_tap.dart (recordedAt + batchId; pledges and blank-note backfills
+/// are never touched). The copy is returned in [DataFixResult.hidden] with
+/// `duplicateOf` set to the kept event's id.
+DataFixResult dedupeDoubleTaps(List<RecoveryEvent> events) {
   final sorted = List<RecoveryEvent>.of(events)
     ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
   final lastByKey = <String, RecoveryEvent>{};
   final out = <RecoveryEvent>[];
+  final hidden = <RecoveryEvent>[];
   for (final e in sorted) {
-    final key = _doubleTapKey(e);
-    if (key == null) {
-      out.add(e);
+    final key = doubleTapKey(e);
+    final prev = key == null ? null : lastByKey[key];
+    if (prev != null && isDoubleTap(prev, e)) {
+      hidden.add(
+        e.copyWith(
+          metadata: {...e.metadata, 'duplicateOf': prev.id, 'hidden': true},
+        ),
+      );
       continue;
     }
-    final prev = lastByKey[key];
-    final sameBatch =
-        prev != null &&
-        e.metadata['batchId'] != null &&
-        prev.metadata['batchId'] == e.metadata['batchId'];
-    if (prev != null &&
-        !sameBatch &&
-        e.timestamp.difference(prev.timestamp).abs() <= doubleTapWindow) {
-      continue;
-    }
-    lastByKey[key] = e;
+    if (key != null) lastByKey[key] = e;
     out.add(e);
   }
-  return out;
+  return DataFixResult(out, hidden);
 }
 
-List<RecoveryEvent> applyDataFixesV12(
+/// Pure and idempotent: running it on its own output changes nothing.
+DataFixResult applyDataFixesV12(
   List<RecoveryEvent> events, {
   required double bottleMl,
 }) => dedupeDoubleTaps([
