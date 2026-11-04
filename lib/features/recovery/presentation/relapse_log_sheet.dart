@@ -1,3 +1,4 @@
+import '../domain/slip_tone.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -51,9 +52,9 @@ Future<void> quickLogUsed(
   }
   AppNotice.show(
     context,
-    'LOGGED. THANK YOU FOR BEING HONEST // ADD DETAILS ANY TIME.',
+    slipLoggedMessage(seed: DateTime.now().minute),
     type: AppNoticeType.success,
-    actionLabel: 'LOG A PAST ONE',
+    actionLabel: 'ADD DETAILS',
     onAction: () => showRelapseLogSheet(context, source: source),
   );
 }
@@ -92,7 +93,7 @@ Future<void> showRelapseLogSheet(
   if (result == null || !context.mounted) return;
   AppNotice.show(
     context,
-    '${result.count} ${result.count == 1 ? 'RELAPSE' : 'RELAPSES'} RECORDED // HISTORY PRESERVED.',
+    slipsRecordedMessage(result.count),
     type: AppNoticeType.success,
   );
   if (result.openSos && context.mounted) {
