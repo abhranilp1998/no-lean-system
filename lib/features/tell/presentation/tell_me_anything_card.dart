@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +8,8 @@ import '../../../core/widgets/glass_card.dart';
 import '../../cravings/presentation/craving_dialog.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/presentation/relapse_log_sheet.dart';
+import '../../recovery/application/recovery_provider.dart';
+import '../../recovery/domain/use_check.dart';
 import '../data/feedback_store.dart';
 import '../domain/tell_classifier.dart';
 
@@ -35,6 +39,11 @@ class _TellState extends ConsumerState<TellMeAnythingCard> {
     final result = classifyTell(said);
     if (result.kind == TellKind.feedback) {
       await ref.read(feedbackStoreProvider).add(said);
+    } else if (result.kind == TellKind.aboutToUse) {
+      // (A): ask later whether it happened.
+      unawaited(
+        ref.read(recoveryProvider).queueUseCheck(UseCheckTrigger.aboutToUse),
+      );
     }
     if (!mounted) return;
     setState(() {

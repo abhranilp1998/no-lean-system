@@ -29,4 +29,19 @@ void main() {
     expect(k('took a walk'), TellKind.other);
     expect(k(''), TellKind.other);
   });
+  test('negation applies per clause', () {
+    expect(
+      classifyTell("Didn't use yesterday, but I used 2 hours ago").kind,
+      TellKind.relapse,
+    );
+    expect(classifyTell("I didn't use today").kind, isNot(TellKind.relapse));
+    expect(
+      classifyTell("I'm not going to buy. No urge today").kind,
+      isNot(TellKind.aboutToUse),
+    );
+    expect(
+      classifyTell("Didn't relapse. But I'm about to").kind,
+      TellKind.aboutToUse,
+    );
+  });
 }

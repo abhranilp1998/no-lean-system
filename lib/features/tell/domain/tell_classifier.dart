@@ -18,7 +18,7 @@ String _norm(String s) => s
     .trim();
 
 final _negation = RegExp(
-  r'\b(didnt|did not|havent|have not|never|not) (use|used|drink|drank|take|took|relapse|relapsed|buy|bought)\b',
+  r'\b((didnt|did not|havent|have not|never|not) (use|used|drink|drank|take|took|relapse|relapsed|buy|bought)|(dont|do not|not|wont|will not|no longer) (want to|going to|gonna|wanna|need|craving|tempted)|no (urge|craving|cravings))\b',
 );
 
 final _relapse = RegExp(
@@ -48,6 +48,18 @@ const _words = {
   'six': 6,
 };
 
+/// Splits on sentence punctuation and contrast words, then normalises.
+List<String> splitClauses(String raw) => raw
+    .split(
+      RegExp(
+        r"[.!?;,\n]+|\b(?:but|though|although|however|then)\b",
+        caseSensitive: false,
+      ),
+    )
+    .map(_norm)
+    .where((c) => c.isNotEmpty)
+    .toList();
+
 TellResult classifyTell(String raw) {
   final t = _norm(raw);
   if (t.isEmpty) return const TellResult(TellKind.other);
@@ -55,12 +67,14 @@ TellResult classifyTell(String raw) {
   final hours = ago == null
       ? null
       : (int.tryParse(ago.group(1)!) ?? _words[ago.group(1)!]);
-  final negated = _negation.hasMatch(t);
+  // Negation is per clause: "didn't use yesterday but used today" is a
+  // relapse; "I didn't use" alone is not.
+  final clauses = splitClauses(raw);
+  bool any(RegExp r) =>
+      clauses.any((c) => !_negation.hasMatch(c) && r.hasMatch(c));
   // Safety first: a used/using signal outranks feedback in the same text.
-  if (!negated && _relapse.hasMatch(t)) {
-    return TellResult(TellKind.relapse, hoursAgo: hours);
-  }
-  if (_about.hasMatch(t)) return const TellResult(TellKind.aboutToUse);
+  if (any(_relapse)) return TellResult(TellKind.relapse, hoursAgo: hours);
+  if (any(_about)) return const TellResult(TellKind.aboutToUse);
   if (_feedback.hasMatch(t)) return const TellResult(TellKind.feedback);
   return const TellResult(TellKind.other);
 }

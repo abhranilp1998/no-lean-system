@@ -10,11 +10,15 @@ class FeedbackNote {
   final DateTime at;
   final String text;
 
-  Map<String, Object> toJson() => {'at': at.toIso8601String(), 'text': text};
+  /// Stored as UTC ISO-8601 (trailing Z).
+  Map<String, Object> toJson() => {
+    'at': at.toUtc().toIso8601String(),
+    'text': text,
+  };
 
   static FeedbackNote? fromJson(Object? raw) {
     if (raw is! Map) return null;
-    final at = DateTime.tryParse('${raw['at']}');
+    final at = DateTime.tryParse('${raw['at']}')?.toUtc();
     final text = raw['text'];
     if (at == null || text is! String || text.trim().isEmpty) return null;
     return FeedbackNote(at: at, text: text);
@@ -41,7 +45,7 @@ class FeedbackStore {
     if (trimmed.isEmpty) return;
     final all = [
       ...await load(),
-      FeedbackNote(at: DateTime.now(), text: trimmed),
+      FeedbackNote(at: DateTime.now().toUtc(), text: trimmed),
     ];
     final kept = all.length > maxNotes
         ? all.sublist(all.length - maxNotes)
