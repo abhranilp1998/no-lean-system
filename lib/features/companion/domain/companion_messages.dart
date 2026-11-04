@@ -479,7 +479,7 @@ const companionMessages = <CompanionMessage>[
     'n12',
     _n,
     "Runny nose, yawning, watery eyes. Annoying but harmless, and a sign your body is resetting.",
-    bands: {..._early, ..._peak},
+    bands: _early,
   ),
   _M(
     'n13',

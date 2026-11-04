@@ -15,12 +15,25 @@ import '../domain/companion_state.dart';
 import '../domain/substance_safety.dart';
 
 /// Last relapse within 72 h, or a slip note within 72 h.
+/// A use in the last 72 h that came after at least 3 clean days (a lapse
+/// after progress), or a slip the user logged in the slip flow. The last use
+/// of a daily-use run (someone who has just stopped) is not a slip.
 bool recentSlip(RecoveryController r, DateTime now) {
   bool near(DateTime t) => now.difference(t) < const Duration(hours: 72);
-  return r.events.any(
-        (e) => e.type == RecoveryEventType.relapse && near(e.timestamp),
-      ) ||
-      r.companion.slips.any((s) => near(s.at));
+  if (r.companion.slips.any((s) => near(s.at))) return true;
+  final uses =
+      r.events
+          .where((e) => e.type == RecoveryEventType.relapse)
+          .map((e) => e.timestamp)
+          .toList()
+        ..sort();
+  for (var i = uses.length - 1; i >= 0 && near(uses[i]); i--) {
+    if (i == 0) return false;
+    if (uses[i].difference(uses[i - 1]) >= const Duration(hours: 72)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// Hours until symptoms usually start easing, from the user's own course.
@@ -87,6 +100,7 @@ class MessageCard extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 10),
     child: GlassCard(
       accent: accent,
+      padding: const EdgeInsets.fromLTRB(18, 16, 8, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

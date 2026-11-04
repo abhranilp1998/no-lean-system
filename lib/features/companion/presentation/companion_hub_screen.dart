@@ -145,7 +145,7 @@ class _HubState extends ConsumerState<CompanionHubScreen> {
                 child: OutlinedButton.icon(
                   onPressed: () => showReachOutSheet(context, ref, recovery),
                   icon: const Icon(Icons.sms_outlined),
-                  label: const Text('Message my person'),
+                  label: const Text('My person'),
                 ),
               ),
               const SizedBox(width: 8),
@@ -153,7 +153,7 @@ class _HubState extends ConsumerState<CompanionHubScreen> {
                 child: OutlinedButton.icon(
                   onPressed: () => FutureLettersScreen.open(context),
                   icon: const Icon(Icons.mail_outline),
-                  label: const Text('Letters to me'),
+                  label: const Text('Letters'),
                 ),
               ),
             ],
