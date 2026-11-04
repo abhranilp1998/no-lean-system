@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:no_lean/core/theme/app_theme.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/domain/recovery_event.dart';
@@ -39,6 +40,7 @@ void main() {
   late RecoveryController recovery;
 
   setUp(() async {
+    SharedPreferences.setMockInitialValues({});
     recovery = RecoveryController(
       store: MemoryRecoveryStore(),
       relapseLock: FakeRelapseLock(),

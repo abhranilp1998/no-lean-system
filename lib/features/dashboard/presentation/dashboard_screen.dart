@@ -21,6 +21,7 @@ import '../../cravings/presentation/craving_dialog.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../../recovery/application/recovery_provider.dart';
 import 'dashboard_dialogs.dart';
+import '../../withdrawal/presentation/withdrawal_guide_screen.dart';
 import '../../recovery/presentation/relapse_cooldown_screen.dart';
 import 'widgets/animated_counter.dart';
 import 'widgets/dashboard_notice_center.dart';
@@ -243,6 +244,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             subtitle: 'A small task beats a big spiral',
             color: purple,
             onTap: () => CodeInsteadScreen.open(context, source: 'dashboard'),
+          ),
+          const SizedBox(height: 10),
+          ActionTile(
+            icon: Icons.healing,
+            title: 'WITHDRAWAL GUIDE',
+            subtitle: 'Where you are now + symptom check-in',
+            color: cyan,
+            onTap: () => WithdrawalGuideScreen.open(context),
           ),
           const SizedBox(height: 22),
           SectionHeader(
