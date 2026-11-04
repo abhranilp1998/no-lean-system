@@ -47,6 +47,11 @@ void main() {
     expect(find.text('Ride the wave'), findsOneWidget);
     expect(find.textContaining('{'), findsNothing);
     expect(find.textContaining('helpline'), findsNothing);
+    for (final b in find.byType(IconButton).evaluate()) {
+      final size = t.getSize(find.byWidget(b.widget));
+      expect(size.height, greaterThanOrEqualTo(48));
+      expect(size.width, greaterThanOrEqualTo(48));
+    }
   });
 
   testWidgets('hub renders milestones and struggling button', (t) async {

@@ -312,7 +312,7 @@ class _IdeaTile extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 10),
     child: GlassCard(
       accent: toxic,
-      padding: const EdgeInsets.fromLTRB(18, 16, 8, 4),
+      padding: const EdgeInsets.fromLTRB(18, 16, 8, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -342,18 +342,31 @@ class _IdeaTile extends StatelessWidget {
                 ],
               ),
             ),
+          // 48dp tap targets, but the visible icon/text sits in the lower part of
+          // each box so the card does not end in a band of empty space.
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
               if (idea.action != null)
-                TextButton(onPressed: onAct, child: const Text('Open')),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    alignment: const Alignment(0, .5),
+                  ),
+                  onPressed: onAct,
+                  child: const Text('Open'),
+                ),
               IconButton(
                 tooltip: 'Helped',
+                padding: EdgeInsets.zero,
+                alignment: const Alignment(0, .5),
                 icon: const Icon(Icons.thumb_up_alt_outlined, size: 18),
                 onPressed: () => onRate(true),
               ),
               IconButton(
                 tooltip: 'Not for me',
+                padding: EdgeInsets.zero,
+                alignment: const Alignment(0, .5),
                 icon: const Icon(Icons.thumb_down_alt_outlined, size: 18),
                 onPressed: () => onRate(false),
               ),
