@@ -58,12 +58,12 @@ void main() {
       final (controller, store, _) = await load(
         jsonEncode({'stateVersion': 13, 'events': <Object>[]}),
       );
-      expect(RecoveryController.stateVersion, 16);
+      expect(RecoveryController.stateVersion, 17);
       expect(controller.futureLetters, isEmpty);
       expect(controller.tonightLetter, isNull);
       await controller.addFutureLetter('You got through worse.');
       final saved = jsonDecode(store.value!) as Map<String, dynamic>;
-      expect(saved['stateVersion'], 16);
+      expect(saved['stateVersion'], RecoveryController.stateVersion);
       expect(
         (saved['futureLetters'] as List).single['text'],
         'You got '

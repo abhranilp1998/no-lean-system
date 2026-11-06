@@ -16,6 +16,7 @@ import '../domain/effect_intensity.dart';
 import '../domain/events_csv.dart';
 import '../domain/legacy_recovery_migration.dart';
 import '../domain/quantity_upgrade.dart';
+import '../domain/data_fixes_v12.dart';
 import '../domain/recovery_event.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../letters/domain/future_letter.dart';
@@ -33,7 +34,15 @@ class BackupPreview {
     this.letters = const [],
     this.withdrawal,
     this.companion,
+    this.hiddenDuplicates = const [],
+    this.feedbackNotes,
   });
+
+  /// (C) Double-tap copies hidden (not deleted) by the v12 fixes.
+  final List<RecoveryEvent> hiddenDuplicates;
+
+  /// (C) Raw feedback notes (backup v12+); see feedback_notes_backup.dart.
+  final Object? feedbackNotes;
 
   final int eventCount;
   final DateTime? oldestEventDate;
@@ -93,7 +102,9 @@ class BackupService {
   /// `stretchedWidgetView` preference; older formats keep the current choice.
   /// Format 11 adds `companion` (substances, triggers, reach-out texts,
   /// message history, slip notes); older formats import without it.
-  static const int currentBackupVersion = 11;
+  /// v12: (C) data fixes — dose amount/unit consistency, lean brands,
+  /// double-tap dedupe. Older backups are fixed on read.
+  static const int currentBackupVersion = 12;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
@@ -105,6 +116,8 @@ class BackupService {
     List<FutureLetter> letters = const [],
     Map<String, Object>? withdrawal,
     CompanionState? companion,
+    List<RecoveryEvent> hiddenDuplicates = const [],
+    Object? feedbackNotes,
   }) {
     return exportJson(
       jsonEncode(
@@ -115,6 +128,8 @@ class BackupService {
           letters: letters,
           withdrawal: withdrawal,
           companion: companion,
+          hiddenDuplicates: hiddenDuplicates,
+          feedbackNotes: feedbackNotes,
         ),
       ),
     );
@@ -128,6 +143,8 @@ class BackupService {
     List<FutureLetter> letters = const [],
     Map<String, Object>? withdrawal,
     CompanionState? companion,
+    List<RecoveryEvent> hiddenDuplicates = const [],
+    Object? feedbackNotes,
   }) {
     return {
       'version': currentBackupVersion,
@@ -139,6 +156,9 @@ class BackupService {
       'excludedSecureData': const ['relapsePin', 'trustedContact'],
       'withdrawal': ?withdrawal,
       if (companion != null) 'companion': companion.toJson(),
+      if (hiddenDuplicates.isNotEmpty)
+        'hiddenDuplicates': hiddenDuplicates.map((e) => e.toJson()).toList(),
+      'feedbackNotes': ?feedbackNotes,
     };
   }
 
@@ -420,9 +440,11 @@ class BackupService {
       }
       var map = Map<String, dynamic>.from(decoded);
       var upgradeQuantities = false;
+      var applyV12Fixes = false;
       if (!map.containsKey('version') && map['stateVersion'] is int) {
         final stateVersion = map['stateVersion'] as int;
         upgradeQuantities = stateVersion < 12;
+        applyV12Fixes = stateVersion < 17;
         if (stateVersion < 2 ||
             stateVersion > RecoveryController.stateVersion) {
           throw FormatException(
@@ -439,6 +461,8 @@ class BackupService {
           if (map['futureLetters'] != null)
             'futureLetters': map['futureLetters'],
           if (map['companion'] != null) 'companion': map['companion'],
+          if (map['hiddenDuplicates'] != null)
+            'hiddenDuplicates': map['hiddenDuplicates'],
         };
       }
       final version = map['version'];
@@ -448,6 +472,7 @@ class BackupService {
       // Convert only quantities whose units establish the volume/count.
       // Legacy bottle notes stay text: no historical size was recorded.
       if (version <= 6) upgradeQuantities = true;
+      if (version < 12) applyV12Fixes = true;
 
       final rawEvents = map['events'];
       if (rawEvents is! List) {
@@ -461,6 +486,17 @@ class BackupService {
       final nowLimit = DateTime.now().add(const Duration(days: 1));
       final earliest = DateTime.utc(2000);
       final events = <RecoveryEvent>[];
+      final hidden = <RecoveryEvent>[];
+      final rawHidden = map['hiddenDuplicates'];
+      if (rawHidden is List) {
+        for (final raw in rawHidden.take(maxEventCount)) {
+          if (raw is! Map) continue;
+          try {
+            final e = RecoveryEvent.fromJson(Map<String, dynamic>.from(raw));
+            if (ids.add(e.id)) hidden.add(e);
+          } catch (_) {}
+        }
+      }
       for (final rawEvent in rawEvents) {
         if (rawEvent is! Map) {
           throw const FormatException('Every event must be a JSON object.');
@@ -479,6 +515,23 @@ class BackupService {
           );
         }
         events.add(upgradeQuantities ? upgradeEventQuantity(event) : event);
+      }
+      if (applyV12Fixes) {
+        final bottle =
+            map['bottleMl'] ??
+            (map['preferences'] is Map
+                ? (map['preferences'] as Map)['bottleMl']
+                : null);
+        final fixed = applyDataFixesV12(
+          events,
+          bottleMl: isValidBottleMl(bottle is num ? bottle : null)
+              ? (bottle as num).toDouble()
+              : defaultBottleMl,
+        );
+        events
+          ..clear()
+          ..addAll(fixed.events);
+        hidden.addAll(fixed.hidden);
       }
       events.sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
@@ -501,6 +554,8 @@ class BackupService {
         companion: map['companion'] is Map
             ? CompanionState.fromJson(map['companion'])
             : null,
+        hiddenDuplicates: hidden,
+        feedbackNotes: map['feedbackNotes'],
       );
     } on FormatException {
       rethrow;

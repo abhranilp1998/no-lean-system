@@ -63,7 +63,7 @@ void main() {
           ),
         );
         final saved = jsonDecode(store.value!) as Map<String, dynamic>;
-        expect(saved['stateVersion'], 16);
+        expect(saved['stateVersion'], RecoveryController.stateVersion);
         expect(saved['someFutureKey'], {'keep': true});
         expect((saved['events'] as List), hasLength(2));
         if (v >= 15 || saved.containsKey('futureLetters')) {
@@ -97,7 +97,7 @@ void main() {
         zones: c.zones,
         companion: c.companion,
       );
-      expect(payload['version'], 11);
+      expect(payload['version'], BackupService.currentBackupVersion);
       final preview = service.validateBackupJson(jsonEncode(payload));
       expect(preview.companion, isNotNull);
 
