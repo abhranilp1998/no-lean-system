@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../domain/use_check.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -54,9 +57,8 @@ class NotificationService {
           android: AndroidInitializationSettings(notificationSmallIcon),
         ),
         onDidReceiveNotificationResponse: (response) {
-          if (response.actionId != null) {
-            _actionStreamController.add(response.actionId!);
-          }
+          final action = actionFor(response.actionId, response.id);
+          if (action != null) _actionStreamController.add(action);
         },
       );
       _initialized = true;
@@ -218,7 +220,8 @@ class NotificationService {
       await _initialize(requestPermission: false);
       final details = await _plugin.getNotificationAppLaunchDetails();
       if (details?.didNotificationLaunchApp ?? false) {
-        return details?.notificationResponse?.actionId;
+        final r = details?.notificationResponse;
+        return actionFor(r?.actionId, r?.id);
       }
     } catch (_) {
       // No launch details on this platform.
@@ -412,6 +415,97 @@ class NotificationService {
     } catch (_) {
       // Optional on tests and unsupported platforms.
     }
+  }
+
+  static const useCheckId = 740;
+  static const useCheckPrefsKey = 'use_check_pending_v1';
+
+  /// (A) "Did you use?" with YES / NO / LATER. The trigger is kept in prefs
+  /// so a tapped action (which carries no payload) can prefill the logger.
+  Future<bool> scheduleUseCheck(UseCheck check, {DateTime? at}) async {
+    final due = at ?? check.dueAt;
+    final store = await SharedPreferences.getInstance();
+    await store.setString(useCheckPrefsKey, check.encode());
+    if (!prefs.allows(NotificationKind.cravingCheck, due)) return false;
+    final text = prefs.textFor(
+      'DID YOU USE?',
+      '${check.trigger.body} Did you use? Either answer is OK.',
+    );
+    try {
+      await _initialize(requestPermission: true);
+      await scheduleWithExactFallback(
+        exactAllowed: await exactAlarmsAllowed(),
+        schedule: (mode) => _plugin.zonedSchedule(
+          useCheckId,
+          text.title,
+          text.body,
+          tz.TZDateTime.from(due, tz.local),
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              'use_check_v1',
+              'NO LEAN follow-up check-in',
+              channelDescription: 'Asks "did you use?" after a risky moment',
+              importance: Importance.defaultImportance,
+              priority: Priority.defaultPriority,
+              visibility: lockScreenVisibility,
+              category: AndroidNotificationCategory.reminder,
+              ticker: neutralNotificationText.title,
+              actions: [
+                AndroidNotificationAction(
+                  'action_use_yes',
+                  prefs.label('YES', 'YES'),
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+                AndroidNotificationAction(
+                  'action_use_no',
+                  prefs.label('NO', 'NO'),
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+                AndroidNotificationAction(
+                  'action_use_later',
+                  prefs.label('LATER', 'LATER'),
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+              ],
+            ),
+          ),
+          androidScheduleMode: mode,
+        ),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// A tap on the body of the use-check notification opens the prompt.
+  static const useCheckOpenAction = 'use_check_open';
+
+  static String? actionFor(String? actionId, int? notificationId) {
+    if (actionId != null && actionId.isNotEmpty) return actionId;
+    return notificationId == useCheckId ? useCheckOpenAction : null;
+  }
+
+  Future<void> cancelUseCheck() async {
+    final store = await SharedPreferences.getInstance();
+    await store.remove(useCheckPrefsKey);
+    try {
+      await _initialize(requestPermission: false);
+      await _plugin.cancel(useCheckId);
+    } catch (_) {}
+  }
+
+  /// Reads the pending check without clearing it.
+  Future<UseCheck?> peekPendingUseCheck() => takePendingUseCheck(clear: false);
+
+  Future<UseCheck?> takePendingUseCheck({bool clear = true}) async {
+    final store = await SharedPreferences.getInstance();
+    final check = UseCheck.decode(store.getString(useCheckPrefsKey));
+    if (clear) await store.remove(useCheckPrefsKey);
+    return check;
   }
 
   static const cravingCheckId = 710;
