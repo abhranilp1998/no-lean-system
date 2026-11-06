@@ -3,7 +3,7 @@ import 'dart:convert';
 import '../../withdrawal/domain/withdrawal_guide.dart';
 
 /// (A) Follow-up "Did you use?" check-in, asked a while after a risky moment.
-enum UseCheckTrigger { craving, sos, zoneExit, withdrawalSpike }
+enum UseCheckTrigger { craving, sos, zoneExit, withdrawalSpike, aboutToUse }
 
 extension UseCheckTriggerCopy on UseCheckTrigger {
   Duration get delay => switch (this) {
@@ -11,6 +11,7 @@ extension UseCheckTriggerCopy on UseCheckTrigger {
     UseCheckTrigger.sos => const Duration(minutes: 45),
     UseCheckTrigger.zoneExit => const Duration(minutes: 30),
     UseCheckTrigger.withdrawalSpike => const Duration(minutes: 60),
+    UseCheckTrigger.aboutToUse => const Duration(minutes: 45),
   };
 
   String get body => switch (this) {
@@ -18,6 +19,7 @@ extension UseCheckTriggerCopy on UseCheckTrigger {
     UseCheckTrigger.sos => 'You opened SOS a while ago.',
     UseCheckTrigger.zoneExit => 'You left a danger zone a while ago.',
     UseCheckTrigger.withdrawalSpike => 'Withdrawal was rough a while ago.',
+    UseCheckTrigger.aboutToUse => 'You said you might use a while ago.',
   };
 }
 
