@@ -1,3 +1,4 @@
+import '../../app_lock/presentation/app_lock_banner.dart';
 import '../../companion/presentation/companion_hub_screen.dart';
 import '../../companion/presentation/struggling_screen.dart';
 import '../../settings/presentation/settings_dialogs.dart';
@@ -66,7 +67,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       child: TabListView(
         children: [
           const BrandHeader(),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
+          const ShieldStatusPill(),
+          const SizedBox(height: 18),
           if (recovery.isRiskWindow)
             RiskWindowBanner(
               windowLabel: recovery.riskWindow.label,

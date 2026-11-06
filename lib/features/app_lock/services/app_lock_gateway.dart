@@ -45,9 +45,15 @@ class AppLockStatus {
     this.overlay = false,
     this.serviceRunning = false,
     this.notifications = true,
+    this.heartbeatAt,
+    this.stopReason,
   });
 
   const AppLockStatus.unsupported() : this(supported: false);
+
+  /// A heartbeat older than this means the lock is not enforcing (mirrors
+  /// `AppLockHealth.STALE_AFTER_MS`).
+  static const staleAfter = Duration(minutes: 2);
 
   final bool supported;
 
@@ -62,6 +68,18 @@ class AppLockStatus {
 
   /// Notifications allowed (the fallback block prompt needs them).
   final bool notifications;
+
+  /// Last time the lock service polled (plan P0-1). Null on older builds.
+  final DateTime? heartbeatAt;
+
+  /// Why the service last stopped itself while armed, e.g. `usage_access`.
+  final String? stopReason;
+
+  /// The service says it runs but has not polled recently.
+  bool heartbeatStale(DateTime now) {
+    final at = heartbeatAt;
+    return at != null && now.difference(at) > staleAfter;
+  }
 
   AppLockAvailability get availability => !supported
       ? AppLockAvailability.notImplemented
@@ -79,6 +97,14 @@ class AppLockStatus {
       overlay: flag('overlay'),
       serviceRunning: flag('serviceRunning'),
       notifications: flag('notifications', true),
+      heartbeatAt: switch (raw['heartbeatAt']) {
+        final int ms when ms > 0 => DateTime.fromMillisecondsSinceEpoch(ms),
+        _ => null,
+      },
+      stopReason: switch (raw['stopReason']) {
+        final String reason when reason.isNotEmpty => reason,
+        _ => null,
+      },
     );
   }
 
@@ -89,7 +115,9 @@ class AppLockStatus {
       other.usageAccess == usageAccess &&
       other.overlay == overlay &&
       other.serviceRunning == serviceRunning &&
-      other.notifications == notifications;
+      other.notifications == notifications &&
+      other.heartbeatAt == heartbeatAt &&
+      other.stopReason == stopReason;
 
   @override
   int get hashCode => Object.hash(
@@ -98,6 +126,8 @@ class AppLockStatus {
     overlay,
     serviceRunning,
     notifications,
+    heartbeatAt,
+    stopReason,
   );
 }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../application/app_lock_providers.dart';
 import '../services/app_lock_gateway.dart';
@@ -13,6 +14,7 @@ String? appLockHealthMessage({
   required AppLockStatus? status,
   AppLockSyncFailure? syncFailure,
   bool deactivationPending = false,
+  DateTime? now,
 }) {
   final messages = <String>[];
   if (syncFailure != null) {
@@ -41,6 +43,10 @@ String? appLockHealthMessage({
     if (!status.serviceRunning) {
       messages.add(
         'APP LOCK STOPPED // Android stopped the lock service. Nothing is locked until it restarts.',
+      );
+    } else if (status.heartbeatStale(now ?? DateTime.now())) {
+      messages.add(
+        'APP LOCK NOT RESPONDING // The lock has not checked in for a few minutes. Open App Lock settings or turn battery saving off for NO LEAN.',
       );
     }
   }
@@ -117,6 +123,105 @@ class AppLockHealthBanner extends ConsumerWidget {
           child: const Text('FIX'),
         ),
       ],
+    );
+  }
+}
+
+/// The one-word shield state for the home screen (plan P0-1).
+enum ShieldState { on, limited, off, notSetUp }
+
+/// Pure so the rules are unit-tested. `limited` = locks, but only by
+/// notification (overlay off).
+ShieldState shieldStateFor({
+  required bool enabled,
+  required bool armed,
+  required AppLockStatus? status,
+  DateTime? now,
+}) {
+  if (!enabled) return ShieldState.notSetUp;
+  if (!armed) return ShieldState.off;
+  if (status == null || !status.supported) return ShieldState.on;
+  if (!status.usageAccess || !status.serviceRunning) return ShieldState.off;
+  if (status.heartbeatStale(now ?? DateTime.now())) return ShieldState.off;
+  if (!status.overlay) return ShieldState.limited;
+  return ShieldState.on;
+}
+
+/// Always-visible "SHIELD ON / OFF" pill. Tapping opens App Lock settings.
+class ShieldStatusPill extends ConsumerWidget {
+  const ShieldStatusPill({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final policy = ref.watch(recoveryProvider).appLockPolicy;
+    final status = ref.watch(appLockStatusProvider);
+    if (status != null && !status.supported) return const SizedBox.shrink();
+    final state = shieldStateFor(
+      enabled: policy.enabled,
+      armed: policy.armed,
+      status: status,
+    );
+    final (label, detail, color) = switch (state) {
+      ShieldState.on => ('SHIELD ON', 'Locked apps are guarded', toxic),
+      ShieldState.limited => (
+        'SHIELD LIMITED',
+        'Notification only. Tap to fix',
+        magenta,
+      ),
+      ShieldState.off => ('SHIELD OFF', 'Nothing is locked. Tap to fix', red),
+      ShieldState.notSetUp => (
+        'SHIELD OFF',
+        'Lock payment apps at risky times. Tap to set up',
+        muted,
+      ),
+    };
+    return Semantics(
+      button: true,
+      label: '$label. $detail',
+      child: InkWell(
+        key: const ValueKey('shield-status-pill'),
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const AppLockSettingsScreen()),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: .6)),
+            color: color.withValues(alpha: .08),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                state == ShieldState.on
+                    ? Icons.shield_outlined
+                    : Icons.gpp_maybe_outlined,
+                color: color,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                  letterSpacing: 1,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  detail,
+                  style: const TextStyle(color: muted, fontSize: 12),
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: muted, size: 18),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

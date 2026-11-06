@@ -124,8 +124,16 @@ void main() {
       find.byKey(const ValueKey('app-picker-com.vendor.home')),
     );
     expect(home.onChanged, isNull);
+    // Payment apps start ticked on first setup (locked by default, P0-1).
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(const ValueKey('app-picker-com.phonepe.app')),
+          )
+          .value,
+      isTrue,
+    );
     await tester.tap(find.byKey(const ValueKey('app-picker-com.example.chat')));
-    await tester.tap(find.byKey(const ValueKey('app-picker-com.phonepe.app')));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('app-picker-done')));
     await tester.pumpAndSettle();

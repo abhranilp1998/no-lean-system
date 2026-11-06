@@ -188,7 +188,7 @@ class AppLockSettingsScreen extends ConsumerWidget {
               child: Text(
                 'I need this app → pick a reason → '
                 '${ExitPlanTimings.standardWait.inSeconds} s wait with your reasons '
-                '(${ExitPlanTimings.paymentWait.inSeconds} s for payment apps) → '
+                '(payment apps: ${ExitPlanTimings.paymentWait.inSeconds} s, ${ExitPlanTimings.paymentRiskyWait.inSeconds} s in a danger zone or the risk window) → '
                 'that app opens for ${ExitPlanTimings.unlockFor.inMinutes} min. '
                 'After ${policy.dailyUnlockBudget} a day your PIN is needed'
                 '${recovery.appUnlockPinConfigured ? '' : ' (no PIN set: a ${ExitPlanTimings.longWait.inSeconds} s wait instead)'}. '
@@ -274,7 +274,7 @@ class AppLockSettingsScreen extends ConsumerWidget {
                 title: Text(app.label),
                 subtitle: Text(
                   app.paymentApp
-                      ? 'Payment app // ${ExitPlanTimings.paymentWait.inSeconds} s quick path'
+                      ? 'Payment app // ${ExitPlanTimings.paymentWait.inSeconds} s pause (${ExitPlanTimings.paymentRiskyWait.inSeconds} s at risky times)'
                       : app.packageName,
                   style: microStyle,
                 ),
