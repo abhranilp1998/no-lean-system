@@ -132,7 +132,15 @@ class AppLockSettingsScreen extends ConsumerWidget {
                   ? null
                   : policy.schedule,
               onChanged: (value) {
-                if (value != null) save(policy.copyWith(schedule: value));
+                if (value == null) return;
+                save(
+                  policy.copyWith(
+                    schedule: value,
+                    lockInsideDangerZones: value == AppLockSchedule.off
+                        ? true
+                        : null,
+                  ),
+                );
               },
               child: Column(
                 children: [
@@ -158,13 +166,19 @@ class AppLockSettingsScreen extends ConsumerWidget {
               key: const ValueKey('app-lock-zones'),
               title: const Text('Also lock inside danger zones'),
               subtitle: Text(
-                recovery.zones.isEmpty
+                policy.schedule == AppLockSchedule.off
+                    ? 'Always on with "Danger zones only"'
+                    : recovery.zones.isEmpty
                     ? 'No danger zones marked yet'
                     : '${recovery.zones.length} zone(s) // uses your last known location',
               ),
-              value: policy.lockInsideDangerZones,
-              onChanged: (value) =>
-                  save(policy.copyWith(lockInsideDangerZones: value)),
+              value:
+                  policy.schedule == AppLockSchedule.off ||
+                  policy.lockInsideDangerZones,
+              onChanged: policy.schedule == AppLockSchedule.off
+                  ? null
+                  : (value) =>
+                        save(policy.copyWith(lockInsideDangerZones: value)),
             ),
             const Divider(),
             Text('EXIT PLAN', style: eyebrowStyle.copyWith(color: cyan)),

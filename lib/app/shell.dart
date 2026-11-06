@@ -34,6 +34,7 @@ import '../features/zones/application/zone_monitor.dart';
 import '../features/zones/domain/danger_zone.dart';
 import '../features/zones/domain/zone_alert_copy.dart';
 import '../features/zones/domain/zone_entry.dart';
+import '../features/zones/domain/zone_entry_recency.dart';
 import '../features/zones/presentation/zone_alert_screen.dart';
 import '../features/zones/services/location_service.dart';
 
@@ -113,16 +114,56 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _onZoneEntered(DangerZone zone) async {
+  /// Background entry: the notification tap opens the full-screen SOS with
+  /// the 10-minute timer, then schedules the follow-up check-ins (P0-3).
+  Future<void> _openZoneAlertFromNotification() async {
+    if (!mounted || _zoneAlertOpen) return;
+    final recovery = ref.read(recoveryProvider);
+    // Only an entry from the last 30 min counts; older ones are history.
+    final entry = recentZoneEntry(recovery.events, DateTime.now());
+    final zoneId = entry?.metadata['zoneId'];
+    final zone = recovery.zones.where((z) => z.id == zoneId).firstOrNull;
+    if (zone != null) {
+      await _onZoneEntered(zone, record: false);
+      return;
+    }
+    _zoneAlertOpen = true;
+    try {
+      final choice = await ZoneAlertScreen.show(
+        context,
+        const ZoneAlertCopy(
+          title: 'DANGER ZONE',
+          body:
+              'You\'re near a place you marked. Turn around now, or open SOS before you decide anything.',
+        ),
+      );
+      unawaited(
+        NotificationService.instance
+            .scheduleZoneFollowUps(
+              enteredAt: entry?.timestamp ?? DateTime.now(),
+              zoneName: 'the zone',
+            )
+            .catchError((Object _) => 0),
+      );
+      if (!mounted) return;
+      if (choice == ZoneAlertChoice.sos) await _openSos();
+    } finally {
+      _zoneAlertOpen = false;
+    }
+  }
+
+  Future<void> _onZoneEntered(DangerZone zone, {bool record = true}) async {
     if (!mounted || _zoneAlertOpen) return;
     _zoneAlertOpen = true;
     try {
       final recovery = ref.read(recoveryProvider);
-      unawaited(
-        recovery
-            .recordZoneEntry(ZoneEntry.of(zone, DateTime.now(), 'app'))
-            .catchError((Object _) => false),
-      );
+      if (record) {
+        unawaited(
+          recovery
+              .recordZoneEntry(ZoneEntry.of(zone, DateTime.now(), 'app'))
+              .catchError((Object _) => false),
+        );
+      }
       AppFeedback.tap(strength: AppFeedbackStrength.strong);
       final choice = await ZoneAlertScreen.show(
         context,
@@ -132,6 +173,14 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
           cleanSince: recovery.lastDose,
           riskWindow: recovery.riskWindow,
         ),
+      );
+      unawaited(
+        NotificationService.instance
+            .scheduleZoneFollowUps(
+              enteredAt: DateTime.now(),
+              zoneName: zone.name,
+            )
+            .catchError((Object _) => 0),
       );
       if (!mounted) return;
       if (choice == ZoneAlertChoice.sos) {
@@ -371,6 +420,8 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       _handleWidgetAction('craving');
     } else if (actionId == 'action_locate') {
       _handleWidgetAction('locate');
+    } else if (actionId == 'action_zone_open') {
+      unawaited(_openZoneAlertFromNotification());
     } else if (actionId == 'action_code') {
       _openCodeInstead('notification');
     } else if (actionId == 'action_used') {
