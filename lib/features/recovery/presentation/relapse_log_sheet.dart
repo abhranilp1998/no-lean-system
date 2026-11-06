@@ -15,6 +15,7 @@ import '../domain/craving_entry.dart';
 import '../domain/dose_safety.dart';
 import '../domain/dose_units.dart';
 import '../domain/relapse_log_entry.dart';
+import '../domain/mixing_safety_net.dart';
 import 'dose_safety_cards.dart';
 import 'peak_hour_gate_dialog.dart';
 import 'relapse_auth_dialog.dart';
@@ -105,6 +106,9 @@ Future<void> showRelapseLogSheet(
       ),
     );
   }
+  // (B): any mixed save, from any entry point (dashboard, Tell, check-ins),
+  // gets the safety net right away.
+  if (result.mixed && context.mounted) await showMixingSafetyNetSheet(context);
 }
 
 class RelapseLogSheet extends ConsumerStatefulWidget {
@@ -356,6 +360,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
           _RelapseSheetResult(
             count: _entries.length,
             openSos: _openSosAfterSave,
+            mixed: isMixedSave(entries.map((e) => e.type)),
           ),
         );
       } else {
@@ -984,8 +989,13 @@ class _DoseFields extends StatelessWidget {
 }
 
 class _RelapseSheetResult {
-  const _RelapseSheetResult({required this.count, required this.openSos});
+  const _RelapseSheetResult({
+    required this.count,
+    required this.openSos,
+    this.mixed = false,
+  });
 
   final int count;
   final bool openSos;
+  final bool mixed;
 }
