@@ -321,7 +321,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         } else if (action == 'craving') {
           setState(() => _selectedTab = 1);
           await showCravingDialog(context, ref);
-        } else if (action == 'relapse') {
+        } else if (action == 'relapse' || action == 'used') {
           if (_resolveLock() != null) {
             // Logging stays reachable: it opens right after unlocking.
             _deferredRelapse = true;
@@ -331,7 +331,11 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
             );
             continue;
           }
-          await showRelapseLogSheet(context, source: 'widget');
+          // P0-5: widget and notification "I used" is one tap, no form.
+          await quickLogUsed(
+            context,
+            source: action == 'used' ? 'notification' : 'widget',
+          );
         }
       }
     } finally {
@@ -347,6 +351,8 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       _handleWidgetAction('craving');
     } else if (actionId == 'action_code') {
       _openCodeInstead('notification');
+    } else if (actionId == 'action_used') {
+      _handleWidgetAction('used');
     } else if (actionId == 'action_safe') {
       unawaited(_checkIn());
     } else if (actionId == 'action_recheck') {

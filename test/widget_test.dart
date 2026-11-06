@@ -155,7 +155,7 @@ void main() {
   );
 
   testWidgets(
-    'Widget cold and warm relapse actions open the dated batch form during cooldown',
+    'Widget cold and warm "I used" actions log in one tap; a double-tap is one event',
     (tester) async {
       final pending = <String>['relapse'];
       const channel = MethodChannel('no_lean/widget_actions');
@@ -178,33 +178,12 @@ void main() {
       final container = await _pumpLoadedApp(tester);
       addTearDown(container.dispose);
       await tester.pumpAndSettle();
-      expect(find.text('LOG RELAPSE'), findsOneWidget);
-      await _completeRelapseEntries(tester, 1);
-      await tester.tap(find.text('SAVE 1 EVENT'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('CONFIRM RESET'));
-      await tester.pumpAndSettle();
+      // No form: the cold action logged straight away.
+      expect(find.text('SAVE 1 EVENT'), findsNothing);
       pending.add('relapse');
       await WidgetActionService.instance.initialize();
       await tester.pumpAndSettle();
-      expect(find.text('LOG RELAPSE'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('relapse-date-0')));
-      await tester.pumpAndSettle();
-      expect(find.byType(DatePickerDialog), findsOneWidget);
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('relapse-time-0')));
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('relapse-time-picker')), findsOneWidget);
-      await tester.tap(
-        find.descendant(
-          of: find.byKey(const ValueKey('relapse-time-picker')),
-          matching: find.text('CANCEL'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('CANCEL'));
-      await tester.pumpAndSettle();
+      expect(find.text('SAVE 1 EVENT'), findsNothing);
       expect(
         container
             .read(recoveryProvider)

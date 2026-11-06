@@ -9,6 +9,7 @@ import '../../companion/domain/companion_state.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
+import '../domain/double_tap.dart';
 import '../domain/relapse_cooldown.dart';
 import '../domain/craving_entry.dart';
 import '../domain/dose_units.dart';
@@ -764,7 +765,15 @@ class RecoveryController extends ChangeNotifier {
         now: _now(),
       );
       if (due.isEmpty) return null;
+      final resetRecordedAt = _latestResetRecordedAt();
+      int? celebrate;
       for (final milestone in due) {
+        final backfilled = milestoneIsBackfilled(
+          milestone: milestone,
+          lastDose: lastDose,
+          resetRecordedAt: resetRecordedAt,
+        );
+        if (!backfilled) celebrate = milestone.days;
         events.add(
           RecoveryEvent.create(
             type: RecoveryEventType.milestone,
@@ -773,12 +782,13 @@ class RecoveryController extends ChangeNotifier {
               'days': milestone.days,
               'label': milestone.label,
               'source': 'auto',
+              if (backfilled) 'backfilled': true,
             },
           ),
         );
       }
       _sortAndRecompute();
-      return due.last.days;
+      return celebrate;
     });
     if (reached != null) {
       pendingCelebration = reached;
@@ -800,6 +810,65 @@ class RecoveryController extends ChangeNotifier {
     relapseCooldownUntil = state.until;
     relapseCooldownEventId = state.eventId;
     return before != (relapseCooldownUntil, relapseCooldownEventId);
+  }
+
+  /// When the reset that started the current streak was written down. A
+  /// relapse logged "3 h ago" was recorded now, not 3 h ago. The current
+  /// streak starts at the latest reset by *occurred* time, whatever order
+  /// the resets were saved in; old entries without `recordedAt` count as
+  /// recorded when they occurred.
+  DateTime? _latestResetRecordedAt() {
+    RecoveryEvent? latest;
+    for (final e in events) {
+      if (e.type != RecoveryEventType.relapse &&
+          e.type != RecoveryEventType.recoveryStart) {
+        continue;
+      }
+      if (latest == null || !e.timestamp.isBefore(latest.timestamp)) {
+        latest = e;
+      }
+    }
+    if (latest == null) return null;
+    return recordedAtOf(latest) ?? latest.timestamp;
+  }
+
+  /// P0-5 one-tap "Used": logs a relapse at now. A second tap inside
+  /// [doubleTapWindow] is a double-tap, not a second use, and is ignored
+  /// (same rule as the v12 data fix, see double_tap.dart).
+  bool _quickUseInFlight = false;
+
+  Future<ProtectedActionResult> quickLogUsed({
+    String source = 'one_tap',
+    String? pin,
+    bool tryBiometrics = true,
+  }) async {
+    final now = DateTime.now();
+    final candidate = RecoveryEvent.create(
+      type: RecoveryEventType.relapse,
+      timestamp: now,
+      metadata: {'recordedAt': now.toIso8601String(), 'quick': true},
+    );
+    final duplicate =
+        _quickUseInFlight ||
+        events.any(
+          (e) =>
+              e.type == RecoveryEventType.relapse &&
+              e.metadata['quick'] == true &&
+              isDoubleTap(e, candidate),
+        );
+    if (duplicate) return ProtectedActionResult.completed;
+    _quickUseInFlight = true;
+    try {
+      return await recordRelapse(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        occurredAt: [now],
+        source: source,
+        extraMetadata: const {'quick': true},
+      );
+    } finally {
+      _quickUseInFlight = false;
+    }
   }
 
   void consumeCelebration() {
@@ -1081,6 +1150,7 @@ class RecoveryController extends ChangeNotifier {
     List<RelapseLogEntry>? entries,
     String? operationId,
     String source = 'app',
+    Map<String, dynamic> extraMetadata = const {},
   }) {
     if (occurredAt != null && entries != null) {
       throw ArgumentError('Use occurredAt or entries, not both.');
@@ -1165,6 +1235,7 @@ class RecoveryController extends ChangeNotifier {
             'recordedAt': DateTime.now().toIso8601String(),
             'postSos': postSos,
             'streakLost': lost,
+            ...extraMetadata,
             if (richEntry != null) ...richEntry.toMetadata(),
           },
         });
