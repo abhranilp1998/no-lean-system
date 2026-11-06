@@ -1,3 +1,4 @@
+import '../domain/slip_tone.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -107,12 +108,12 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'BREATHE. RECONNECT WITH YOUR REASONS.',
+                slipCooldownSubtitle,
                 style: TextStyle(
                   fontFamily: 'NoLeanMono',
                   fontSize: 12,
                   color: muted,
-                  letterSpacing: 1.5,
+                  height: 1.4,
                 ),
                 textAlign: TextAlign.center,
               ),
