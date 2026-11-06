@@ -12,6 +12,48 @@ const zoneGeofencePrefix = 'nolean_zone_';
 
 String geofenceIdForZone(DangerZone zone) => '$zoneGeofencePrefix${zone.id}';
 
+/// Early-warning ring (plan P0-2): a wider geofence around each zone so the
+/// heads-up comes before the user is inside.
+const nearGeofencePrefix = 'nolean_near_';
+const earlyWarningExtraMeters = 400.0;
+
+String nearGeofenceIdForZone(DangerZone zone) =>
+    '$nearGeofencePrefix${zone.id}';
+
+double earlyWarningRadius(DangerZone zone) =>
+    zone.radiusMeters + earlyWarningExtraMeters;
+
+/// Heads-up copy when the early-warning ring fires. Null when background
+/// alerts are off or the zone is gone.
+ZoneAlertCopy? backgroundNearAlert({
+  required String? rawState,
+  required Iterable<String> geofenceIds,
+}) {
+  final ids = geofenceIds
+      .where((id) => id.startsWith(nearGeofencePrefix))
+      .map((id) => id.substring(nearGeofencePrefix.length))
+      .toSet();
+  if (ids.isEmpty) return null;
+  try {
+    final decoded = rawState == null ? null : jsonDecode(rawState);
+    if (decoded is! Map || decoded['backgroundGeofencing'] != true) {
+      return null;
+    }
+    final zone = DangerZone.decodeList(
+      decoded['zones'],
+    ).where((zone) => ids.contains(zone.id)).firstOrNull;
+    if (zone == null) return null;
+    return ZoneAlertCopy(
+      title: 'HEADS UP // ${zone.name}',
+      body:
+          'You\'re getting close to ${zone.name}. This is the moment to turn '
+          'around, take another street, or open SOS. You don\'t have to walk in.',
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Builds the background alert from the persisted state file. Returns null
 /// when background alerts were switched off (stale OS geofence) or none of the
 /// triggered ids belong to a zone that still exists. A malformed state file

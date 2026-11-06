@@ -311,10 +311,12 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       FutureLettersScreen.open(context);
       return;
     }
-    if (action == 'map') {
+    if (action == 'map' || action == 'locate') {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const ZonesScreen()),
+        MaterialPageRoute(
+          builder: (_) => ZonesScreen(autoLocate: action == 'locate'),
+        ),
       );
       return;
     }
@@ -367,6 +369,8 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       _handleWidgetAction('sos');
     } else if (actionId == 'action_crave') {
       _handleWidgetAction('craving');
+    } else if (actionId == 'action_locate') {
+      _handleWidgetAction('locate');
     } else if (actionId == 'action_code') {
       _openCodeInstead('notification');
     } else if (actionId == 'action_used') {
