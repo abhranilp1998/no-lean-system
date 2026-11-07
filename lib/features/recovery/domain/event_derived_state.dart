@@ -1,12 +1,29 @@
 import '../../../core/utils/formatters.dart';
 import 'recovery_event.dart';
+import 'relapse_log_entry.dart';
 import 'risk_window.dart';
 
+/// Whether this event resets the lean/codeine clean timer and milestones.
+///
+/// Benzo-only relapses stay in the log for safety checks but do not move
+/// [computeLastDose] or mark a day unclean. Mixed saves that also contain
+/// lean/codeine still reset, because those land as separate lean events.
+bool resetsLeanCleanTimer(RecoveryEvent event) {
+  if (event.type == RecoveryEventType.recoveryStart) return true;
+  if (event.type != RecoveryEventType.relapse) return false;
+  final type = RelapseTypeLabel.fromName(event.metadata['relapseType']);
+  return type != RelapseType.benzo;
+}
+
 /// Finds the most recent counter-reset timestamp. A recovery-start event is a
-/// neutral baseline and a relapse is a subsequent reset.
+/// neutral baseline and a lean/codeine relapse is a subsequent reset.
 DateTime computeLastDose(List<RecoveryEvent> events) {
   final relapses = events
-      .where((event) => event.type == RecoveryEventType.relapse)
+      .where(
+        (event) =>
+            event.type == RecoveryEventType.relapse &&
+            resetsLeanCleanTimer(event),
+      )
       .toList();
   relapses.addAll(
     events.where(
@@ -46,7 +63,8 @@ Map<String, bool> computeCleanDaysMap(List<RecoveryEvent> events) {
     if (event.type == RecoveryEventType.daySummary) {
       if (map[key] != false) map[key] = event.metadata['clean'] as bool;
     }
-    if (event.type == RecoveryEventType.relapse) {
+    if (event.type == RecoveryEventType.relapse &&
+        resetsLeanCleanTimer(event)) {
       map[key] = false;
     } else if (event.type == RecoveryEventType.pledge ||
         event.type == RecoveryEventType.cleanCheckIn) {
@@ -86,7 +104,8 @@ int computeLongestStreak(List<RecoveryEvent> events) {
       .where(
         (event) =>
             event.type == RecoveryEventType.milestone ||
-            event.type == RecoveryEventType.relapse,
+            (event.type == RecoveryEventType.relapse &&
+                resetsLeanCleanTimer(event)),
       )
       .map(
         (event) => event.type == RecoveryEventType.milestone

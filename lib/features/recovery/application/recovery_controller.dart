@@ -882,10 +882,7 @@ class RecoveryController extends ChangeNotifier {
   DateTime? _latestResetRecordedAt() {
     RecoveryEvent? latest;
     for (final e in events) {
-      if (e.type != RecoveryEventType.relapse &&
-          e.type != RecoveryEventType.recoveryStart) {
-        continue;
-      }
+      if (!resetsLeanCleanTimer(e)) continue;
       if (latest == null || !e.timestamp.isBefore(latest.timestamp)) {
         latest = e;
       }
@@ -1302,17 +1299,17 @@ class RecoveryController extends ChangeNotifier {
       for (var index = 0; index < times.length; index++) {
         final at = times[index];
         final richEntry = richEntries?[index];
+        final entryResetsLean = richEntry == null
+            ? true
+            : richEntry.effectiveType != RelapseType.benzo;
         final resets =
             events
                 .where(
-                  (e) =>
-                      (e.type == RecoveryEventType.relapse ||
-                          e.type == RecoveryEventType.recoveryStart) &&
-                      !e.timestamp.isAfter(at),
+                  (e) => resetsLeanCleanTimer(e) && !e.timestamp.isAfter(at),
                 )
                 .toList()
               ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-        final lost = resets.isEmpty
+        final lost = !entryResetsLean || resets.isEmpty
             ? 0
             : at.difference(resets.last.timestamp).inDays;
         final postSos = events.any(
