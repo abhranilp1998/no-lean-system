@@ -21,6 +21,7 @@ import '../domain/data_fixes_v12.dart';
 import '../domain/recovery_event.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../letters/domain/future_letter.dart';
+import '../../notes/domain/note_crypto.dart';
 import '../../widgets/domain/fullscreen_widgets.dart';
 import 'android_document_export.dart';
 
@@ -77,6 +78,60 @@ typedef ExportSaver =
       required String extension,
     });
 
+/// How voice recordings were packed into a backup under [BackupService.maxBackupBytes].
+class BackupPlan {
+  const BackupPlan({
+    required this.payload,
+    this.includedVoiceIds = const [],
+    this.skippedVoiceIds = const [],
+    this.missingVoiceIds = const [],
+  });
+
+  final Map<String, dynamic> payload;
+  final List<String> includedVoiceIds;
+
+  /// Voice notes whose recording did not fit under the 5 MB cap. Their
+  /// metadata is still in the backup; the file stayed on this phone.
+  final List<String> skippedVoiceIds;
+
+  /// Voice notes with no recording on this phone (nothing to pack).
+  final List<String> missingVoiceIds;
+
+  int get includedVoiceCount => includedVoiceIds.length;
+  int get skippedVoiceCount => skippedVoiceIds.length;
+  int get missingVoiceCount => missingVoiceIds.length;
+
+  /// Follows the usual "SECURE PIN EXCLUDED" export line. Null when there
+  /// are no voice notes at all.
+  String? get voiceNotice {
+    final total = includedVoiceCount + skippedVoiceCount + missingVoiceCount;
+    if (total == 0) return null;
+    final parts = <String>[];
+    if (includedVoiceCount > 0) {
+      parts.add(
+        '$includedVoiceCount voice note${includedVoiceCount == 1 ? '' : 's'} included',
+      );
+    } else if (skippedVoiceCount == 0 && missingVoiceCount == 0) {
+      // unreachable, but keeps the message tidy
+    } else {
+      parts.add('No voice recordings fit in this backup');
+    }
+    if (skippedVoiceCount > 0) {
+      parts.add(
+        '$skippedVoiceCount older recording${skippedVoiceCount == 1 ? '' : 's'} '
+        'did not fit the 5 MB backup limit and stayed on this phone',
+      );
+    }
+    if (missingVoiceCount > 0) {
+      parts.add(
+        '$missingVoiceCount voice note${missingVoiceCount == 1 ? '' : 's'} had no '
+        'recording on this phone',
+      );
+    }
+    return parts.join('. ');
+  }
+}
+
 class BackupService {
   BackupService({
     ExportSaver? saver,
@@ -105,6 +160,11 @@ class BackupService {
   /// message history, slip notes); older formats import without it.
   /// v12: (C) data fixes — dose amount/unit consistency, lean brands,
   /// double-tap dedupe. Older backups are fixed on read.
+  /// Voice recordings ride in an optional `audioData` field on a note
+  /// (the file as stored, still sealed if a PIN was set). No version bump
+  /// for them: older builds ignore the key. The 5 MB cap is kept so those
+  /// builds can still import; newest recordings go in first if not
+  /// everything fits.
   static const int currentBackupVersion = 13;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
@@ -122,7 +182,7 @@ class BackupService {
   }) {
     return exportJson(
       jsonEncode(
-        buildBackupPayload(
+        planBackup(
           events,
           preferences: preferences,
           zones: zones,
@@ -131,8 +191,97 @@ class BackupService {
           companion: companion,
           hiddenDuplicates: hiddenDuplicates,
           feedbackNotes: feedbackNotes,
-        ),
+        ).payload,
       ),
+    );
+  }
+
+  /// Packs newest voice recordings into [letters] until [maxBytes] (the 5 MB
+  /// safety limit by default, so older builds can still import). Text notes
+  /// and voice metadata always go in. Recordings that do not fit are listed
+  /// on the returned plan, not silently dropped from the phone.
+  BackupPlan planBackup(
+    List<RecoveryEvent> events, {
+    required Map<String, dynamic> preferences,
+    List<DangerZone> zones = const [],
+    List<FutureLetter> letters = const [],
+    Map<String, Object>? withdrawal,
+    CompanionState? companion,
+    List<RecoveryEvent> hiddenDuplicates = const [],
+    Object? feedbackNotes,
+    int maxBytes = maxBackupBytes,
+  }) {
+    final payload = buildBackupPayload(
+      events,
+      preferences: preferences,
+      zones: zones,
+      letters: letters,
+      withdrawal: withdrawal,
+      companion: companion,
+      hiddenDuplicates: hiddenDuplicates,
+      feedbackNotes: feedbackNotes,
+    );
+    var size = utf8.encode(jsonEncode(payload)).length;
+    final included = <String>[];
+    final skipped = <String>[];
+    final missing = <String>[];
+    if (size > maxBytes) {
+      // The rest of the backup already overflows: exportJson will refuse.
+      // Still report voice notes so the caller can explain.
+      for (final letter in letters) {
+        if (!letter.isVoice) continue;
+        if (letter.backupAudio == null || letter.backupAudio!.isEmpty) {
+          missing.add(letter.id);
+        } else {
+          skipped.add(letter.id);
+        }
+      }
+      return BackupPlan(
+        payload: payload,
+        skippedVoiceIds: skipped,
+        missingVoiceIds: missing,
+      );
+    }
+
+    final letterMaps = (payload['futureLetters'] as List)
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final voice = [
+      for (final letter in letters)
+        if (letter.isVoice) letter,
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    for (final letter in voice) {
+      final bytes = letter.backupAudio;
+      if (bytes == null || bytes.isEmpty) {
+        missing.add(letter.id);
+        continue;
+      }
+      Map<String, dynamic>? map;
+      for (final item in letterMaps) {
+        if (item['id'] == letter.id) {
+          map = item;
+          break;
+        }
+      }
+      if (map == null) continue;
+      final data = b64(bytes);
+      final added =
+          utf8.encode(jsonEncode({...map, 'audioData': data})).length -
+          utf8.encode(jsonEncode(map)).length;
+      if (size + added <= maxBytes) {
+        map['audioData'] = data;
+        size += added;
+        included.add(letter.id);
+      } else {
+        skipped.add(letter.id);
+      }
+    }
+    return BackupPlan(
+      payload: payload,
+      includedVoiceIds: included,
+      skippedVoiceIds: skipped,
+      missingVoiceIds: missing,
     );
   }
 

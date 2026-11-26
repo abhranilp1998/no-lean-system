@@ -13,6 +13,7 @@ import '../../../core/theme/no_lean_visuals.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../../emergency/presentation/hold_to_text_sos.dart';
+import '../../notes/presentation/future_note_card.dart';
 import '../application/recovery_provider.dart';
 
 class RelapseCooldownScreen extends ConsumerStatefulWidget {
@@ -167,6 +168,9 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
                 ),
               ],
               const SizedBox(height: 24),
+              // A note they left for a day like this one (hidden if none).
+              const FutureNoteCard(moment: NoteMoment.afterSlip),
+              const SizedBox(height: 16),
               HoldToTextSos(
                 onTap: () {
                   AppFeedback.tap();
@@ -239,7 +243,9 @@ class _DebriefView extends StatelessWidget {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 16),
+              const FutureNoteCard(moment: NoteMoment.afterSlip),
+              const SizedBox(height: 32),
               _DebriefButton(
                 label: 'CRAVING / URGE',
                 onTap: () => onComplete('craving'),

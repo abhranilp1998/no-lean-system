@@ -46,6 +46,7 @@ import '../services/relapse_lock_service.dart';
 import '../../app_lock/domain/exit_plan.dart';
 import '../../app_lock/domain/locked_app.dart';
 import '../../letters/domain/future_letter.dart';
+import '../../notes/services/future_note_service.dart';
 import '../../widgets/domain/fullscreen_widgets.dart';
 import '../../widgets/services/fullscreen_widget_sync.dart';
 import '../../zones/domain/danger_zone.dart';
@@ -126,7 +127,15 @@ class RecoveryController extends ChangeNotifier {
     Future<UseCheck?> Function()? takeUseCheck,
     Future<String?> Function()? readZoneLedger,
     Future<void> Function(String value)? writeZoneLedger,
-  }) : _peekUseCheck =
+    FutureNoteService? futureNotes,
+  }) : // A substitute PIN gateway means there is no real secure storage
+       // either: notes stay plain unless a service is passed in.
+       _notes =
+           futureNotes ??
+           (relapseLock == null
+               ? FutureNoteService()
+               : FutureNoteService.unavailable()),
+       _peekUseCheck =
            peekUseCheck ?? NotificationService.instance.peekPendingUseCheck,
        _takeUseCheck =
            takeUseCheck ??
@@ -387,6 +396,7 @@ class RecoveryController extends ChangeNotifier {
   final CheckInInbox _checkInInbox;
 
   final RelapseLockGateway _relapseLock;
+  final FutureNoteService _notes;
   final RecoveryStateStore _store;
   final DateTime Function() _now;
   final GeofenceGateway _geofences;
@@ -413,6 +423,7 @@ class RecoveryController extends ChangeNotifier {
   Future<void>? _loadFuture;
   Future<void> _writeQueue = Future.value();
   Map<String, dynamic> _extraState = {};
+  bool _keepNoteKey = false;
   RecoveryLoadStatus loadStatus = RecoveryLoadStatus.loading;
   String? loadMessage;
   String? saveMessage;
@@ -522,6 +533,13 @@ class RecoveryController extends ChangeNotifier {
   /// The user's own "if X, then I will Y" plans. Optional: older saves and
   /// backups have none.
   List<IfThenPlan> ifThenPlans = [];
+  /// True while notes are sealed on this phone (a PIN is set and the key is
+  /// in secure storage). See `NoteCrypto` for the design.
+  bool futureNotesEncrypted = false;
+
+  /// Notes this phone cannot open (sealed under a PIN/key it does not hold,
+  /// e.g. after a restore). They are kept, never dropped.
+  Set<String> lockedNoteIds = {};
   CompanionState companion = const CompanionState();
 
   /// In-app distance checks while NO LEAN is open (opt-in).
@@ -700,6 +718,7 @@ class RecoveryController extends ChangeNotifier {
       zones = DangerZone.decodeList(map['zones']);
       futureLetters = _decodeLetters(map['futureLetters']);
       ifThenPlans = IfThenPlan.decodeList(map['ifThenPlans']);
+      await _refreshLockedNotes();
       companion = CompanionState.fromJson(map['companion']);
       relapseCooldownUntil = DateTime.tryParse(
         map['relapseCooldownUntil']?.toString() ?? '',
@@ -2542,7 +2561,9 @@ class RecoveryController extends ChangeNotifier {
     requirePinAfterRelapse = true;
     // The risk-window wall is on by default whenever a PIN exists.
     riskWindowLock = true;
-  });
+    // Notes are sealed (or re-wrapped under the new PIN) while a PIN exists.
+    futureLetters = await _notes.activate(pin, futureLetters);
+  }).whenComplete(_afterNoteChange);
 
   /// Clears an app lock (risk window or post-relapse) after authentication.
   Future<ProtectedActionResult> unlockApp({
@@ -2590,6 +2611,7 @@ class RecoveryController extends ChangeNotifier {
     String? pin,
     bool tryBiometrics = true,
   }) async {
+    _keepNoteKey = false;
     final result = await _transaction(() async {
       final authorization = await _authorizeProtectedAction(
         pin: pin,
@@ -2602,10 +2624,19 @@ class RecoveryController extends ChangeNotifier {
 
       requirePinAfterRelapse = false;
       appLockPending = false;
+      // Without a PIN there is nothing to lock notes with: bring them back to
+      // plain storage first. The key is only dropped once every note is safe.
+      final plain = await _notes.deactivate(futureLetters);
+      futureLetters = plain.letters;
+      _keepNoteKey = plain.stillEncrypted;
       return ProtectedActionResult.completed;
     });
     if (result == ProtectedActionResult.completed) {
       await _relapseLock.clearPin();
+      if (!_keepNoteKey) await _notes.dropKey();
+      await _notes.flushOrphans(futureLetters);
+      await _refreshNoteState();
+      _notify();
     }
     return result;
   }
@@ -2659,8 +2690,128 @@ class RecoveryController extends ChangeNotifier {
     if (futureLetters.length >= FutureLetter.maxLetters) {
       throw StateError('You can keep at most 100 notes.');
     }
-    futureLetters = [...futureLetters, FutureLetter.create(text, at: _now())];
-  });
+    final note = await _notes.createText(text, _now());
+    futureLetters = [...futureLetters, note];
+  }).whenComplete(_afterNoteChange);
+
+  /// Saves a recorded voice note (already capped at 60 s by the recorder).
+  Future<void> addVoiceNote(Uint8List audio, Duration length) =>
+      _transaction(() async {
+        if (futureLetters.length >= FutureLetter.maxLetters) {
+          throw StateError('You can keep at most 100 notes.');
+        }
+        final note = await _notes.createVoice(audio, length, _now());
+        futureLetters = [...futureLetters, note];
+      }).whenComplete(_afterNoteChange);
+
+  /// The note's words, or null if it is locked, damaged or a voice note.
+  Future<String?> readFutureLetterText(FutureLetter letter) =>
+      _notes.readText(letter);
+
+  /// The recording's bytes, or null if locked or missing.
+  Future<Uint8List?> readFutureLetterAudio(FutureLetter letter) =>
+      _notes.readAudio(letter);
+
+  /// Opens notes this phone cannot read using the PIN they were sealed under.
+  Future<NoteUnlockResult> unlockFutureNotes(String pin) async {
+    late NoteUnlockResult result;
+    await _transaction(() async {
+      result = await _notes.unlock(futureLetters, pin);
+      futureLetters = result.letters;
+    }).whenComplete(_afterNoteChange);
+    return result;
+  }
+
+  /// Turns note encryption on for an existing PIN (set before this feature
+  /// existed) once the user has typed it. Verifies the PIN first.
+  Future<ProtectedActionResult> enableNoteEncryption(String pin) async {
+    if (!requirePinAfterRelapse) {
+      return ProtectedActionResult.authenticationRequired;
+    }
+    final verdict = switch (await _relapseLock.verifyPin(pin)) {
+      PinVerificationResult.verified => ProtectedActionResult.completed,
+      PinVerificationResult.denied => ProtectedActionResult.denied,
+      PinVerificationResult.lockedOut => ProtectedActionResult.lockedOut,
+    };
+    if (verdict != ProtectedActionResult.completed) return verdict;
+    await _transaction(() async {
+      futureLetters = await _notes.activate(pin, futureLetters);
+    }).whenComplete(_afterNoteChange);
+    return verdict;
+  }
+
+  /// Seals any plain notes (e.g. just imported) when encryption is on.
+  Future<void> secureFutureNotes() => _transaction(() async {
+    futureLetters = await _notes.syncToKey(futureLetters);
+  }).whenComplete(_afterNoteChange);
+
+  /// Notes that go into a backup (metadata). Voice file bytes are attached
+  /// by [lettersForBackup] when the recording is on this phone.
+  List<FutureLetter> get exportableLetters => List.of(futureLetters);
+
+  /// All notes for a backup, with voice file bytes attached when present
+  /// (still sealed if a PIN is set). Does not change saved state.
+  Future<List<FutureLetter>> lettersForBackup() async {
+    final out = <FutureLetter>[];
+    for (final l in futureLetters) {
+      if (!l.isVoice) {
+        out.add(l);
+        continue;
+      }
+      out.add(l.copyWith(backupAudio: await _notes.exportAudio(l)));
+    }
+    return out;
+  }
+
+  /// Writes imported voice files that are not already on this phone. Never
+  /// overwrites an existing recording, even if the backup has no audio.
+  Future<void> importVoiceAudio(List<FutureLetter> imported) async {
+    await _notes.importAudio(imported);
+    if (futureLetters.any((l) => l.backupAudio != null)) {
+      futureLetters = [
+        for (final l in futureLetters) l.copyWith(clearBackupAudio: true),
+      ];
+    }
+  }
+
+  Future<void> _afterNoteChange() async {
+    await _notes.flushOrphans(futureLetters);
+    await _refreshNoteState();
+    _notify();
+  }
+
+  /// Whether notes are sealed on this phone. The Notes screen calls this when
+  /// it opens; loading history never waits on secure storage.
+  Future<void> refreshNoteState() async {
+    await _refreshNoteState();
+    _notify();
+  }
+
+  Future<void> _refreshLockedNotes() async {
+    try {
+      final locked = <String>{};
+      for (final l in futureLetters) {
+        if (await _notes.isLocked(l)) locked.add(l.id);
+      }
+      lockedNoteIds = locked;
+    } catch (_) {
+      lockedNoteIds = {};
+    }
+  }
+
+  Future<void> _refreshNoteState() async {
+    try {
+      futureNotesEncrypted = await _notes.encrypting;
+      final locked = <String>{};
+      for (final l in futureLetters) {
+        if (await _notes.isLocked(l)) locked.add(l.id);
+      }
+      lockedNoteIds = locked;
+    } catch (_) {
+      futureNotesEncrypted = false;
+      lockedNoteIds = {};
+    }
+  }
 
   Future<void> updateCompanion(
     CompanionState Function(CompanionState) change,
@@ -2673,19 +2824,37 @@ class RecoveryController extends ChangeNotifier {
   int get bestCleanHours => math.max(longestStreak * 24, cleanDuration.inHours);
 
   Future<void> deleteFutureLetter(String id) => _transaction(() async {
+    _notes.forget(futureLetters.where((l) => l.id == id));
     futureLetters = futureLetters.where((l) => l.id != id).toList();
-  });
+  }).whenComplete(_afterNoteChange);
 
   /// Opening notes needs the same PIN/biometric check as other protected
   /// actions whenever a PIN is set.
   Future<ProtectedActionResult> authorizeFutureLetters({
     String? pin,
     bool tryBiometrics = true,
-  }) => _authorizeProtectedAction(
-    pin: pin,
-    tryBiometrics: tryBiometrics,
-    reason: 'Authenticate to open your notes.',
-  );
+  }) async {
+    final result = await _authorizeProtectedAction(
+      pin: pin,
+      tryBiometrics: tryBiometrics,
+      reason: 'Authenticate to open your notes.',
+    );
+    // A PIN set before notes were encrypted: the first time it is typed here,
+    // lock the notes with it.
+    if (result == ProtectedActionResult.completed &&
+        pin != null &&
+        requirePinAfterRelapse &&
+        !futureNotesEncrypted) {
+      try {
+        await _transaction(() async {
+          futureLetters = await _notes.activate(pin, futureLetters);
+        }).whenComplete(_afterNoteChange);
+      } catch (_) {
+        /* Opening notes never fails because encryption could not start. */
+      }
+    }
+    return result;
+  }
 
   Future<void> updateReasons(List<String> value) => _transaction(() async {
     reasons = value.where((item) => item.trim().isNotEmpty).toList();

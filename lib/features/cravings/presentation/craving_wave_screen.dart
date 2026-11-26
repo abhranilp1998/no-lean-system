@@ -6,6 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../plans/presentation/plan_card.dart';
 import '../../recovery/domain/if_then_plan.dart';
 
+import '../../notes/domain/note_invite.dart';
+import '../../notes/presentation/future_note_card.dart';
+import '../../notes/presentation/note_invite_panel.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/craving_entry.dart';
 import '../domain/craving_wave.dart';
@@ -139,14 +142,22 @@ class _CravingWaveScreenState extends ConsumerState<CravingWaveScreen>
                 ),
               ),
               const SizedBox(height: 16),
-              if (_passedIn != null)
+              if (_passedIn != null) ...[
                 Text(
                   'It passed in $_passedIn min. You rode it out.',
                   key: const Key('wave-passed'),
                   textAlign: TextAlign.center,
                   style: theme.textTheme.titleLarge,
-                )
-              else ...[
+                ),
+                const SizedBox(height: 12),
+                const FutureNoteInviteLink(
+                  occasion: NoteInviteOccasion.urgePassed,
+                ),
+              ] else ...[
+                if (_cravingId != null) ...[
+                  const FutureNoteCard(moment: NoteMoment.urge),
+                  const SizedBox(height: 12),
+                ],
                 Text('How strong: $_level / 10', textAlign: TextAlign.center),
                 Slider(
                   value: _level.toDouble(),

@@ -18,6 +18,8 @@ import '../core/widgets/animated_background.dart';
 import '../features/app_lock/presentation/app_lock_banner.dart';
 import '../features/code_instead/presentation/code_instead_screen.dart';
 import '../features/letters/presentation/future_letters_screen.dart';
+import '../features/notes/domain/note_invite.dart';
+import '../features/notes/presentation/note_invite_panel.dart';
 import '../features/cravings/presentation/cravings_screen.dart';
 import '../features/cravings/presentation/craving_dialog.dart';
 import '../features/cravings/presentation/craving_wave_screen.dart';
@@ -403,10 +405,19 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         _celebrating = false;
         return;
       }
-      showMilestoneCelebration(
-        context,
-        days: days,
-      ).whenComplete(() => _celebrating = false);
+      showMilestoneCelebration(context, days: days).whenComplete(() {
+        _celebrating = false;
+        // A good day: gently offer to leave a note for a hard one.
+        if (mounted) {
+          unawaited(
+            maybeShowNoteInviteSheet(
+              context,
+              ref,
+              NoteInviteOccasion.milestone,
+            ),
+          );
+        }
+      });
     });
   }
 
@@ -771,6 +782,13 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
           context,
           'Safe check-in recorded.',
           type: AppNoticeType.success,
+        );
+        unawaited(
+          maybeShowNoteInviteSheet(
+            context,
+            ref,
+            NoteInviteOccasion.cleanCheckIn,
+          ),
         );
       }
     } catch (_) {

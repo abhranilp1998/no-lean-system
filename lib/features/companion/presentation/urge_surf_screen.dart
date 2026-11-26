@@ -8,6 +8,9 @@ import '../../../core/services/app_feedback.dart';
 import '../../../core/services/app_notice.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../cravings/domain/urge_ride.dart';
+import '../../notes/domain/note_invite.dart';
+import '../../notes/presentation/future_note_card.dart';
+import '../../notes/presentation/note_invite_panel.dart';
 import '../../recovery/application/recovery_provider.dart';
 import 'companion_common.dart';
 
@@ -249,6 +252,8 @@ class _UrgeSurfState extends ConsumerState<UrgeSurfScreen>
             const SizedBox(height: 8),
             Center(child: Text(_phase, textAlign: TextAlign.center)),
             const SizedBox(height: 12),
+            const FutureNoteCard(moment: NoteMoment.urge),
+            const SizedBox(height: 12),
             OutlinedButton(
               key: const ValueKey('urge-ride-already-passed'),
               onPressed: () => _finishEarly(outcome: UrgeRideOutcome.yes),
@@ -300,6 +305,14 @@ class _UrgeSurfState extends ConsumerState<UrgeSurfScreen>
                   ),
               ],
             ),
+            // The urge eased: invite a note for next time.
+            if (_outcome == UrgeRideOutcome.yes ||
+                _outcome == UrgeRideOutcome.aBit) ...[
+              const SizedBox(height: 10),
+              const FutureNoteInviteLink(
+                occasion: NoteInviteOccasion.urgePassed,
+              ),
+            ],
             const SizedBox(height: 16),
             FilledButton(
               key: const ValueKey('urge-ride-save'),

@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import '../../../core/layout/tab_layout.dart';
 import 'trigger_tags_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/services/app_notice.dart';
+import '../../notes/domain/note_invite.dart';
+import '../../notes/presentation/note_invite_panel.dart';
 import '../../../core/services/save_action.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
@@ -211,6 +215,12 @@ Future<void> showCravingRecheckDialog(
     'same' => 'RECHECK // STILL $value. STAY MOVING.',
     _ => 'RECHECK // $original -> $value. OPEN SOS NOW.',
   }, type: outcome == 'stronger' ? AppNoticeType.error : AppNoticeType.success);
+  if (outcome == 'gone') {
+    // It passed: a good moment to leave a note for the next one.
+    unawaited(
+      maybeShowNoteInviteSheet(context, ref, NoteInviteOccasion.urgePassed),
+    );
+  }
 }
 
 class _RecheckDialog extends StatefulWidget {
