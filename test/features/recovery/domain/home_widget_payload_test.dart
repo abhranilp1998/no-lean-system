@@ -91,4 +91,35 @@ void main() {
     );
     expect(private.containsKey('riskStartMinutes'), isFalse);
   });
+
+  test(
+    'money kept rides along only when not private, with no substance words',
+    () {
+      final payload = homeWidgetPayload(
+        lastDose: lastDose,
+        cleanTime: '18d',
+        streak: 18,
+        isRiskWindow: false,
+        hasPledgedToday: false,
+        privacy: false,
+        moneyKept: '₹2,160 kept',
+      );
+      expect(payload['moneyKept'], '₹2,160 kept');
+      expect(
+        payload['moneyKept'].toString().toLowerCase(),
+        isNot(contains('lean')),
+      );
+      final private = homeWidgetPayload(
+        lastDose: lastDose,
+        cleanTime: '18d',
+        streak: 18,
+        isRiskWindow: false,
+        hasPledgedToday: false,
+        privacy: true,
+        moneyKept: '₹2,160 kept',
+      );
+      expect(private.containsKey('moneyKept'), isFalse);
+      expect(private.values.whereType<String>().join(), isEmpty);
+    },
+  );
 }
