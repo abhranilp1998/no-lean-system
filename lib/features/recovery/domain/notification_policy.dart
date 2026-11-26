@@ -18,11 +18,14 @@ enum NotificationKind {
 
   /// "Log it later" nudge from rough-day mode. Non-critical: muted in quiet hours.
   logReminder,
+
   /// Substance swap-watch heads-up. Non-critical: muted in quiet hours.
   /// Wording must stay privacy-safe (see [swapWatchNotificationTitle]).
   swapWatch,
+
   /// 30-minute heads-up before a usual craving peak. Non-critical.
   cravingPeak,
+
   /// Daily one-tap check-in. Non-critical: muted in quiet hours.
   dailyCheckIn,
 }

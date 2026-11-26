@@ -294,8 +294,9 @@ class SettingsScreen extends ConsumerWidget {
               subtitle:
                   '${recovery.zones.length} marked // ${recovery.streetTiles ? 'street map' : 'grid map'}${recovery.zoneMonitoring || recovery.backgroundGeofencing ? ' // alerts on' : ''}',
               color: red,
-              onTap: () => Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => const ZonesScreen())),
+              onTap: () => Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const ZonesScreen())),
             ),
             SettingToggle(
               key: const ValueKey('settings-position-notification'),
@@ -362,7 +363,8 @@ class SettingsScreen extends ConsumerWidget {
               SettingAction(
                 icon: Icons.alarm_on,
                 title: 'Exact alert timing',
-                subtitle: 'Allow exact alarms so alerts land on time; otherwise Android may delay them',
+                subtitle:
+                    'Allow exact alarms so alerts land on time; otherwise Android may delay them',
                 color: red,
                 onTap: () => requestExactAlertTiming(context, ref),
               ),

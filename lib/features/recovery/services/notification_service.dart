@@ -48,8 +48,9 @@ class NotificationService {
   Future<void> _initialize({required bool requestPermission}) async {
     if (!_initialized) {
       try {
-        final zone = await const MethodChannel('no_lean/timezone')
-            .invokeMethod<String>('get');
+        final zone = await const MethodChannel(
+          'no_lean/timezone',
+        ).invokeMethod<String>('get');
         if (zone != null) {
           tz.setLocalLocation(tz.getLocation(zone));
         }
@@ -680,7 +681,8 @@ class NotificationService {
           android: AndroidNotificationDetails(
             'swap_watch_v1',
             'NO LEAN check-ins',
-            channelDescription: 'A quiet heads-up when something in the last two weeks is worth a look',
+            channelDescription:
+                'A quiet heads-up when something in the last two weeks is worth a look',
             importance: Importance.defaultImportance,
             priority: Priority.defaultPriority,
             visibility: lockScreenVisibility,

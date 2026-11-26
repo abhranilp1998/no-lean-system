@@ -655,9 +655,9 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       final tolerance = widget.editing != null
           ? null
           : lowerToleranceWarning(
-            existingEvents: recovery.events,
-            entries: entries,
-          );
+              existingEvents: recovery.events,
+              entries: entries,
+            );
       Future<ProtectedActionResult> write({String? pin}) {
         final editing = widget.editing;
         if (editing != null) {

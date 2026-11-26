@@ -83,10 +83,7 @@ void main() {
     test('benzo-only day stays clean on the lean heat map', () {
       final day = DateTime(2023, 3, 4, 18);
       final events = [
-        RecoveryEvent.create(
-          type: RecoveryEventType.pledge,
-          timestamp: day,
-        ),
+        RecoveryEvent.create(type: RecoveryEventType.pledge, timestamp: day),
         RecoveryEvent.create(
           type: RecoveryEventType.relapse,
           timestamp: day.add(const Duration(hours: 1)),

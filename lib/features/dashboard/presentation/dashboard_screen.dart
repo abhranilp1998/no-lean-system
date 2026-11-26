@@ -388,7 +388,9 @@ class _RiskSuggestionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // We cast to List<RecoveryEvent> because the import is available.
     // wait, RecoveryEvent is from domain
-    final highRisk = computeHighRiskHours(events as dynamic); // Type hack to avoid another import if needed, but we imported event_derived_state.dart
+    final highRisk = computeHighRiskHours(
+      events as dynamic,
+    ); // Type hack to avoid another import if needed, but we imported event_derived_state.dart
 
     if (highRisk.isEmpty) {
       return const GlassCard(

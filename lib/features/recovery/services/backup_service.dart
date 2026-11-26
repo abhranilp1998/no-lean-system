@@ -68,12 +68,13 @@ class BackupPreview {
 
 /// Writes an export somewhere the user picks. Returns `true` when the file
 /// was written and `false` when the user cancelled.
-typedef ExportSaver = Future<bool> Function(
-  String content, {
-  required String fileName,
-  required String mimeType,
-  required String extension,
-});
+typedef ExportSaver =
+    Future<bool> Function(
+      String content, {
+      required String fileName,
+      required String mimeType,
+      required String extension,
+    });
 
 class BackupService {
   BackupService({

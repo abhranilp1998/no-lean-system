@@ -367,7 +367,7 @@ class _RelapseEventCard extends StatelessWidget {
                                 icon: Icons.edit_outlined,
                                 label: 'EDITED',
                               ),
-                                                        if (streakLabel != null)
+                            if (streakLabel != null)
                               _RelapseFact(
                                 icon: Icons.timer_off_outlined,
                                 label: streakLabel,

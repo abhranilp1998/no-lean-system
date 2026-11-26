@@ -75,7 +75,8 @@ enum ProtectedActionResult {
 
 extension ProtectedActionResultMessage on ProtectedActionResult {
   String get failureMessage => switch (this) {
-    ProtectedActionResult.lockedOut => 'Too many incorrect PIN attempts. PIN entry is paused: 5 minutes, then 15, then 60 on repeat lockouts. Biometrics still work.',
+    ProtectedActionResult.lockedOut =>
+      'Too many incorrect PIN attempts. PIN entry is paused: 5 minutes, then 15, then 60 on repeat lockouts. Biometrics still work.',
     ProtectedActionResult.denied =>
       'Authentication failed. Nothing was changed.',
     ProtectedActionResult.authenticationRequired =>
@@ -177,6 +178,7 @@ class RecoveryController extends ChangeNotifier {
       value,
     );
   }
+
   final Future<bool> Function(DateTime at) _scheduleLogLater;
   final Future<void> Function() _cancelLogLater;
 
@@ -584,7 +586,8 @@ class RecoveryController extends ChangeNotifier {
       if (stored != null &&
           (version is! int || version < 2 || version > stateVersion)) {
         loadStatus = RecoveryLoadStatus.incompatible;
-        loadMessage = 'This recovery history needs a compatible app version. It has been kept unchanged.';
+        loadMessage =
+            'This recovery history needs a compatible app version. It has been kept unchanged.';
         _notify();
         return;
       }
@@ -670,7 +673,8 @@ class RecoveryController extends ChangeNotifier {
     } catch (_) {
       isLoaded = false;
       loadStatus = RecoveryLoadStatus.error;
-      loadMessage = 'Your recovery history could not be opened. Nothing has been reset. Retry, or export a preserved copy.';
+      loadMessage =
+          'Your recovery history could not be opened. Nothing has been reset. Retry, or export a preserved copy.';
       _notify();
     }
   }

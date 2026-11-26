@@ -69,9 +69,9 @@ class ProgressScreen extends ConsumerWidget {
     // Dismissals that still match their evidence (hidden right now).
     final hidden = recovery.dismissedInsights.isEmpty
         ? 0
-        : insightsFor(const {})
-              .where((i) => i.isDismissedBy(recovery.dismissedInsights))
-              .length;
+        : insightsFor(
+            const {},
+          ).where((i) => i.isDismissedBy(recovery.dismissedInsights)).length;
     final typeStats = relapseTypeStats(relapses);
     final costByType = {
       for (final stats in typeStats)
@@ -88,8 +88,9 @@ class ProgressScreen extends ConsumerWidget {
           showCravingDialog(context, ref);
           return;
         case PatternActionKind.openSos:
-          Navigator.of(context)
-              .push(MaterialPageRoute(builder: (_) => const EmergencyScreen()));
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const EmergencyScreen()));
           return;
         case PatternActionKind.editRiskWindow:
           showRiskWindowDialog(context, ref);
@@ -203,7 +204,8 @@ class ProgressScreen extends ConsumerWidget {
         const SizedBox(height: 10),
         InsightBreakdownCard(
           title: 'TRIGGER SIGNATURES',
-          emptyMessage: 'Log a craving or tag a relapse to identify repeat trigger signatures.',
+          emptyMessage:
+              'Log a craving or tag a relapse to identify repeat trigger signatures.',
           entries: triggers,
           accent: magenta,
           maxVisible: 5,
