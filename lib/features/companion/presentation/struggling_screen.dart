@@ -8,6 +8,7 @@ import '../../zones/presentation/zones_screen.dart';
 import '../../letters/presentation/future_letters_screen.dart';
 import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
+import '../../dashboard/domain/rough_day.dart';
 import '../../withdrawal/data/symptom_checkin_store.dart';
 import '../domain/companion_engine.dart';
 import '../domain/idea_cards.dart';
@@ -49,9 +50,18 @@ class StrugglingScreen extends ConsumerStatefulWidget {
   final DateTime? nowOverride;
   final int? seed;
 
-  static Future<void> open(BuildContext context) => Navigator.of(
-    context,
-  ).push(MaterialPageRoute(builder: (_) => const StrugglingScreen()));
+  static Future<void> open(BuildContext context) {
+    try {
+      ProviderScope.containerOf(
+        context,
+      ).read(recoveryProvider).enterRoughDay(source: RoughDaySource.struggling);
+    } catch (_) {
+      // Opening help must still work if recovery state is not ready.
+    }
+    return Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const StrugglingScreen()));
+  }
 
   @override
   ConsumerState<StrugglingScreen> createState() => _StrugglingState();

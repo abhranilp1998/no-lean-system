@@ -124,8 +124,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.drag(find.byType(ListView).first, const Offset(0, 1000));
       await tester.pumpAndSettle();
-      expect(find.text('THE COUNTER'), findsOneWidget);
+      expect(find.text('CALL MY PERSON'), findsOneWidget);
       expect(controller.relapseCooldownUntil, isNull);
+      expect(controller.isRoughDay, isTrue);
     },
   );
 
@@ -175,7 +176,10 @@ void main() {
           null,
         ),
       );
-      final container = await _pumpLoadedApp(tester);
+      final container = await _pumpLoadedApp(
+        tester,
+        ready: find.text('CALL MY PERSON'),
+      );
       addTearDown(container.dispose);
       await tester.pumpAndSettle();
       // No form: the cold action logged straight away.
@@ -216,7 +220,10 @@ Future<void> _pumpUntil(
   fail('Timed out waiting for the requested widget.');
 }
 
-Future<ProviderContainer> _pumpLoadedApp(WidgetTester tester) async {
+Future<ProviderContainer> _pumpLoadedApp(
+  WidgetTester tester, {
+  Finder? ready,
+}) async {
   final container = ProviderContainer(
     overrides: [
       recoveryProvider.overrideWith(
@@ -242,7 +249,7 @@ Future<ProviderContainer> _pumpLoadedApp(WidgetTester tester) async {
   await tester.pumpWidget(
     UncontrolledProviderScope(container: container, child: const NoLeanApp()),
   );
-  await _pumpUntil(tester, find.text('THE COUNTER'));
+  await _pumpUntil(tester, ready ?? find.text('THE COUNTER'));
   await tester.pumpAndSettle();
   return container;
 }

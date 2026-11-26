@@ -15,12 +15,17 @@ enum NotificationKind {
 
   /// 15-minute craving recheck. Non-critical: muted in quiet hours.
   cravingCheck,
+
+  /// "Log it later" nudge from rough-day mode. Non-critical: muted in quiet hours.
+  logReminder,
 }
 
 extension NotificationKindPolicy on NotificationKind {
   bool get isCritical => switch (this) {
     NotificationKind.riskWindow || NotificationKind.dangerZone => true,
-    NotificationKind.codeTimer || NotificationKind.cravingCheck => false,
+    NotificationKind.codeTimer ||
+    NotificationKind.cravingCheck ||
+    NotificationKind.logReminder => false,
   };
 }
 

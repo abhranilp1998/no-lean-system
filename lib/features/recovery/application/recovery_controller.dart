@@ -9,6 +9,7 @@ import '../../companion/domain/companion_state.dart';
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
+import '../../dashboard/domain/rough_day.dart';
 import '../domain/double_tap.dart';
 import '../domain/relapse_cooldown.dart';
 import '../domain/craving_entry.dart';
@@ -93,6 +94,8 @@ class RecoveryController extends ChangeNotifier {
     Future<void> Function()? cancelCravingCheck,
     Future<bool> Function(UseCheck check)? scheduleUseCheck,
     Future<void> Function()? cancelUseCheck,
+    Future<bool> Function(DateTime at)? scheduleLogLater,
+    Future<void> Function()? cancelLogLater,
   }) : _scheduleUseCheck =
            scheduleUseCheck ?? NotificationService.instance.scheduleUseCheck,
        _cancelUseCheck =
@@ -103,6 +106,13 @@ class RecoveryController extends ChangeNotifier {
        _cancelCravingCheck =
            cancelCravingCheck ??
            NotificationService.instance.cancelCravingCheck,
+       _scheduleLogLater =
+           scheduleLogLater ??
+           ((at) =>
+               NotificationService.instance.scheduleLogLaterReminder(at: at)),
+       _cancelLogLater =
+           cancelLogLater ??
+           NotificationService.instance.cancelLogLaterReminder,
        _zoneInbox = zoneInbox ?? const NoopZoneEntryInbox(),
        _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
        _store = store ?? PreferencesRecoveryStateStore(),
@@ -130,6 +140,8 @@ class RecoveryController extends ChangeNotifier {
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
   final Future<bool> Function(UseCheck check) _scheduleUseCheck;
   final Future<void> Function() _cancelUseCheck;
+  final Future<bool> Function(DateTime at) _scheduleLogLater;
+  final Future<void> Function() _cancelLogLater;
 
   /// The question is answered: a relapse was logged or SOS ended with an
   /// outcome, so the pending "Did you use?" (id 740) must not fire.
@@ -146,6 +158,48 @@ class RecoveryController extends ChangeNotifier {
         UseCheck(trigger: trigger, triggeredAt: at ?? _now()),
       );
     } catch (_) {}
+  }
+
+  void _restoreRoughDay(Map<String, dynamic> map) {
+    final state = RoughDayState.fromJson(map);
+    roughDayStartedAt = state?.startedAt;
+    roughDayUntil = state?.until;
+    roughDaySource = state?.source;
+  }
+
+  void _setRoughDay({required RoughDaySource source}) {
+    final now = _now();
+    roughDayStartedAt = now;
+    roughDayUntil = now.add(roughDayDuration);
+    roughDaySource = source;
+  }
+
+  /// Opens the calm home for 24 hours. Safe to call again: the window restarts.
+  Future<void> enterRoughDay({required RoughDaySource source}) =>
+      _transaction(() async {
+        _setRoughDay(source: source);
+      });
+
+  /// "Back to normal view": leaves early and drops any log-later nudge.
+  Future<void> clearRoughDay() => _transaction(() async {
+    roughDayStartedAt = null;
+    roughDayUntil = null;
+    roughDaySource = null;
+    try {
+      await _cancelLogLater();
+    } catch (_) {}
+  });
+
+  /// Schedules a gentle "write it down" nudge, deferred past quiet hours.
+  /// Returns the time it was scheduled for, or null if it could not be set.
+  Future<DateTime?> remindToLogLater() async {
+    var at = deferPastQuietHours(notificationPrefs, _now().add(logLaterDelay));
+    try {
+      final ok = await _scheduleLogLater(at);
+      return ok ? at : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   final Future<void> Function() _cancelCravingCheck;
@@ -184,6 +238,16 @@ class RecoveryController extends ChangeNotifier {
   DateTime? relapseCooldownUntil;
   String? relapseCooldownEventId;
   int cooldownMinutes = 15;
+
+  /// Optional. Absent in older saves, which simply means "not a rough day".
+  DateTime? roughDayStartedAt;
+  DateTime? roughDayUntil;
+  RoughDaySource? roughDaySource;
+
+  bool get isRoughDay {
+    final until = roughDayUntil;
+    return until != null && _now().isBefore(until);
+  }
 
   DateTime lastDose = DateTime.now();
   DateTime? lastPledge;
@@ -404,6 +468,7 @@ class RecoveryController extends ChangeNotifier {
       relapseCooldownEventId = map['relapseCooldownEventId'] is String
           ? map['relapseCooldownEventId'] as String
           : null;
+      _restoreRoughDay(map);
       final staleCooldownFixed = _reconcileCooldown();
       lastOpenedAt = DateTime.tryParse(map['lastOpenedAt']?.toString() ?? '');
       _ensureBaselineEvent();
@@ -677,6 +742,9 @@ class RecoveryController extends ChangeNotifier {
     'hiddenDuplicates': hiddenDuplicates.map((e) => e.toJson()).toList(),
     'relapseCooldownUntil': relapseCooldownUntil?.toIso8601String(),
     'relapseCooldownEventId': relapseCooldownEventId,
+    'roughDayStartedAt': roughDayStartedAt?.toIso8601String(),
+    'roughDayUntil': roughDayUntil?.toIso8601String(),
+    'roughDaySource': roughDaySource?.name,
     'cooldownMinutes': cooldownMinutes,
     'dailySpend': dailySpend,
     'bottleMl': bottleMl,
@@ -725,6 +793,7 @@ class RecoveryController extends ChangeNotifier {
     relapseCooldownEventId = map['relapseCooldownEventId'] is String
         ? map['relapseCooldownEventId'] as String
         : null;
+    _restoreRoughDay(map);
     _reconcileCooldown();
     lastOpenedAt = DateTime.tryParse(map['lastOpenedAt']?.toString() ?? '');
     _sortAndRecompute();
@@ -1350,6 +1419,12 @@ class RecoveryController extends ChangeNotifier {
       if (relapseCooldownUntil == null && deadline.isAfter(DateTime.now())) {
         relapseCooldownUntil = deadline;
         relapseCooldownEventId = latest.id;
+      }
+      if (shouldStartRoughDayForSlip(
+        occurredAt: latest.timestamp,
+        now: _now(),
+      )) {
+        _setRoughDay(source: RoughDaySource.slip);
       }
       // Re-lock after every newly saved relapse so the next move is deliberate.
       if (requirePinAfterRelapse) appLockPending = true;
