@@ -2,6 +2,7 @@ import 'package:uuid/uuid.dart';
 
 import 'dose_units.dart';
 import 'relapse_log_entry.dart';
+import 'slip_review.dart';
 
 enum RecoveryEventType {
   daySummary, // Legacy date-only fact; occurrence count/time were not recorded.
@@ -248,6 +249,7 @@ class RecoveryEvent {
             result['quantity'] = normalized;
           }
         }
+        normalizeSlipReviewMetadata(result);
         _validateDose(result);
         _validateStress(result);
         final cost = result['cost'];

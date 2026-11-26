@@ -17,12 +17,14 @@ Future<ZoneDraft?> showZoneEditorDialog(
   required double latitude,
   required double longitude,
   DangerZone? existing,
+  String? initialName,
 }) => showDialog<ZoneDraft>(
   context: context,
   builder: (_) => _ZoneEditorDialog(
     latitude: latitude,
     longitude: longitude,
     existing: existing,
+    initialName: initialName,
   ),
 );
 
@@ -31,18 +33,24 @@ class _ZoneEditorDialog extends StatefulWidget {
     required this.latitude,
     required this.longitude,
     this.existing,
+    this.initialName,
   });
 
   final double latitude;
   final double longitude;
   final DangerZone? existing;
 
+  /// Prefills the name for a new zone (ignored when editing).
+  final String? initialName;
+
   @override
   State<_ZoneEditorDialog> createState() => _ZoneEditorDialogState();
 }
 
 class _ZoneEditorDialogState extends State<_ZoneEditorDialog> {
-  late final _name = TextEditingController(text: widget.existing?.name ?? '');
+  late final _name = TextEditingController(
+    text: widget.existing?.name ?? widget.initialName ?? '',
+  );
   late double _radius =
       widget.existing?.radiusMeters ?? DangerZone.defaultRadiusMeters;
   String? _error;

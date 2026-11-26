@@ -85,6 +85,7 @@ void main() {
       final controller = container.read(recoveryProvider);
       await controller.recordRelapse();
       await tester.pump();
+      await _skipSlipReview(tester);
       expect(find.byType(NavigationBar), findsOneWidget);
       expect(find.text('RESET SUPPORT'), findsOneWidget);
       await tester.tap(find.text('RESET SUPPORT'));
@@ -104,6 +105,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('CONFIRM RESET'));
       await tester.pumpAndSettle();
+      await _skipSlipReview(tester);
       expect(
         controller.events.where((e) => e.type == RecoveryEventType.relapse),
         hasLength(3),
@@ -245,4 +247,14 @@ Future<ProviderContainer> _pumpLoadedApp(WidgetTester tester) async {
   await _pumpUntil(tester, find.text('THE COUNTER'));
   await tester.pumpAndSettle();
   return container;
+}
+
+/// A saved slip offers the optional 3-tap review; these tests are about
+/// something else, so close it the way a user would.
+Future<void> _skipSlipReview(WidgetTester tester) async {
+  await tester.pumpAndSettle();
+  final skip = find.byKey(const ValueKey('review-skip'));
+  if (skip.evaluate().isEmpty) return;
+  await tester.tap(skip);
+  await tester.pumpAndSettle();
 }

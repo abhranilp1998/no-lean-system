@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'event_derived_state.dart';
 import 'recovery_event.dart';
 import 'risk_window.dart';
+import 'slip_review.dart';
 
 enum RiskAlertKind { preWindow, windowOpen, followUp }
 
@@ -33,6 +34,9 @@ class RiskAlertFacts {
     this.topTrigger,
     this.topTriggerCount = 0,
     this.peakHour,
+    this.slipPlace,
+    this.slipPlaceCount = 0,
+    this.slipWith,
   });
 
   final int totalCravings;
@@ -41,6 +45,11 @@ class RiskAlertFacts {
   final String? topTrigger;
   final int topTriggerCount;
   final int? peakHour;
+
+  /// Most common place and company across reviewed slips (2+ to count).
+  final String? slipPlace;
+  final int slipPlaceCount;
+  final String? slipWith;
 
   int? get windowSharePercent => totalCravings == 0
       ? null
@@ -59,6 +68,7 @@ RiskAlertFacts computeRiskAlertFacts({
       .where((event) => window.contains(event.timestamp.toLocal()))
       .length;
   final evidence = computeRiskWindowEvidence(events, window);
+  final pattern = computeSlipPattern(events, window);
   return RiskAlertFacts(
     totalCravings: cravings.length,
     cravingsInWindow: inWindow,
@@ -66,6 +76,9 @@ RiskAlertFacts computeRiskAlertFacts({
     topTrigger: evidence.dominantTrigger,
     topTriggerCount: evidence.dominantTriggerCount,
     peakHour: evidence.peakHour,
+    slipPlace: pattern.topPlaceCount >= 2 ? pattern.topPlace : null,
+    slipPlaceCount: pattern.topPlaceCount,
+    slipWith: pattern.topWithCount >= 2 ? pattern.topWith : null,
   );
 }
 
@@ -101,6 +114,11 @@ List<RiskAlert> buildRiskAlertPlan({
   final peakLine = facts.peakHour == null
       ? null
       : 'Peak hour in your logs: ${facts.peakHour.toString().padLeft(2, '0')}:00.';
+  final placeLine = facts.slipPlace == null
+      ? null
+      : 'Your reviewed slips keep happening at ${facts.slipPlace} '
+            '(${facts.slipPlaceCount}x)'
+            '${facts.slipWith == null ? '' : ', often ${slipWithOptions[facts.slipWith]!.toLowerCase()}'}.';
   final cleanLine =
       'Clean since ${DateFormat('d MMM').format(facts.cleanSince)}.';
   const noDataLine =
@@ -123,6 +141,7 @@ List<RiskAlert> buildRiskAlertPlan({
         body: join([
           shareLine ?? noDataLine,
           triggerLine,
+          placeLine,
           cleanLine,
           'Set the plan before it starts: SOS, move, or call.',
         ]),

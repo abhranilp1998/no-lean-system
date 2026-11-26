@@ -27,6 +27,8 @@ import '../domain/use_check.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
+import '../domain/slip_review.dart';
+import '../domain/mixing_alert.dart';
 import '../domain/sos_session.dart';
 import '../services/home_widget_service.dart';
 import '../services/notification_service.dart';
@@ -646,6 +648,8 @@ class RecoveryController extends ChangeNotifier {
       cleanSince: lastDose,
     ),
     userMessages: reminderMessages,
+    // Warn earlier when logged slips start before the window opens.
+    leadMinutes: adaptiveLeadMinutes(computeSlipPattern(events, riskWindow)),
   );
 
   static List<RecoveryEvent> _decodeHidden(Object? raw) {
@@ -936,6 +940,64 @@ class RecoveryController extends ChangeNotifier {
     _notify();
   }
 
+  /// The controller's clock (injectable in tests), for UI that must agree
+  /// with how events were timed.
+  DateTime get currentTime => _now();
+
+  /// Set by a save that left a codeine + benzo/alcohol mix in the last 24 h
+  /// (by occurred time). One per save, however many entries it held. Not
+  /// persisted: the log is the record and the mix is re-derived from it.
+  MixingAlert? pendingMixingAlert;
+
+  /// Set by a save the app should offer a 3-tap review for. Not persisted.
+  SlipReviewRequest? pendingSlipReview;
+
+  void _queueSlipFollowUp(Iterable<RecoveryEvent> saved) {
+    final added = saved.toList();
+    if (added.isEmpty) return;
+    pendingMixingAlert = detectMixingAlert(
+      events: events,
+      now: _now(),
+      involving: {for (final e in added) e.id},
+    );
+    pendingSlipReview = slipReviewFor(added);
+    _notify();
+  }
+
+  MixingAlert? takeMixingAlert() {
+    final alert = pendingMixingAlert;
+    pendingMixingAlert = null;
+    return alert;
+  }
+
+  SlipReviewRequest? takeSlipReview() {
+    final request = pendingSlipReview;
+    pendingSlipReview = null;
+    return request;
+  }
+
+  /// Adds the user's review answers to the relapse events they describe.
+  ///
+  /// No PIN needed: it only adds optional context (place, company, triggers)
+  /// to slips the user just logged, never changes a time, type or timer, and
+  /// removes nothing. Returns how many events were updated.
+  Future<int> recordSlipReview(Set<String> eventIds, SlipReview review) =>
+      _transaction(() async {
+        if (review.isEmpty) return 0;
+        var updated = 0;
+        for (var i = 0; i < events.length; i++) {
+          final e = events[i];
+          if (e.type != RecoveryEventType.relapse || !eventIds.contains(e.id)) {
+            continue;
+          }
+          events[i] = e.copyWith(
+            metadata: applySlipReview(e.metadata, review, now: _now()),
+          );
+          updated++;
+        }
+        return updated;
+      });
+
   Future<void> clearRelapseCooldown(String reason) => _transaction(() async {
     if (relapseCooldownUntil == null && relapseCooldownEventId == null) return;
     relapseCooldownUntil = null;
@@ -1225,6 +1287,10 @@ class RecoveryController extends ChangeNotifier {
     String source = 'app',
     Map<String, dynamic> extraMetadata = const {},
   }) async {
+    final knownRelapses = {
+      for (final e in events)
+        if (e.type == RecoveryEventType.relapse) e.id,
+    };
     final result = await _recordRelapse(
       pin: pin,
       tryBiometrics: tryBiometrics,
@@ -1236,6 +1302,13 @@ class RecoveryController extends ChangeNotifier {
     );
     if (result == ProtectedActionResult.completed) {
       unawaited(cancelUseCheck());
+      _queueSlipFollowUp(
+        events.where(
+          (e) =>
+              e.type == RecoveryEventType.relapse &&
+              !knownRelapses.contains(e.id),
+        ),
+      );
     }
     return result;
   }
