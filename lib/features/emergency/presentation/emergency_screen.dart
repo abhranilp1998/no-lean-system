@@ -16,6 +16,8 @@ import '../../../core/widgets/status_pill.dart';
 import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../settings/services/trusted_contact_service.dart';
+import '../../zones/services/location_service.dart';
+import '../application/sos_text_service.dart';
 import '../domain/sos_flow.dart';
 
 class EmergencyScreen extends ConsumerStatefulWidget {
@@ -156,6 +158,15 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
     }
   }
 
+  Future<void> _textTrustedContact() async {
+    await openSosTextComposer(
+      context,
+      contact: _trustedContact,
+      template: ref.read(sosTextTemplateProvider).valueOrNull,
+      location: ref.read(locationServiceProvider),
+    );
+  }
+
   Widget _stageBody(RecoveryController recovery) => switch (_flow.stage) {
     SosStage.breathe => _BreatheStage(flow: _flow),
     SosStage.ground => _GroundStage(
@@ -290,10 +301,26 @@ class _EmergencyScreenState extends ConsumerState<EmergencyScreen> {
                   if (_trustedContact != null) ...[
                     const SizedBox(height: 22),
                     OutlinedButton.icon(
+                      key: const ValueKey('sos-call-contact'),
                       onPressed: _callTrustedContact,
                       icon: const Icon(Icons.phone),
                       label: Text(
                         'CALL ${_trustedContact!.name.toUpperCase()}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: cyan,
+                        side: const BorderSide(color: cyan),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      key: const ValueKey('sos-text-contact'),
+                      onPressed: _textTrustedContact,
+                      icon: const Icon(Icons.sms_outlined),
+                      label: Text(
+                        'TEXT ${_trustedContact!.name.toUpperCase()}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

@@ -5,6 +5,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/status_pill.dart';
 import '../application/recovery_controller.dart';
+import '../../emergency/presentation/hold_to_text_sos.dart';
 
 enum PeakHourGateResult { proceed, openSos }
 
@@ -132,11 +133,13 @@ class _PeakHourGateDialogState extends State<_PeakHourGateDialog> {
                   : const SizedBox.shrink(),
             ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () =>
-                  Navigator.pop(context, PeakHourGateResult.openSos),
-              icon: const Icon(Icons.sos, color: cyan),
-              label: const Text('OPEN SOS INSTEAD'),
+            HoldToTextSos(
+              onTap: () => Navigator.pop(context, PeakHourGateResult.openSos),
+              child: OutlinedButton.icon(
+                onPressed: () {},
+                icon: const Icon(Icons.sos, color: cyan),
+                label: const Text('OPEN SOS INSTEAD'),
+              ),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context),
