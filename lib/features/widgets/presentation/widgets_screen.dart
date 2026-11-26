@@ -283,7 +283,7 @@ class _ClassicPreview extends StatelessWidget {
           ),
           if (!private && kind != WidgetKind.small)
             Text(
-              '${recovery.streak} DAYS CLEAN',
+              '${recovery.streak} DAY${recovery.streak == 1 ? '' : 'S'} CLEAN',
               style: const TextStyle(color: lime, fontFamily: 'monospace'),
             ),
           if (kind != WidgetKind.small) ...[
