@@ -11,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/no_lean_visuals.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../emergency/presentation/emergency_screen.dart';
+import '../../notes/presentation/future_note_card.dart';
 import '../application/recovery_provider.dart';
 
 class RelapseCooldownScreen extends ConsumerStatefulWidget {
@@ -165,6 +166,9 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
                 ),
               ],
               const SizedBox(height: 24),
+              // A note they left for a day like this one (hidden if none).
+              const FutureNoteCard(moment: NoteMoment.afterSlip),
+              const SizedBox(height: 16),
               FilledButton(
                 onPressed: () {
                   AppFeedback.tap();

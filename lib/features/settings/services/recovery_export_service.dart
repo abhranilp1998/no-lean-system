@@ -23,7 +23,7 @@ Future<void> exportRecoveryData(
       recovery.events,
       preferences: recovery.portablePreferences,
       zones: recovery.zones,
-      letters: recovery.futureLetters,
+      letters: recovery.exportableLetters,
       withdrawal: await _withdrawalSection(),
       companion: recovery.companion,
       hiddenDuplicates: recovery.hiddenDuplicates,
@@ -146,12 +146,19 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
       } catch (_) {
         // Check-ins are optional; events already merged.
       }
+      try {
+        // Seal imported plain notes under this phone's key (PIN set), and
+        // see which sealed ones need the PIN they were saved under.
+        await recovery.secureFutureNotes();
+      } catch (_) {
+        // Notes keep their current state; nothing is lost.
+      }
       if (context.mounted) {
+        final locked = recovery.lockedNoteIds.length;
         AppNotice.show(
           context,
-          choice.restorePreferences
-              ? 'BACKUP MERGED // EVENTS AND CUSTOMIZATIONS RESTORED.'
-              : 'BACKUP MERGED // EVENTS UPDATED.',
+          '${choice.restorePreferences ? 'BACKUP MERGED // EVENTS AND CUSTOMIZATIONS RESTORED.' : 'BACKUP MERGED // EVENTS UPDATED.'}'
+          '${locked > 0 ? ' $locked NOTE${locked == 1 ? '' : 'S'} NEED THE PIN YOU HAD WHEN YOU SAVED THEM: OPEN NOTES TO UNLOCK.' : ''}',
           type: AppNoticeType.success,
         );
       }
