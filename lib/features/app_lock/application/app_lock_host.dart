@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:async';
 import 'dart:convert';
 
@@ -263,6 +264,7 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
 /// TEST BUILD ONLY: logcat lines (tag `flutter`, prefix `NL.AppBlockDart`)
 /// for debugging the danger-zone block overlay on a real phone.
 void _debugLog(String message) {
+  if (Platform.environment.containsKey('FLUTTER_TEST')) return;
   // ignore: avoid_print
   print('NL.AppBlockDart: $message');
 }

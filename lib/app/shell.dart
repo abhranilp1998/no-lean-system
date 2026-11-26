@@ -349,6 +349,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     } finally {
       _slipPromptOpen = false;
     }
+    _maybeFollowUp();
   }
 
   Future<void> _importZoneInbox() async {
@@ -414,12 +415,23 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   /// review. One card per save however many entries it held. Never over the
   /// app lock: the card quotes the user's log, so it waits for the unlock.
   void _maybeFollowUp() {
-    if (!mounted || _followUpOpen || _celebrating || _resolveLock() != null) {
+    // The check-in "What was it?" prompt goes first; the review follows it.
+    if (!mounted ||
+        _followUpOpen ||
+        _celebrating ||
+        _slipPromptOpen ||
+        _resolveLock() != null) {
       return;
     }
     final recovery = ref.read(recoveryProvider);
     if (recovery.pendingMixingAlert == null &&
         recovery.pendingSlipReview == null) {
+      return;
+    }
+    // A check-in slip waiting for "What was it?": ask that first.
+    if (recovery.slipsNeedingDetails.any(
+      (e) => !_askedSlipDetails.contains(e.id),
+    )) {
       return;
     }
     _followUpOpen = true;

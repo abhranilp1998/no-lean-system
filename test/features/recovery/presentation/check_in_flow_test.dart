@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:no_lean/features/companion/presentation/urge_surf_screen.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/core/theme/app_theme.dart';
-import 'package:no_lean/features/emergency/presentation/emergency_screen.dart';
 import 'package:no_lean/features/recovery/application/recovery_controller.dart';
 import 'package:no_lean/features/recovery/application/recovery_provider.dart';
 import 'package:no_lean/features/recovery/domain/daily_check_in.dart';
@@ -274,13 +274,16 @@ void main() {
     expect(c.slipsNeedingDetails, hasLength(1));
   });
 
-  testWidgets('Struggling opens the SOS urge tools', (tester) async {
-    await boot(tester, home: const NoLeanApp());
+  testWidgets('Struggling opens the 10-minute ride-it-out timer', (
+    tester,
+  ) async {
+    final (container, _) = await boot(tester, home: const NoLeanApp());
     await settle(tester);
-    expect(find.byType(EmergencyScreen), findsNothing);
+    expect(find.byType(UrgeSurfScreen), findsNothing);
     NotificationService.instance.debugEmitAction(checkInStrugglingAction);
     await settle(tester);
-    expect(find.byType(EmergencyScreen), findsOneWidget);
+    expect(find.byType(UrgeSurfScreen), findsOneWidget);
+    expect(container.read(recoveryProvider).roughDayUntil, isNotNull);
   });
 
   testWidgets(
