@@ -380,10 +380,10 @@ class SettingsScreen extends ConsumerWidget {
               ),
             SettingToggle(
               key: const ValueKey('settings-hide-sensitive'),
-              title: 'Hide sensitive content',
+              title: 'Private notifications',
               subtitle: recovery.notificationPrefs.hideSensitive
-                  ? 'Notifications read "Reminder" // no recovery wording'
-                  : 'Notifications show full text // lock screen still redacted',
+                  ? 'Every alert says "Reminder" // lock screen too // no recovery wording'
+                  : 'Notifications show full text // lock screen still redacts if the phone hides them',
               value: recovery.notificationPrefs.hideSensitive,
               color: cyan,
               onChanged: (value) => saveAction(

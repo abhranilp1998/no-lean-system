@@ -1647,7 +1647,9 @@ class RecoveryController extends ChangeNotifier {
   Future<void> setWidgetPrivacy(bool enabled) =>
       _transaction(() async => widgetPrivacy = enabled);
 
-  /// Lock-screen privacy; never needs authentication.
+  /// Private notifications; never needs authentication. Channel names,
+  /// already-scheduled risk-window alerts and a pending use-check refresh
+  /// after the commit so leftover wording cannot linger.
   Future<void> setHideSensitiveNotifications(bool hide) =>
       _transaction(() async {
         notificationPrefs = NotificationPrefs(
@@ -1656,6 +1658,7 @@ class RecoveryController extends ChangeNotifier {
           hideSensitive: hide,
         );
         NotificationService.instance.prefs = notificationPrefs;
+        unawaited(NotificationService.instance.applyPrivacy());
       });
 
   /// Network privacy choice; never needs authentication.

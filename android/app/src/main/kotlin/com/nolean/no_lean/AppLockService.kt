@@ -268,16 +268,16 @@ class AppLockService : Service() {
             this, BLOCK_NOTIFICATION_ID, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val title = if (config.hideSensitive) "NO LEAN" else "This app is locked"
-        val text = if (config.hideSensitive) "Tap to continue" else "Tap for your options: I need this app, SOS, Go home"
+        val copy = PrivateNotifications.block(config.hideSensitive)
         val notification = builder(BLOCK_CHANNEL)
             .setSmallIcon(R.mipmap.no_lean_launcher)
-            .setContentTitle(title)
-            .setContentText(text)
+            .setContentTitle(copy.title)
+            .setContentText(copy.body)
+            .setTicker(copy.ticker)
             .setContentIntent(pending)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)
-            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setVisibility(copy.visibility)
             .setCategory(Notification.CATEGORY_REMINDER)
             .build()
         try {
@@ -295,14 +295,16 @@ class AppLockService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         // Neutral on purpose: never names apps, zones or recovery.
+        val copy = PrivateNotifications.service(config.hideSensitive)
         val notification = builder(SERVICE_CHANNEL)
             .setSmallIcon(R.mipmap.no_lean_launcher)
-            .setContentTitle(if (config.hideSensitive) "Service running" else "NO LEAN")
-            .setContentText(if (config.hideSensitive) "Active" else "Focus guard on")
+            .setContentTitle(copy.title)
+            .setContentText(copy.body)
+            .setTicker(copy.ticker)
             .setContentIntent(open)
             .setOngoing(true)
             .setShowWhen(false)
-            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setVisibility(copy.visibility)
             .build()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(SERVICE_NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -321,16 +323,17 @@ class AppLockService : Service() {
 
     private fun ensureChannels(manager: NotificationManager) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val hide = config.hideSensitive
         manager.createNotificationChannel(
-            NotificationChannel(SERVICE_CHANNEL, "Focus guard", NotificationManager.IMPORTANCE_MIN).apply {
+            NotificationChannel(SERVICE_CHANNEL, PrivateNotifications.serviceChannelName(hide), NotificationManager.IMPORTANCE_MIN).apply {
                 setShowBadge(false)
-                lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+                lockscreenVisibility = PrivateNotifications.visibility(hide)
             },
         )
         manager.createNotificationChannel(
-            NotificationChannel(BLOCK_CHANNEL, "Locked app prompt", NotificationManager.IMPORTANCE_HIGH).apply {
+            NotificationChannel(BLOCK_CHANNEL, PrivateNotifications.blockChannelName(hide), NotificationManager.IMPORTANCE_HIGH).apply {
                 setShowBadge(false)
-                lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+                lockscreenVisibility = PrivateNotifications.visibility(hide)
             },
         )
     }

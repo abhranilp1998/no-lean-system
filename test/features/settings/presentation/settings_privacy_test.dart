@@ -66,9 +66,7 @@ void main() {
     expect(c.events.map((e) => e.toJson()).toList(), before);
   });
 
-  testWidgets('hide sensitive content toggles neutral notifications', (
-    tester,
-  ) async {
+  testWidgets('private notifications toggles neutral wording', (tester) async {
     final container = await pumpSettings(tester);
     final toggle = find.byKey(const ValueKey('settings-hide-sensitive'));
     await tester.scrollUntilVisible(toggle, 300);
@@ -80,10 +78,7 @@ void main() {
       container.read(recoveryProvider).notificationPrefs.hideSensitive,
       isTrue,
     );
-    expect(
-      find.textContaining('Notifications read "Reminder"'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Every alert says "Reminder"'), findsOneWidget);
   });
 
   testWidgets('quiet hours dialog saves an enabled window', (tester) async {
@@ -118,6 +113,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(container.read(recoveryProvider).widgetPrivacy, isTrue);
     expect(find.textContaining('no counter, streak'), findsOneWidget);
+    final notif = find.byKey(const ValueKey('widgets-notification-privacy'));
+    expect(notif, findsOneWidget);
+    await tester.tap(notif);
+    await tester.pumpAndSettle();
+    expect(
+      container.read(recoveryProvider).notificationPrefs.hideSensitive,
+      isTrue,
+    );
+    expect(find.textContaining('lock screen too'), findsWidgets);
   });
 
   testWidgets('zone history: opt in, then clear with confirmation', (
