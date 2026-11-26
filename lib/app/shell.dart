@@ -26,7 +26,10 @@ import '../features/recovery/application/recovery_provider.dart';
 import '../features/recovery/domain/app_lock_session.dart';
 import '../features/recovery/domain/recovery_event.dart';
 import '../features/recovery/presentation/app_lock_screen.dart';
+import '../features/recovery/domain/mixing_safety_net.dart';
+import '../features/recovery/presentation/mixing_alert_screen.dart';
 import '../features/recovery/presentation/relapse_log_sheet.dart';
+import '../features/recovery/presentation/slip_review_sheet.dart';
 import '../core/services/app_notice.dart';
 import '../features/recovery/services/notification_service.dart';
 import '../features/recovery/services/widget_action_service.dart';
@@ -53,6 +56,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   bool _sosOpen = false;
   bool _codeOpen = false;
   bool _celebrating = false;
+  bool _followUpOpen = false;
   final _pendingActions = <String>[];
   int _selectedTab = 0;
   bool _waveOpen = false;
@@ -286,10 +290,45 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     });
   }
 
+  /// After a save: the mixing safety card first (when the log shows codeine
+  /// with a benzo or alcohol in the last 24 h), then the optional 3-tap
+  /// review. One card per save however many entries it held. Never over the
+  /// app lock: the card quotes the user's log, so it waits for the unlock.
+  void _maybeFollowUp() {
+    if (!mounted || _followUpOpen || _celebrating || _resolveLock() != null) {
+      return;
+    }
+    final recovery = ref.read(recoveryProvider);
+    if (recovery.pendingMixingAlert == null &&
+        recovery.pendingSlipReview == null) {
+      return;
+    }
+    _followUpOpen = true;
+    final alert = recovery.takeMixingAlert();
+    final review = recovery.takeSlipReview();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        if (!mounted) return;
+        if (alert != null) {
+          final net = await ref.read(mixingSafetyNetProvider.future);
+          if (!mounted) return;
+          // The user can switch the safety net off in Settings.
+          if (net.showsContact) await MixingAlertScreen.show(context, alert);
+        }
+        if (!mounted) return;
+        if (review != null) await showSlipReviewSheet(context, review);
+      } finally {
+        _followUpOpen = false;
+      }
+      _maybeFollowUp();
+    });
+  }
+
   void _handleUnlocked() {
     _lockSession.onUnlocked();
     setState(() {});
     _maybeCelebrate();
+    _maybeFollowUp();
     final useCheckAt = _deferredUseCheckAt;
     if (useCheckAt != null) {
       _deferredUseCheckAt = null;
@@ -600,6 +639,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     ref.listen(recoveryProvider, (_, _) {
       _syncZoneMonitor();
       _maybeCelebrate();
+      _maybeFollowUp();
     });
 
     return Scaffold(
