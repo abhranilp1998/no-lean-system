@@ -120,6 +120,34 @@ class FutureNoteService {
     );
   }
 
+  /// The file as stored on this phone (still sealed if a PIN is set). Does
+  /// not decrypt: a backup carries the bytes as they sit on disk.
+  Future<Uint8List?> exportAudio(FutureLetter letter) async {
+    final clip = letter.audio;
+    if (clip == null) return null;
+    return voice.read(letter.id, encrypted: clip.isEncrypted);
+  }
+
+  /// Writes imported recordings only when this phone has no file for that
+  /// note. Never overwrites or deletes an existing recording — a backup
+  /// without audio must not wipe what is already here.
+  Future<void> importAudio(List<FutureLetter> imported) async {
+    for (final letter in imported) {
+      final bytes = letter.backupAudio;
+      final clip = letter.audio;
+      if (bytes == null || bytes.isEmpty || clip == null) continue;
+      try {
+        if (await voice.exists(letter.id, encrypted: true) ||
+            await voice.exists(letter.id, encrypted: false)) {
+          continue;
+        }
+        await voice.write(letter.id, bytes, encrypted: clip.isEncrypted);
+      } catch (_) {
+        /* The note itself is already saved; a missing file is recoverable. */
+      }
+    }
+  }
+
   // --- PIN lifecycle ------------------------------------------------------
 
   /// A PIN was set or changed: make sure the key exists, wrapped under the new

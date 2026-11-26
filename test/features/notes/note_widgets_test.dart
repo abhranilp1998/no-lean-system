@@ -450,12 +450,11 @@ void main() {
     testWidgets('after a slip: the reset screen shows a note', (tester) async {
       await pump(tester, const RelapseCooldownScreen(), scroll: false);
       await tester.runAsync(() => controller.addFutureLetter('Start again.'));
-      await tester.pump();
-      await tester.scrollUntilVisible(
-        find.byKey(const Key('future-note-card')),
-        300,
-        scrollable: find.byType(Scrollable).first,
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
       expect(find.text('YOU LEFT THIS FOR A DAY LIKE TODAY'), findsOneWidget);
     });
   });

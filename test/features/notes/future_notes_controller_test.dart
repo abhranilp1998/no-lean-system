@@ -202,20 +202,30 @@ void main() {
   );
 
   test(
-    'backups carry sealed text notes only; voice recordings stay on the phone',
+    'lettersForBackup attaches sealed voice bytes and never writes them to state',
     () async {
       final phone = FakePhone();
-      final (c, _, _) = await boot(phone);
+      final (c, store, _) = await boot(phone);
       await c.enableRelapseLock('2468');
       await c.addFutureLetter('In the backup');
       await c.addVoiceNote(audio, const Duration(seconds: 4));
-      final exported = c.exportableLetters;
-      expect(exported, hasLength(1));
+      final exported = await c.lettersForBackup();
+      expect(exported, hasLength(2));
+      final voice = exported.firstWhere((l) => l.isVoice);
+      expect(voice.backupAudio, isNotNull);
+      expect(voice.backupAudio, isNot(audio)); // still sealed
+      expect(voice.audio!.wrap, isNotNull);
       expect(
         jsonEncode(exported.map((l) => l.toJson()).toList()),
         isNot(contains('In the backup')),
       );
-      expect(exported.single.sealed!.wrap, isNotNull);
+      expect(
+        jsonEncode(exported.map((l) => l.toJson()).toList()),
+        isNot(contains('audioData')),
+      );
+      final saved = jsonDecode(store.value!) as Map<String, dynamic>;
+      final raw = jsonEncode(saved['futureLetters']);
+      expect(raw, isNot(contains('audioData')));
     },
   );
 

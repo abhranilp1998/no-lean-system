@@ -203,4 +203,29 @@ void main() {
     expect(l.audio, isNull);
     expect(l.text, FutureLetter.sealedPlaceholder);
   });
+
+  test('audioData is ignored by an older parser; a format-12 backup without '
+      'it still imports', () {
+    final modern = {
+      'id': 'v1',
+      'text': FutureLetter.voicePlaceholder,
+      'createdAt': '2026-10-05T20:00:00.000',
+      'audio': {
+        'ms': 4000,
+        'kid': 'k',
+        'w': {'s': 'YQ', 'i': 1000, 'k': 'YQ'},
+      },
+      'audioData': 'YWJjZA',
+    };
+    final old = legacyParse(modern);
+    expect(old.id, 'v1');
+    expect(old.backupAudio, isNull);
+    expect(old.audio, isNull);
+
+    final preview = BackupService().validateBackupJson(
+      jsonEncode(oldBackup(12)),
+    );
+    expect(preview.letters.single.backupAudio, isNull);
+    expect(preview.letters.single.text, 'You got through worse.');
+  });
 }

@@ -238,7 +238,9 @@ class _DebriefView extends StatelessWidget {
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 16),
+              const FutureNoteCard(moment: NoteMoment.afterSlip),
+              const SizedBox(height: 32),
               _DebriefButton(
                 label: 'CRAVING / URGE',
                 onTap: () => onComplete('craving'),

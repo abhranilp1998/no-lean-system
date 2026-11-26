@@ -342,10 +342,10 @@ class _SecurityPanel extends StatelessWidget {
             ),
           const SizedBox(height: 6),
           Text(
-            'Nothing is uploaded. Text notes are included in backups you '
-            'export (locked, if a PIN was set). Voice recordings stay on '
-            'this phone and are not in backups: they are large, and a '
-            'recording is only useful with its file on the same phone.',
+            'Nothing is uploaded. Notes and voice recordings are included '
+            'in backups you export (locked, if a PIN was set). If a backup '
+            'would go over 5 MB, the newest recordings go in first; any '
+            'left out stay on this phone and the export tells you.',
             style: theme.textTheme.bodySmall,
           ),
         ],

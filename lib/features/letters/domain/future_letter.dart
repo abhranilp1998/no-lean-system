@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:uuid/uuid.dart';
 
 import '../../notes/domain/note_crypto.dart';
@@ -7,6 +9,10 @@ import '../../recovery/domain/risk_window.dart';
 /// note's id (see `VoiceNoteStore`); this is only what the note knows about it.
 class VoiceClip {
   const VoiceClip({required this.durationMs, this.keyId, this.wrap});
+
+  /// Largest recording we will accept from a backup (60 s of speech is about
+  /// 360 KB; this leaves room for a less compact encoder).
+  static const maxBackupAudioBytes = 800 * 1024;
 
   /// Longest recording kept.
   static const maxDuration = Duration(seconds: 60);
@@ -57,6 +63,9 @@ class VoiceClip {
 /// * `sealed` - the text, encrypted (only while a PIN is set). [text] then
 ///   holds a placeholder, which is also what an older build would show.
 /// * `audio` - a voice note. [text] holds a short label for the same reason.
+/// * `audioData` - the recording, only in a backup (never in app state):
+///   base64 of the file as stored (sealed if a PIN was set). Older builds
+///   ignore the key.
 class FutureLetter {
   const FutureLetter({
     required this.id,
@@ -64,6 +73,7 @@ class FutureLetter {
     required this.createdAt,
     this.sealed,
     this.audio,
+    this.backupAudio,
   });
 
   factory FutureLetter.create(String text, {DateTime? at}) => FutureLetter(
@@ -85,6 +95,10 @@ class FutureLetter {
   final SealedPayload? sealed;
   final VoiceClip? audio;
 
+  /// File bytes for a backup only. [toJson] never writes this (state stays
+  /// small; the file lives on disk).
+  final Uint8List? backupAudio;
+
   bool get isVoice => audio != null;
   bool get isSealed => sealed != null;
 
@@ -92,14 +106,29 @@ class FutureLetter {
     String? text,
     SealedPayload? sealed,
     VoiceClip? audio,
+    Uint8List? backupAudio,
     bool clearSealed = false,
+    bool clearBackupAudio = false,
   }) => FutureLetter(
     id: id,
     text: text ?? this.text,
     createdAt: createdAt,
     sealed: clearSealed ? null : sealed ?? this.sealed,
     audio: audio ?? this.audio,
+    backupAudio: clearBackupAudio ? null : backupAudio ?? this.backupAudio,
   );
+
+  /// The bytes a backup may carry. Null (and ignored) when missing, junk, or
+  /// larger than a single recording could be.
+  static Uint8List? parseBackupAudio(Object? value) {
+    final bytes = tryB64(value);
+    if (bytes == null ||
+        bytes.isEmpty ||
+        bytes.length > VoiceClip.maxBackupAudioBytes) {
+      return null;
+    }
+    return bytes;
+  }
 
   static String validateText(String text) {
     final trimmed = text.trim();
@@ -132,6 +161,7 @@ class FutureLetter {
       createdAt: createdAt,
       sealed: SealedPayload.tryFromJson(json['sealed']),
       audio: VoiceClip.tryFromJson(json['audio']),
+      backupAudio: parseBackupAudio(json['audioData']),
     );
   }
 

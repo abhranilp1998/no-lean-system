@@ -53,7 +53,7 @@ class _FutureNoteComposerState extends ConsumerState<FutureNoteComposer> {
     if (!mounted) return;
     AppNotice.show(
       context,
-      'Voice note kept. It stays on this phone.',
+      'Voice note kept. It stays on this phone, and goes into a backup you export.',
       type: AppNoticeType.success,
     );
     widget.onSaved?.call();

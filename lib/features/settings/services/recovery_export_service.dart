@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -19,20 +20,24 @@ Future<void> exportRecoveryData(
   BackupService? service,
 }) async {
   try {
-    final saved = await (service ?? BackupService()).exportBackup(
+    final backup = service ?? BackupService();
+    final plan = backup.planBackup(
       recovery.events,
       preferences: recovery.portablePreferences,
       zones: recovery.zones,
-      letters: recovery.exportableLetters,
+      letters: await recovery.lettersForBackup(),
       withdrawal: await _withdrawalSection(),
       companion: recovery.companion,
       hiddenDuplicates: recovery.hiddenDuplicates,
       feedbackNotes: await exportFeedbackNotes(),
     );
+    final saved = await backup.exportJson(jsonEncode(plan.payload));
     if (saved && context.mounted) {
+      final voice = plan.voiceNotice;
       AppNotice.show(
         context,
-        'RECOVERY EXPORT READY // SECURE PIN EXCLUDED.',
+        'RECOVERY EXPORT READY // SECURE PIN EXCLUDED.'
+        '${voice == null ? '' : ' ${voice[0].toUpperCase()}${voice.substring(1)}.'}',
         type: AppNoticeType.success,
       );
     }
@@ -147,6 +152,9 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
         // Check-ins are optional; events already merged.
       }
       try {
+        // Write imported voice files that this phone does not already have.
+        // Never overwrites a local recording.
+        await recovery.importVoiceAudio(preview.letters);
         // Seal imported plain notes under this phone's key (PIN set), and
         // see which sealed ones need the PIN they were saved under.
         await recovery.secureFutureNotes();

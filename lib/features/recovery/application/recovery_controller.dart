@@ -1952,12 +1952,34 @@ class RecoveryController extends ChangeNotifier {
     futureLetters = await _notes.syncToKey(futureLetters);
   }).whenComplete(_afterNoteChange);
 
-  /// Notes that go into a backup: text notes only. Voice recordings stay on
-  /// the phone (they are large and have no use without their audio file).
-  List<FutureLetter> get exportableLetters => [
-    for (final l in futureLetters)
-      if (!l.isVoice) l,
-  ];
+  /// Notes that go into a backup (metadata). Voice file bytes are attached
+  /// by [lettersForBackup] when the recording is on this phone.
+  List<FutureLetter> get exportableLetters => List.of(futureLetters);
+
+  /// All notes for a backup, with voice file bytes attached when present
+  /// (still sealed if a PIN is set). Does not change saved state.
+  Future<List<FutureLetter>> lettersForBackup() async {
+    final out = <FutureLetter>[];
+    for (final l in futureLetters) {
+      if (!l.isVoice) {
+        out.add(l);
+        continue;
+      }
+      out.add(l.copyWith(backupAudio: await _notes.exportAudio(l)));
+    }
+    return out;
+  }
+
+  /// Writes imported voice files that are not already on this phone. Never
+  /// overwrites an existing recording, even if the backup has no audio.
+  Future<void> importVoiceAudio(List<FutureLetter> imported) async {
+    await _notes.importAudio(imported);
+    if (futureLetters.any((l) => l.backupAudio != null)) {
+      futureLetters = [
+        for (final l in futureLetters) l.copyWith(clearBackupAudio: true),
+      ];
+    }
+  }
 
   Future<void> _afterNoteChange() async {
     await _notes.flushOrphans(futureLetters);
