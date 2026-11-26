@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/use_check.dart';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/theme/app_theme.dart';
 import '../../zones/domain/zone_entry_recency.dart';
+import '../../dates/domain/high_risk_dates.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
@@ -43,9 +45,8 @@ class NotificationService {
   Future<void> _initialize({required bool requestPermission}) async {
     if (!_initialized) {
       try {
-        final zone = await const MethodChannel(
-          'no_lean/timezone',
-        ).invokeMethod<String>('get');
+        final zone = await const MethodChannel('no_lean/timezone')
+            .invokeMethod<String>('get');
         if (zone != null) {
           tz.setLocalLocation(tz.getLocation(zone));
         }
@@ -157,8 +158,7 @@ class NotificationService {
     android: AndroidNotificationDetails(
       'risk_window_v2',
       'NO LEAN risk window',
-      channelDescription:
-          'High-visibility recovery interrupts during your configured risk window',
+      channelDescription: 'High-visibility recovery interrupts during your configured risk window',
       importance: Importance.max,
       priority: Priority.high,
       color: red,
@@ -504,6 +504,14 @@ class NotificationService {
   ]) {
     if (actionId != null && actionId.isNotEmpty) return actionId;
     if (payload == zoneAlertPayload) return 'action_zone_open';
+    if (payload != null && payload.startsWith(highRiskPayloadPrefix)) {
+      return '$highRiskPlanAction${payload.substring(highRiskPayloadPrefix.length)}';
+    }
+    if (notificationId != null &&
+        notificationId >= highRiskDateIdStart &&
+        notificationId <= highRiskDateIdEnd) {
+      return highRiskPlanAction;
+    }
     return notificationId == useCheckId ? useCheckOpenAction : null;
   }
 
@@ -671,6 +679,63 @@ class NotificationService {
   Future<void> _cancelScheduled() async {
     for (var id = riskAlertFirstId; id <= riskAlertLastId; id++) {
       await _plugin.cancel(id);
+    }
+  }
+
+  Future<void> cancelHighRiskDateReminders() async {
+    try {
+      await _initialize(requestPermission: false);
+      for (var id = highRiskDateIdStart; id <= highRiskDateIdEnd; id++) {
+        await _plugin.cancel(id);
+      }
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
+  /// Posts the 3-day-ahead plan nudges. Quiet hours and private wording
+  /// are already applied on each [HighRiskNudge].
+  Future<void> scheduleHighRiskDateReminders(List<HighRiskNudge> nudges) async {
+    await cancelHighRiskDateReminders();
+    if (nudges.isEmpty) return;
+    try {
+      await _initialize(requestPermission: true);
+      final exactAllowed = await exactAlarmsAllowed();
+      for (final nudge in nudges) {
+        if (nudge.id < highRiskDateIdStart || nudge.id > highRiskDateIdEnd) {
+          continue;
+        }
+        if (!prefs.allows(NotificationKind.highRiskDate, nudge.fireAt)) {
+          continue;
+        }
+        final text = prefs.textFor(nudge.title, nudge.body);
+        await scheduleWithExactFallback(
+          exactAllowed: exactAllowed,
+          schedule: (mode) => _plugin.zonedSchedule(
+            nudge.id,
+            text.title,
+            text.body,
+            tz.TZDateTime.from(nudge.fireAt, tz.local),
+            NotificationDetails(
+              android: AndroidNotificationDetails(
+                'high_risk_dates_v1',
+                'Upcoming date reminders',
+                channelDescription:
+                    'Reminds you a few days before a date you want to plan for',
+                importance: Importance.defaultImportance,
+                priority: Priority.defaultPriority,
+                visibility: lockScreenVisibility,
+                category: AndroidNotificationCategory.reminder,
+                ticker: neutralNotificationText.title,
+              ),
+            ),
+            androidScheduleMode: mode,
+            payload: '$highRiskPayloadPrefix${nudge.key}',
+          ),
+        );
+      }
+    } catch (_) {
+      // Notifications never block local history.
     }
   }
 }

@@ -39,6 +39,11 @@ import '../../widgets/services/fullscreen_widget_sync.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../zones/domain/zone_entry.dart';
 import '../../zones/services/geofence_gateway.dart';
+import '../../dates/domain/bundled_dates.dart';
+import '../../dates/domain/high_risk_dates.dart' hide upcomingHighRiskDates, dateKey;
+import '../../dates/domain/high_risk_dates.dart'
+    as high_risk_dates
+    show upcomingHighRiskDates;
 import '../../zones/services/zone_entry_inbox.dart';
 
 const defaultReasons = <String>[
@@ -63,8 +68,7 @@ enum ProtectedActionResult {
 
 extension ProtectedActionResultMessage on ProtectedActionResult {
   String get failureMessage => switch (this) {
-    ProtectedActionResult.lockedOut =>
-      'Too many incorrect PIN attempts. PIN entry is paused: 5 minutes, then 15, then 60 on repeat lockouts. Biometrics still work.',
+    ProtectedActionResult.lockedOut => 'Too many incorrect PIN attempts. PIN entry is paused: 5 minutes, then 15, then 60 on repeat lockouts. Biometrics still work.',
     ProtectedActionResult.denied =>
       'Authentication failed. Nothing was changed.',
     ProtectedActionResult.authenticationRequired =>
@@ -93,6 +97,9 @@ class RecoveryController extends ChangeNotifier {
     Future<void> Function()? cancelCravingCheck,
     Future<bool> Function(UseCheck check)? scheduleUseCheck,
     Future<void> Function()? cancelUseCheck,
+    Future<void> Function(List<HighRiskNudge> nudges)?
+    scheduleHighRiskDateReminders,
+    Future<void> Function()? cancelHighRiskDateReminders,
   }) : _scheduleUseCheck =
            scheduleUseCheck ?? NotificationService.instance.scheduleUseCheck,
        _cancelUseCheck =
@@ -107,7 +114,13 @@ class RecoveryController extends ChangeNotifier {
        _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
        _store = store ?? PreferencesRecoveryStateStore(),
        _now = now ?? DateTime.now,
-       _geofences = geofences ?? const NoopGeofenceGateway();
+       _geofences = geofences ?? const NoopGeofenceGateway(),
+       _scheduleHighRiskDateReminders =
+           scheduleHighRiskDateReminders ??
+           NotificationService.instance.scheduleHighRiskDateReminders,
+       _cancelHighRiskDateReminders =
+           cancelHighRiskDateReminders ??
+           NotificationService.instance.cancelHighRiskDateReminders;
 
   /// v8 adds `riskWindowLock` and `appLockPending`; v9 adds `zones`,
   /// `zoneMonitoring` and `backgroundGeofencing`; v10 adds the privacy and
@@ -156,6 +169,26 @@ class RecoveryController extends ChangeNotifier {
   final RecoveryStateStore _store;
   final DateTime Function() _now;
   final GeofenceGateway _geofences;
+  final Future<void> Function(List<HighRiskNudge> nudges)
+  _scheduleHighRiskDateReminders;
+  final Future<void> Function() _cancelHighRiskDateReminders;
+
+  /// Default on. Missing key on an older state keeps reminders enabled.
+  bool highRiskDateReminders = true;
+
+  /// 1–31, or null when payday reminders are off.
+  int? paydayDay;
+
+  List<CustomHighRiskDate> customHighRiskDates = const [];
+
+  /// Bundled festival ids the user has turned off.
+  Set<String> disabledBundledDateIds = const {};
+
+  /// Occurrence key → simple plan note.
+  Map<String, String> highRiskPlans = const {};
+
+  /// When a worst weekday is detected, nudge 3 days before the next one.
+  bool weekdayNudges = true;
   Future<void>? _loadFuture;
   Future<void> _writeQueue = Future.value();
   Map<String, dynamic> _extraState = {};
@@ -347,8 +380,7 @@ class RecoveryController extends ChangeNotifier {
       if (stored != null &&
           (version is! int || version < 2 || version > stateVersion)) {
         loadStatus = RecoveryLoadStatus.incompatible;
-        loadMessage =
-            'This recovery history needs a compatible app version. It has been kept unchanged.';
+        loadMessage = 'This recovery history needs a compatible app version. It has been kept unchanged.';
         _notify();
         return;
       }
@@ -429,8 +461,7 @@ class RecoveryController extends ChangeNotifier {
     } catch (_) {
       isLoaded = false;
       loadStatus = RecoveryLoadStatus.error;
-      loadMessage =
-          'Your recovery history could not be opened. Nothing has been reset. Retry, or export a preserved copy.';
+      loadMessage = 'Your recovery history could not be opened. Nothing has been reset. Retry, or export a preserved copy.';
       _notify();
     }
   }
@@ -583,6 +614,16 @@ class RecoveryController extends ChangeNotifier {
       (value) => value.name == map['dashboardNoticeStyle'],
       orElse: () => dashboardNoticeStyle,
     );
+    if (map.containsKey('highRiskDateReminders')) {
+      highRiskDateReminders = map['highRiskDateReminders'] != false;
+    }
+    paydayDay = decodePaydayDay(map['paydayDay']);
+    customHighRiskDates = decodeCustomHighRiskDates(map['customHighRiskDates']);
+    disabledBundledDateIds = decodeIdSet(map['disabledBundledDateIds']);
+    highRiskPlans = decodePlans(map['highRiskPlans']);
+    if (map.containsKey('weekdayNudges')) {
+      weekdayNudges = map['weekdayNudges'] != false;
+    }
   }
 
   List<RecoveryEvent> _decodeCurrentEvents(Object? value) {
@@ -710,6 +751,14 @@ class RecoveryController extends ChangeNotifier {
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
     'stretchedWidgetView': stretchedWidgetView.name,
+    'highRiskDateReminders': highRiskDateReminders,
+    if (paydayDay != null) 'paydayDay': paydayDay,
+    'customHighRiskDates': [
+      for (final date in customHighRiskDates) date.toJson(),
+    ],
+    'disabledBundledDateIds': disabledBundledDateIds.toList(),
+    'highRiskPlans': highRiskPlans,
+    'weekdayNudges': weekdayNudges,
   };
 
   void _restoreSnapshot(Map<String, dynamic> map) {
@@ -760,6 +809,24 @@ class RecoveryController extends ChangeNotifier {
             (before['events'] as List).length !=
                 (next['events'] as List).length) {
           unawaited(_syncRiskNotifications());
+        }
+        if (before['highRiskDateReminders'] != next['highRiskDateReminders'] ||
+            before['paydayDay'] != next['paydayDay'] ||
+            jsonEncode(before['customHighRiskDates']) !=
+                jsonEncode(next['customHighRiskDates']) ||
+            jsonEncode(before['disabledBundledDateIds']) !=
+                jsonEncode(next['disabledBundledDateIds']) ||
+            jsonEncode(before['highRiskPlans']) !=
+                jsonEncode(next['highRiskPlans']) ||
+            before['weekdayNudges'] != next['weekdayNudges'] ||
+            before['hideSensitiveNotifications'] !=
+                next['hideSensitiveNotifications'] ||
+            jsonEncode(before['quietHours']) !=
+                jsonEncode(next['quietHours']) ||
+            before['quietHoursEnabled'] != next['quietHoursEnabled'] ||
+            (before['events'] as List).length !=
+                (next['events'] as List).length) {
+          unawaited(_syncHighRiskDateReminders());
         }
         if (jsonEncode(before['zones']) != jsonEncode(next['zones']) ||
             before['backgroundGeofencing'] != next['backgroundGeofencing']) {
@@ -1131,6 +1198,14 @@ class RecoveryController extends ChangeNotifier {
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
     'stretchedWidgetView': stretchedWidgetView.name,
+    'highRiskDateReminders': highRiskDateReminders,
+    if (paydayDay != null) 'paydayDay': paydayDay,
+    'customHighRiskDates': [
+      for (final date in customHighRiskDates) date.toJson(),
+    ],
+    'disabledBundledDateIds': disabledBundledDateIds.toList(),
+    'highRiskPlans': highRiskPlans,
+    'weekdayNudges': weekdayNudges,
   };
 
   Future<void> pledge() async {
@@ -2013,6 +2088,12 @@ class RecoveryController extends ChangeNotifier {
           changed = true;
         }
         break;
+      case 'highRiskDateReminders':
+        if (highRiskDateReminders != value) {
+          highRiskDateReminders = value as bool;
+          changed = true;
+        }
+        break;
       case 'peakHourLock':
         if (peakHourLock != value) {
           peakHourLock = value as bool;
@@ -2092,6 +2173,129 @@ class RecoveryController extends ChangeNotifier {
 
   /// Reschedules alerts, e.g. after the user grants exact alarms.
   Future<void> resyncRiskNotifications() => _syncRiskNotifications();
+
+  /// Call from app start / resume. Never from [load] — notification I/O
+  /// there hung export tests on earlier features.
+  Future<void> resyncHighRiskDateReminders() => _syncHighRiskDateReminders();
+
+  Future<void> _syncHighRiskDateReminders() async {
+    try {
+      if (!highRiskDateReminders) {
+        await _cancelHighRiskDateReminders();
+        return;
+      }
+      final upcoming = upcomingHighRiskDates(limit: 12, horizonDays: 400);
+      final nudges = planHighRiskNudges(
+        upcoming: upcoming,
+        prefs: notificationPrefs,
+        now: _now(),
+        remindersEnabled: highRiskDateReminders,
+      );
+      await _scheduleHighRiskDateReminders(nudges);
+    } catch (_) {
+      /* Notifications never block local history. */
+    }
+  }
+
+  int? get worstWeekday => detectWorstWeekday(events, now: _now());
+
+  List<UpcomingHighRisk> upcomingHighRiskDates({
+    int limit = 5,
+    int horizonDays = 400,
+  }) {
+    return high_risk_dates.upcomingHighRiskDates(
+      now: _now(),
+      disabledBundledIds: disabledBundledDateIds,
+      customDates: customHighRiskDates,
+      paydayDay: paydayDay,
+      worstWeekday: weekdayNudges ? worstWeekday : null,
+      plans: highRiskPlans,
+      horizonDays: horizonDays,
+      limit: limit,
+    );
+  }
+
+  UpcomingHighRisk? highRiskOccurrenceByKey(String key) {
+    if (key.isEmpty) return null;
+    final found = upcomingHighRiskDates(limit: 16, horizonDays: 400);
+    for (final item in found) {
+      if (item.key == key) return item;
+    }
+    return null;
+  }
+
+  Future<void> setHighRiskDateReminders(bool value) =>
+      setSetting('highRiskDateReminders', value);
+
+  Future<void> setPaydayDay(int? day) => _transaction(() async {
+    final next = day != null && day >= 1 && day <= 31 ? day : null;
+    if (paydayDay == next) return;
+    paydayDay = next;
+  });
+
+  Future<void> setWeekdayNudges(bool value) => _transaction(() async {
+    if (weekdayNudges == value) return;
+    weekdayNudges = value;
+  });
+
+  Future<void> setBundledFestivalEnabled(String id, bool enabled) =>
+      _transaction(() async {
+        if (!bundledFestivals.any((festival) => festival.id == id)) return;
+        final next = {...disabledBundledDateIds};
+        if (enabled) {
+          next.remove(id);
+        } else {
+          next.add(id);
+        }
+        disabledBundledDateIds = next;
+      });
+
+  Future<void> addCustomHighRiskDate({
+    required String name,
+    required CustomDateKind kind,
+    int? month,
+    int? day,
+    DateTime? once,
+  }) => _transaction(() async {
+    if (customHighRiskDates.length >= 50) return;
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    final id = const Uuid().v4();
+    final date = CustomHighRiskDate(
+      id: id,
+      name: trimmed,
+      kind: kind,
+      month: once == null ? month : null,
+      day: once == null ? day : null,
+      once: once == null ? null : dateOnly(once),
+    );
+    if (!date.isAnnual && date.once == null) return;
+    customHighRiskDates = [...customHighRiskDates, date];
+  });
+
+  Future<void> removeCustomHighRiskDate(String id) => _transaction(() async {
+    final next = [
+      for (final date in customHighRiskDates)
+        if (date.id != id) date,
+    ];
+    if (next.length == customHighRiskDates.length) return;
+    customHighRiskDates = next;
+  });
+
+  Future<void> setHighRiskPlan(String key, String note) => _transaction(
+    () async {
+      final trimmed = note.trim();
+      final next = Map<String, String>.from(highRiskPlans);
+      if (trimmed.isEmpty) {
+        next.remove(key);
+      } else {
+        next[key] = trimmed.length > 400 ? trimmed.substring(0, 400) : trimmed;
+      }
+      highRiskPlans = next;
+    },
+  );
+
+  Future<void> clearHighRiskPlan(String key) => setHighRiskPlan(key, '');
 
   Future<void> _syncRiskNotifications() async {
     try {

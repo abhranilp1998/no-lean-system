@@ -4,6 +4,7 @@ import '../../companion/presentation/struggling_screen.dart';
 import '../../settings/presentation/settings_dialogs.dart';
 import '../../code_instead/presentation/code_instead_screen.dart';
 import '../../../core/layout/tab_layout.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -31,6 +32,7 @@ import '../../withdrawal/presentation/withdrawal_guide_screen.dart';
 import '../../recovery/presentation/relapse_cooldown_screen.dart';
 import 'widgets/animated_counter.dart';
 import 'widgets/dashboard_notice_center.dart';
+import '../../dates/presentation/high_risk_dates_card.dart';
 import 'widgets/risk_window_banner.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -232,7 +234,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
+          const HighRiskDatesCard(),
+          const SizedBox(height: 8),
           Text(
             'ADAPTIVE INSIGHT',
             style: eyebrowStyle.copyWith(color: magenta),
