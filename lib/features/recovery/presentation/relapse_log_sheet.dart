@@ -99,7 +99,7 @@ Future<void> showRelapseLogSheet(
   AppNotice.show(
     context,
     result.multiDay
-        ? multiDayRecordedMessage(result.count)
+        ? multiDayRecordedMessage(result.count, days: result.dayCount)
         : slipsRecordedMessage(result.count),
     type: AppNoticeType.success,
   );
@@ -201,28 +201,50 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   bool get _editing => widget.editing != null;
   DateTime _clock() => widget.now ?? DateTime.now();
 
+  /// Doses per day when every picked day has the same number, else null.
+  int? _uniformDoseCount(List<MultiDaySlot>? slots) {
+    if (slots == null || slots.isEmpty) return null;
+    final counts = {
+      for (final d in slotDays(slots)) dosesOnDay(slots, d).length,
+    };
+    return counts.length == 1 ? counts.first : null;
+  }
+
+  int _maxDoseCount(List<MultiDaySlot> slots) => slots.isEmpty
+      ? 1
+      : [
+          for (final d in slotDays(slots)) dosesOnDay(slots, d).length,
+        ].reduce((a, b) => a > b ? a : b);
+
   Future<void> _openMultiDayPicker() async {
     final current = _days;
     final pick = await showMultiDayPicker(
       context,
-      initialDays: current?.map((slot) => slot.day) ?? const [],
+      initialDays: current == null ? const [] : slotDays(current),
       initialHour: current?.firstOrNull?.hour ?? multiDayDefaultHour,
       initialMinute: current?.firstOrNull?.minute ?? multiDayDefaultMinute,
       now: widget.now,
     );
     if (pick == null || !mounted) return;
-    final previous = {
-      for (final slot in current ?? <MultiDaySlot>[]) slot.day: slot,
-    };
     final now = _clock();
+    final uniform = _uniformDoseCount(current) ?? 1;
     setState(() {
-      // Keep any per-day time the user already changed.
-      _days = [
-        for (final slot in pick.slots(now))
-          previous[slot.day] != null
-              ? clampSlotToNow(previous[slot.day]!, now)
-              : slot,
-      ];
+      // Days that stay picked keep every dose the user already set up; new
+      // days start with the same number of doses as the others.
+      final next = <MultiDaySlot>[];
+      for (final slot in pick.slots(now)) {
+        final kept = current == null
+            ? <MultiDaySlot>[]
+            : dosesOnDay(current, slot.day);
+        if (kept.isNotEmpty) {
+          next.addAll(kept.map((dose) => clampSlotToNow(dose, now)));
+        } else if (uniform <= 1) {
+          next.add(slot);
+        } else {
+          next.addAll(defaultDosesForDay(slot.day, uniform, now: now));
+        }
+      }
+      _days = sortedSlots(next);
       for (final extra in _entries.skip(1)) {
         extra.dispose();
       }
@@ -240,34 +262,127 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
     _error = null;
   });
 
-  void _removeDay(int index) => setState(() {
+  /// Removes one dose. A day left with no doses disappears; with no days
+  /// left the form goes back to a single event.
+  void _removeDose(int index) => setState(() {
     final days = List<MultiDaySlot>.of(_days!)..removeAt(index);
     _days = days.isEmpty ? null : days;
     _error = null;
   });
 
-  Future<void> _pickDayTime(int index) async {
-    final slot = _days![index];
-    final time = await showRelapseTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: slot.hour, minute: slot.minute),
-      title: 'TIME ON ${DateFormat.MMMd().format(slot.day).toUpperCase()}',
-    );
-    if (time == null || !mounted) return;
-    final updated = slot.withTime(time.hour, time.minute);
+  void _addDose(DateTime day) {
+    final slot = nextDoseSlot(_days!, day, now: _clock());
     setState(() {
-      if (updated.occurredAt.isAfter(_clock())) {
-        _error = 'That time has not happened yet today. Pick an earlier time.';
+      if (slot == null) {
+        _error = _days!.length >= multiDayMaxDays
+            ? 'You can log at most $multiDayMaxDays entries at once.'
+            : 'No free time left on that day for another dose.';
         return;
       }
-      _days = List.of(_days!)..[index] = updated;
+      if (_days!.length >= multiDayMaxDays) {
+        _error = 'You can log at most $multiDayMaxDays entries at once.';
+        return;
+      }
+      _days = sortedSlots([..._days!, slot]);
       _error = null;
     });
   }
 
-  Future<bool> _confirmMultiDay(List<RelapseLogEntry> entries) async {
+  /// Applies [count] doses to every picked day with evenly spread default
+  /// times. Per-dose overrides are kept by position.
+  void _setDosesPerDay(int count) {
+    final days = _days;
+    if (days == null) return;
+    final n = count.clamp(1, multiDayMaxDosesPerDay);
+    final dayList = slotDays(days);
+    if (dayList.length * n > multiDayMaxDays) return;
+    final now = _clock();
+    setState(() {
+      _days = sortedSlots([
+        for (final day in dayList)
+          ...defaultDosesForDay(day, n, now: now, carry: dosesOnDay(days, day)),
+      ]);
+      _error = null;
+    });
+  }
+
+  Future<void> _editDose(int index) async {
+    final slots = _days!;
+    final slot = slots[index];
+    final outcome = await showDialog<_DoseEditResult>(
+      context: context,
+      builder: (_) => _DoseDialog(slot: slot),
+    );
+    if (outcome == null || !mounted) return;
+    if (outcome.remove) {
+      _removeDose(index);
+      return;
+    }
+    final updated = slot
+        .withTime(outcome.hour, outcome.minute)
+        .withOverride(type: outcome.type);
+    String? problem;
+    DoseAmount? dose;
+    final amountText = outcome.amountText.trim();
+    if (amountText.isNotEmpty) {
+      final bottleMl = ref.read(recoveryProvider).bottleMl;
+      final amount = parseAmount(amountText);
+      if (amount == null) {
+        problem = 'Enter the amount as a number, or leave it blank.';
+      } else {
+        var unit = outcome.unit;
+        final check = doseSanityCheck(amount, unit, bottleMl: bottleMl);
+        if (check != null) {
+          var keepable = true;
+          try {
+            DoseAmount.entered(amount, unit, bottleMl: bottleMl);
+          } on ArgumentError {
+            keepable = false;
+          }
+          final choice = await _confirmDoseUnit(
+            check,
+            unit,
+            keepable: keepable,
+          );
+          if (!mounted || choice == null) return;
+          unit = choice;
+        }
+        try {
+          dose = DoseAmount.entered(amount, unit, bottleMl: bottleMl);
+        } on ArgumentError catch (error) {
+          problem = error.message?.toString();
+        }
+      }
+    }
+    if (!mounted) return;
+    final withDose = updated.withOverride(type: outcome.type, dose: dose);
+    setState(() {
+      if (problem != null) {
+        _error = problem;
+      } else if (withDose.occurredAt.isAfter(_clock())) {
+        _error = 'That time has not happened yet today. Pick an earlier time.';
+      } else if (timeTakenOnDay(
+        slots,
+        slot.day,
+        outcome.hour,
+        outcome.minute,
+        ignoreIndex: index,
+      )) {
+        _error =
+            'Another dose on ${DateFormat.MMMd().format(slot.day)} is already at ${DateFormat.jm().format(withDose.occurredAt)}. Pick a different time.';
+      } else {
+        _days = sortedSlots(List.of(slots)..[index] = withDose);
+        _error = null;
+      }
+    });
+  }
+
+  Future<bool> _confirmMultiDay(
+    List<RelapseLogEntry> entries,
+    RelapseLogEntry sharedEntry,
+  ) async {
     final resets = entriesResetLeanTimer(entries);
-    final sample = entries.first;
+    final sample = sharedEntry;
     return await showModalBottomSheet<bool>(
           context: context,
           isScrollControlled: true,
@@ -452,13 +567,32 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       if (choice != entry.unit) setState(() => entry.unit = choice);
     }
     final recovery = ref.read(recoveryProvider);
+    if (days != null) {
+      if (days.length > multiDayMaxDays) {
+        setState(
+          () =>
+              _error = 'You can log at most $multiDayMaxDays entries at once.',
+        );
+        return;
+      }
+      final dup = firstDuplicateSlot(days);
+      if (dup != null) {
+        setState(
+          () => _error =
+              'Two doses on ${DateFormat.MMMd().format(dup.day)} are both at ${DateFormat.jm().format(dup.occurredAt)}. Change one of them.',
+        );
+        return;
+      }
+    }
     final List<RelapseLogEntry> entries;
+    late final RelapseLogEntry shared;
     try {
       final drafts = _entries
           .map((entry) => entry.toDomain(bottleMl: recovery.bottleMl))
           .toList();
+      shared = drafts.first;
       entries = days != null
-          ? expandMultiDayEntries(drafts.first, days)
+          ? expandMultiDayEntries(drafts.first, sortedSlots(days))
           : drafts;
       for (final entry in entries) {
         entry.validate();
@@ -470,7 +604,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
     final confirmed = _editing
         ? true
         : days != null
-        ? await _confirmMultiDay(entries)
+        ? await _confirmMultiDay(entries, shared)
         : await _confirmReset(resetsLeanTimer: entriesResetLeanTimer(entries));
     if (!confirmed || !mounted) return;
 
@@ -521,6 +655,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
             openSos: _openSosAfterSave,
             mixed: isMixedSave(entries.map((e) => e.type)),
             multiDay: days != null,
+            dayCount: days == null ? 0 : slotDays(days).length,
           ),
         );
       } else {
@@ -568,7 +703,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       draft: days != null
           ? [
               for (final d in days)
-                (type: _entries.first.type, at: d.occurredAt),
+                (type: d.type ?? _entries.first.type, at: d.occurredAt),
             ]
           : [for (final e in _entries) (type: e.type, at: e.occurredAt)],
       events: recovery.events,
@@ -633,7 +768,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                           _editing
                               ? 'Correct this one entry. Other days saved alongside it stay as they are.'
                               : days != null
-                              ? 'Describe these days once. Each day is saved as its own entry, so you can fix any single day later from History.'
+                              ? 'Describe these days once. Every dose is saved as its own entry, so you can fix any single one later from History.'
                               : 'Record what happened without hiding it. This resets clean time; it does not erase the work already done.',
                           style: const TextStyle(height: 1.45),
                         ),
@@ -664,9 +799,15 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                             child: _MultiDayCard(
                               days: days,
                               saving: _saving,
+                              dosesPerDay:
+                                  _uniformDoseCount(days) ??
+                                  _maxDoseCount(days),
+                              mixedCounts: _uniformDoseCount(days) == null,
                               onChangeDays: _openMultiDayPicker,
-                              onTime: _pickDayTime,
-                              onRemove: _removeDay,
+                              onEditDose: _editDose,
+                              onRemoveDose: _removeDose,
+                              onAddDose: _addDose,
+                              onDosesPerDay: _setDosesPerDay,
                               onLeave: _leaveMultiDay,
                             ),
                           ),
@@ -681,7 +822,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                               title: _editing
                                   ? 'ENTRY'
                                   : days != null
-                                  ? 'SAME FOR ALL ${days.length} DAYS'
+                                  ? 'SAME FOR ALL ${slotDays(days).length} DAYS'
                                   : null,
                               showWhen: days == null,
                               canRemove: _entries.length > 1,
@@ -754,7 +895,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                         : _editing
                         ? 'SAVE CHANGES'
                         : days != null
-                        ? 'LOG ${days.length} ${days.length == 1 ? 'DAY' : 'DAYS'}'
+                        ? 'LOG ${days.length} ${days.length == 1 ? 'ENTRY' : 'ENTRIES'}'
                         : 'SAVE ${_entries.length} ${_entries.length == 1 ? 'EVENT' : 'EVENTS'}',
                   ),
                 ),
@@ -1255,34 +1396,49 @@ class _RelapseSheetResult {
     required this.openSos,
     this.mixed = false,
     this.multiDay = false,
+    this.dayCount = 0,
   });
 
+  final int dayCount;
   final int count;
   final bool openSos;
   final bool mixed;
   final bool multiDay;
 }
 
-/// The picked days, each with its own time. Tap a day to change its time.
+/// The picked days, each with its list of doses. Tap a dose to change its
+/// time, type or amount; "+ DOSE" adds another one on that day.
 class _MultiDayCard extends StatelessWidget {
   const _MultiDayCard({
     required this.days,
     required this.saving,
+    required this.dosesPerDay,
+    required this.mixedCounts,
     required this.onChangeDays,
-    required this.onTime,
-    required this.onRemove,
+    required this.onEditDose,
+    required this.onRemoveDose,
+    required this.onAddDose,
+    required this.onDosesPerDay,
     required this.onLeave,
   });
 
   final List<MultiDaySlot> days;
   final bool saving;
+  final int dosesPerDay;
+  final bool mixedCounts;
   final VoidCallback onChangeDays;
-  final ValueChanged<int> onTime;
-  final ValueChanged<int> onRemove;
+  final ValueChanged<int> onEditDose;
+  final ValueChanged<int> onRemoveDose;
+  final ValueChanged<DateTime> onAddDose;
+  final ValueChanged<int> onDosesPerDay;
   final VoidCallback onLeave;
 
   @override
   Widget build(BuildContext context) {
+    final dayList = slotDays(days);
+    final canMore =
+        dosesPerDay < multiDayMaxDosesPerDay &&
+        dayList.length * (dosesPerDay + 1) <= multiDayMaxDays;
     return GlassCard(
       key: const ValueKey('multi-day-card'),
       accent: cyan,
@@ -1290,35 +1446,57 @@ class _MultiDayCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '${days.length} ${days.length == 1 ? 'DAY' : 'DAYS'} PICKED',
+            '${dayList.length} ${dayList.length == 1 ? 'DAY' : 'DAYS'} PICKED',
             style: eyebrowStyle.copyWith(color: cyan),
           ),
           const SizedBox(height: 4),
+          Text(
+            multiDayEntrySummary(days),
+            key: const ValueKey('multi-day-summary'),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+          ),
+          const SizedBox(height: 4),
           const Text(
-            'Tap a day to set its own time. Each one is saved separately.',
+            'Tap a dose to change its time, type or amount. Add as many doses as that day had. Each one is saved separately.',
             style: TextStyle(color: muted, fontSize: 11, height: 1.35),
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          Row(
             children: [
-              for (var i = 0; i < days.length; i++)
-                InputChip(
-                  key: ValueKey(
-                    'multi-day-slot-${DateFormat('yyyy-MM-dd').format(days[i].day)}',
-                  ),
-                  label: Text(
-                    '${DateFormat('EEE d MMM').format(days[i].day)} · ${DateFormat.jm().format(days[i].occurredAt)}',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  onPressed: saving ? null : () => onTime(i),
-                  onDeleted: saving ? null : () => onRemove(i),
-                  deleteButtonTooltipMessage: 'Remove this day',
+              const Expanded(
+                child: Text(
+                  'DOSES PER DAY (ALL DAYS)',
+                  style: TextStyle(color: muted, fontSize: 11),
                 ),
+              ),
+              IconButton(
+                key: const ValueKey('multi-day-doses-minus'),
+                tooltip: 'Fewer doses per day',
+                onPressed: saving || dosesPerDay <= 1
+                    ? null
+                    : () => onDosesPerDay(dosesPerDay - 1),
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              Text(
+                mixedCounts ? 'MIXED' : '$dosesPerDay',
+                key: const ValueKey('multi-day-doses-count'),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              IconButton(
+                key: const ValueKey('multi-day-doses-plus'),
+                tooltip: 'More doses per day',
+                onPressed: saving || !canMore
+                    ? null
+                    : () => onDosesPerDay(dosesPerDay + 1),
+                icon: const Icon(Icons.add_circle_outline),
+              ),
             ],
           ),
-          const SizedBox(height: 6),
+          const Divider(height: 14),
+          for (final day in dayList) ...[
+            _dayRow(day),
+            const SizedBox(height: 8),
+          ],
           Wrap(
             spacing: 8,
             children: [
@@ -1339,9 +1517,238 @@ class _MultiDayCard extends StatelessWidget {
       ),
     );
   }
+
+  Widget _dayRow(DateTime day) {
+    final key = DateFormat('yyyy-MM-dd').format(day);
+    final indexes = [
+      for (var i = 0; i < days.length; i++)
+        if (days[i].day == day) i,
+    ];
+    return Column(
+      key: ValueKey('multi-day-row-$key'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          DateFormat('EEE d MMM').format(day).toUpperCase(),
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 12,
+            letterSpacing: .6,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (var n = 0; n < indexes.length; n++)
+              InputChip(
+                key: ValueKey(
+                  n == 0 ? 'multi-day-slot-$key' : 'multi-day-slot-$key-$n',
+                ),
+                label: Text(
+                  doseChipLabel(days[indexes[n]]),
+                  style: const TextStyle(fontSize: 11),
+                ),
+                onPressed: saving ? null : () => onEditDose(indexes[n]),
+                onDeleted: saving ? null : () => onRemoveDose(indexes[n]),
+                deleteButtonTooltipMessage: indexes.length == 1
+                    ? 'Remove this day'
+                    : 'Remove this dose',
+              ),
+            ActionChip(
+              key: ValueKey('multi-day-add-dose-$key'),
+              avatar: const Icon(Icons.add, size: 16),
+              label: const Text('DOSE', style: TextStyle(fontSize: 11)),
+              onPressed: saving ? null : () => onAddDose(day),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
-/// "Log N days" summary shown before a multi-day save.
+/// "9:00 PM", or "9:00 PM · 250 ml · BENZO" when the dose has its own
+/// amount or type.
+String doseChipLabel(MultiDaySlot slot) => [
+  DateFormat.jm().format(slot.occurredAt),
+  if (slot.dose != null) slot.dose!.display,
+  if (slot.type != null) slot.type!.label,
+].join(' · ');
+
+class _DoseEditResult {
+  const _DoseEditResult({
+    this.remove = false,
+    this.hour = 0,
+    this.minute = 0,
+    this.type,
+    this.amountText = '',
+    this.unit = DoseUnit.bottle,
+  });
+
+  final bool remove;
+  final int hour;
+  final int minute;
+  final RelapseType? type;
+  final String amountText;
+  final DoseUnit unit;
+}
+
+/// Edits one dose: its time, and optionally its own type and amount. Blank
+/// means "same as the shared entry".
+class _DoseDialog extends StatefulWidget {
+  const _DoseDialog({required this.slot});
+
+  final MultiDaySlot slot;
+
+  @override
+  State<_DoseDialog> createState() => _DoseDialogState();
+}
+
+class _DoseDialogState extends State<_DoseDialog> {
+  late int _hour = widget.slot.hour;
+  late int _minute = widget.slot.minute;
+  late RelapseType? _type = widget.slot.type;
+  late DoseUnit _unit = widget.slot.dose?.unit ?? DoseUnit.bottle;
+  late final TextEditingController _amount = TextEditingController(
+    text: widget.slot.dose == null
+        ? ''
+        : formatAmount(widget.slot.dose!.amount),
+  );
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime() async {
+    final time = await showRelapseTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _hour, minute: _minute),
+      title:
+          'TIME ON ${DateFormat.MMMd().format(widget.slot.day).toUpperCase()}',
+    );
+    if (time != null && mounted) {
+      setState(() {
+        _hour = time.hour;
+        _minute = time.minute;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final time = DateFormat.jm().format(DateTime(2000, 1, 1, _hour, _minute));
+    return AlertDialog(
+      key: const ValueKey('dose-dialog'),
+      backgroundColor: panelRaised,
+      title: Text(
+        'DOSE ON ${DateFormat.MMMd().format(widget.slot.day).toUpperCase()}',
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('dose-time'),
+              onPressed: _pickTime,
+              icon: const Icon(Icons.schedule),
+              label: Text(time),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Only change these if this dose was different from the shared details.',
+              style: TextStyle(color: muted, fontSize: 11, height: 1.35),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<RelapseType?>(
+              key: const ValueKey('dose-type'),
+              initialValue: _type,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'TYPE'),
+              dropdownColor: panelRaised,
+              items: [
+                const DropdownMenuItem<RelapseType?>(
+                  value: null,
+                  child: Text('SAME AS SHARED'),
+                ),
+                for (final type in RelapseType.values)
+                  DropdownMenuItem<RelapseType?>(
+                    value: type,
+                    child: Text(type.label),
+                  ),
+              ],
+              onChanged: (value) => setState(() => _type = value),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const ValueKey('dose-amount'),
+                    controller: _amount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'AMOUNT',
+                      hintText: 'Same as shared',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                DropdownButton<DoseUnit>(
+                  key: const ValueKey('dose-unit'),
+                  value: _unit,
+                  dropdownColor: panelRaised,
+                  items: [
+                    for (final unit in DoseUnit.values)
+                      DropdownMenuItem(value: unit, child: Text(unit.label)),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _unit = value);
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('dose-remove'),
+          onPressed: () =>
+              Navigator.pop(context, const _DoseEditResult(remove: true)),
+          child: const Text('REMOVE DOSE'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('CANCEL'),
+        ),
+        FilledButton(
+          key: const ValueKey('dose-done'),
+          onPressed: () => Navigator.pop(
+            context,
+            _DoseEditResult(
+              hour: _hour,
+              minute: _minute,
+              type: _type,
+              amountText: _amount.text,
+              unit: _unit,
+            ),
+          ),
+          child: const Text('DONE'),
+        ),
+      ],
+    );
+  }
+}
+
+/// "Log N entries" summary shown before a multi-day save, grouped by day.
 class _MultiDayConfirmSheet extends StatelessWidget {
   const _MultiDayConfirmSheet({
     required this.entries,
@@ -1353,10 +1760,26 @@ class _MultiDayConfirmSheet extends StatelessWidget {
   final RelapseLogEntry sample;
   final bool resetsLeanTimer;
 
+  /// " · 250 ml · BENZO" for a dose that differs from the shared entry.
+  String _overrideNote(RelapseLogEntry e) {
+    final parts = [
+      if (e.dose != null && e.dose?.display != sample.dose?.display)
+        e.dose!.display,
+      if (e.effectiveType != sample.effectiveType) e.effectiveType.label,
+    ];
+    return parts.isEmpty ? '' : ' · ${parts.join(' · ')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final n = entries.length;
-    final label = 'LOG $n ${n == 1 ? 'DAY' : 'DAYS'}';
+    final label = 'LOG $n ${n == 1 ? 'ENTRY' : 'ENTRIES'}';
+    final byDay = <DateTime, List<RelapseLogEntry>>{};
+    for (final e in entries) {
+      byDay.putIfAbsent(dayOnly(e.occurredAt), () => []).add(e);
+    }
+    final dayKeys = byDay.keys.toList()..sort();
+    final summary = multiDayEntrySummaryCounts(n, dayKeys.length);
     final facts = <String>[
       sample.effectiveType.label,
       if (sample.dose != null) sample.dose!.display,
@@ -1382,21 +1805,37 @@ class _MultiDayConfirmSheet extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '$n separate ${n == 1 ? 'entry' : 'entries'}, one per day:',
+            '$summary, each saved on its own:',
             style: const TextStyle(height: 1.4),
           ),
           const SizedBox(height: 8),
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 180),
+            constraints: const BoxConstraints(maxHeight: 260),
             child: ListView(
               shrinkWrap: true,
               children: [
-                for (final e in entries)
+                for (final day in dayKeys)
                   Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '• ${DateFormat('EEE d MMM yyyy').format(e.occurredAt)} at ${DateFormat.jm().format(e.occurredAt)}',
-                      style: const TextStyle(fontSize: 12.5),
+                    key: ValueKey(
+                      'multi-day-confirm-day-${DateFormat('yyyy-MM-dd').format(day)}',
+                    ),
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${DateFormat('EEE d MMM yyyy').format(day)} · ${byDay[day]!.length} ${byDay[day]!.length == 1 ? 'dose' : 'doses'}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        for (final e in byDay[day]!)
+                          Text(
+                            '• ${DateFormat.jm().format(e.occurredAt)}${_overrideNote(e)}',
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                      ],
                     ),
                   ),
               ],
@@ -1404,7 +1843,7 @@ class _MultiDayConfirmSheet extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Same for each: ${facts.join(' · ')}',
+            'Shared: ${facts.join(' · ')}',
             style: const TextStyle(color: muted, fontSize: 12, height: 1.4),
           ),
           if (sample.normalizedNote.isNotEmpty)

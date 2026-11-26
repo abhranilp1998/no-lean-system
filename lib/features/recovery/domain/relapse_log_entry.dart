@@ -75,6 +75,26 @@ class RelapseLogEntry {
     cost: cost,
   );
 
+  /// Same facts at another time, optionally with this dose's own type or
+  /// amount (multi-day logging). An own amount replaces the shared amount
+  /// and its free-text quantity, which described the shared amount.
+  RelapseLogEntry withDoseOverride({
+    required DateTime occurredAt,
+    RelapseType? type,
+    DoseAmount? dose,
+  }) => RelapseLogEntry(
+    occurredAt: occurredAt,
+    type: type ?? this.type,
+    note: note,
+    attemptedSos: attemptedSos,
+    quantity: dose == null ? quantity : null,
+    contextTags: contextTags,
+    dose: dose ?? this.dose,
+    doseParsedFromText: dose == null ? doseParsedFromText : false,
+    stress: stress,
+    cost: cost,
+  );
+
   /// Metadata keys written by [toMetadata]. An edit clears these before
   /// writing the new facts so a removed amount or tag does not linger.
   static const metadataKeys = {

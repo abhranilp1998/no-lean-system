@@ -19,8 +19,10 @@ String slipsRecordedMessage(int count) => count == 1
     : 'Saved all $count. Thank you for being honest with yourself.';
 
 /// After a multi-day catch-up save.
-String multiDayRecordedMessage(int count) => count == 1
+String multiDayRecordedMessage(int count, {int? days}) => count == 1
     ? 'Saved that day. Catching up takes honesty, thank you.'
+    : days != null && days != count
+    ? 'Saved all $count entries across $days days, each on its own. Catching up takes honesty, thank you.'
     : 'Saved all $count days, each as its own entry. Catching up takes honesty, thank you.';
 
 /// After correcting one saved entry.

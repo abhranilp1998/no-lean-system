@@ -238,4 +238,260 @@ void main() {
       hasLength(3),
     );
   });
+
+  group('several doses on the same day', () {
+    List<MultiDaySlot> doses(int ago, List<int> hours) => [
+      for (final h in hours)
+        MultiDaySlot(day: dayOnly(daysAgo(ago)), hour: h, minute: 0),
+    ];
+
+    Future<List<RecoveryEvent>> saveSlots(
+      RecoveryController c,
+      RelapseType type,
+      List<MultiDaySlot> slots,
+    ) async {
+      final result = await c.recordRelapse(
+        entries: expandMultiDayEntries(template(type), sortedSlots(slots)),
+        extraMetadata: const {multiDayMetadataKey: true},
+      );
+      expect(result, ProtectedActionResult.completed);
+      return c.events
+          .where((e) => e.metadata[multiDayMetadataKey] == true)
+          .toList();
+    }
+
+    test('each dose becomes its own independent entry', () async {
+      final c = await controller();
+      final saved = await saveSlots(c, RelapseType.fullLean, [
+        ...doses(4, [9, 15, 21]),
+        ...doses(2, [13, 22]),
+      ]);
+      expect(saved, hasLength(5));
+      expect(saved.map((e) => e.id).toSet(), hasLength(5));
+      expect(saved.map((e) => e.timestamp.hour), [9, 15, 21, 13, 22]);
+      expect(saved.map((e) => e.metadata['batchId']).toSet(), hasLength(1));
+      expect(saved.map((e) => e.metadata['recordedAt']).toSet(), hasLength(1));
+      // Clean time counts from the latest dose.
+      expect(c.lastDose, daysAgo(2, 22));
+    });
+
+    test('a per-dose override changes only that dose', () async {
+      final c = await controller();
+      final tablets = DoseAmount.entered(2, DoseUnit.tablet, bottleMl: 100);
+      final slots = doses(3, [10, 20]);
+      final saved = await saveSlots(c, RelapseType.fullLean, [
+        slots[0],
+        slots[1].withOverride(type: RelapseType.benzo, dose: tablets),
+      ]);
+      expect(saved[0].metadata['relapseType'], 'fullLean');
+      expect(saved[0].metadata['amountMl'], 100);
+      expect(saved[1].metadata['relapseType'], 'benzo');
+      expect(saved[1].metadata['unit'], 'tablet');
+      expect(saved[1].metadata.containsKey('amountMl'), isFalse);
+    });
+
+    test('editing and deleting one dose leaves the same-day doses', () async {
+      final c = await controller();
+      final saved = await saveSlots(
+        c,
+        RelapseType.fullLean,
+        doses(3, [9, 15, 21]),
+      );
+      final other = [saved[0].metadata, saved[2].metadata];
+      expect(
+        await c.editRelapseEntry(
+          id: saved[1].id,
+          entry: template(
+            RelapseType.fullLean,
+          ).copyWith(occurredAt: daysAgo(3, 16)),
+        ),
+        ProtectedActionResult.completed,
+      );
+      expect(
+        c.events.firstWhere((e) => e.id == saved[1].id).timestamp.hour,
+        16,
+      );
+      expect(
+        c.events.firstWhere((e) => e.id == saved[0].id).metadata,
+        other[0],
+      );
+      expect(
+        await c.deleteEvent(id: saved[2].id),
+        ProtectedActionResult.completed,
+      );
+      final left = c.events
+          .where((e) => e.metadata[multiDayMetadataKey] == true)
+          .map((e) => e.id);
+      expect(left, [saved[0].id, saved[1].id]);
+      expect(c.lastDose, daysAgo(3, 16));
+    });
+
+    test(
+      'benzo and lean on the same day: timer follows the lean dose',
+      () async {
+        final c = await controller();
+        final slots = doses(2, [15, 23]);
+        final saved = await saveSlots(c, RelapseType.fullLean, [
+          slots[0],
+          slots[1].withOverride(type: RelapseType.benzo),
+        ]);
+        // The later benzo dose is kept but does not move the lean timer.
+        expect(c.lastDose, daysAgo(2, 15));
+        expect(saved[1].metadata['relapseType'], 'benzo');
+        expect(saved[1].metadata['streakLost'], 0);
+        expect(saved[0].metadata['streakLost'], 28);
+        // And the other way round: an earlier benzo dose, later lean dose.
+        final d = await controller();
+        final s2 = doses(2, [9, 20]);
+        await saveSlots(d, RelapseType.fullLean, [
+          s2[0].withOverride(type: RelapseType.benzo),
+          s2[1],
+        ]);
+        expect(d.lastDose, daysAgo(2, 20));
+      },
+    );
+
+    test('benzo-only doses all day never reset the lean timer', () async {
+      final c = await controller();
+      final before = c.lastDose;
+      await saveSlots(c, RelapseType.benzo, doses(2, [9, 15, 21]));
+      expect(c.lastDose, before);
+    });
+
+    test('the 50-entry cap counts every dose', () async {
+      final c = await controller();
+      Future<ProtectedActionResult> save(int days, int perDay) =>
+          c.recordRelapse(
+            entries: expandMultiDayEntries(template(RelapseType.fullLean), [
+              for (var d = 1; d <= days; d++)
+                ...doses(d, [for (var i = 0; i < perDay; i++) 8 + i]),
+            ]),
+            extraMetadata: const {multiDayMetadataKey: true},
+          );
+      await expectLater(save(6, 9), throwsArgumentError); // 54 entries
+      expect(
+        c.events.where((e) => e.metadata[multiDayMetadataKey] == true),
+        isEmpty,
+      );
+      expect(await save(5, 10), ProtectedActionResult.completed); // 50
+      expect(
+        c.events.where((e) => e.metadata[multiDayMetadataKey] == true),
+        hasLength(50),
+      );
+    });
+
+    test('doses in the future are refused', () async {
+      final c = await controller();
+      await expectLater(
+        c.recordRelapse(
+          entries: [
+            template(RelapseType.fullLean).copyWith(
+              occurredAt: DateTime.now().add(const Duration(hours: 2)),
+            ),
+          ],
+          extraMetadata: const {multiDayMetadataKey: true},
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('multiple doses per day survive backup export and import', () async {
+      final c = await controller();
+      final slots = doses(3, [9, 21]);
+      await saveSlots(c, RelapseType.fullLean, [
+        slots[0].withOverride(type: RelapseType.benzo),
+        slots[1],
+      ]);
+      final service = BackupService();
+      final payload = service.buildBackupPayload(
+        c.events,
+        preferences: c.portablePreferences,
+      );
+      expect(payload['version'], 12);
+      final preview = service.validateBackupJson(jsonEncode(payload));
+      final fresh = RecoveryController(
+        store: MemoryRecoveryStore(),
+        relapseLock: FakeRelapseLock(),
+      );
+      await fresh.load();
+      await fresh.mergeImportedEvents(preview.events);
+      expect(fresh.lastDose, c.lastDose);
+      expect(
+        fresh.events
+            .where((e) => e.metadata[multiDayMetadataKey] == true)
+            .map((e) => (e.timestamp, e.metadata['relapseType'])),
+        c.events
+            .where((e) => e.metadata[multiDayMetadataKey] == true)
+            .map((e) => (e.timestamp, e.metadata['relapseType'])),
+      );
+    });
+  });
+
+  group('backwards compatibility', () {
+    test('an old backup (no multi-day or dose fields) still imports', () async {
+      final old = {
+        'version': 5,
+        'events': [
+          {
+            'id': 'old-relapse',
+            'type': 'relapse',
+            'timestamp': DateTime(2026, 3, 1, 22).toIso8601String(),
+            'metadata': <String, dynamic>{'streakLost': 4},
+          },
+          {
+            'id': 'old-relapse-2',
+            'type': 'relapse',
+            'timestamp': DateTime(2026, 4, 1, 22).toIso8601String(),
+            'metadata': <String, dynamic>{'relapseType': 'benzo'},
+          },
+        ],
+        'preferences': <String, dynamic>{},
+      };
+      final preview = BackupService().validateBackupJson(jsonEncode(old));
+      expect(preview.eventCount, 2);
+      final fresh = RecoveryController(
+        store: MemoryRecoveryStore(),
+        relapseLock: FakeRelapseLock(),
+      );
+      await fresh.load();
+      await fresh.mergeImportedEvents(preview.events);
+      expect(
+        fresh.events.map((e) => e.id),
+        containsAll(['old-relapse', 'old-relapse-2']),
+      );
+      final baseline = fresh.events.length;
+      expect(
+        fresh.events
+            .firstWhere((e) => e.id == 'old-relapse')
+            .metadata['streakLost'],
+        4,
+      );
+      // Nothing was rewritten, and new multi-dose saves work on top.
+      final result = await fresh.recordRelapse(
+        entries: expandMultiDayEntries(template(RelapseType.fullLean), [
+          MultiDaySlot(day: dayOnly(daysAgo(2)), hour: 9, minute: 0),
+          MultiDaySlot(day: dayOnly(daysAgo(2)), hour: 21, minute: 0),
+        ]),
+        extraMetadata: const {multiDayMetadataKey: true},
+      );
+      expect(result, ProtectedActionResult.completed);
+      expect(fresh.events, hasLength(baseline + 2));
+    });
+
+    test(
+      'a PR #26 backup (one entry per day) still imports unchanged',
+      () async {
+        final c = await controller();
+        await saveDays(c, RelapseType.fullLean, [5, 3]);
+        final json = jsonEncode(
+          BackupService().buildBackupPayload(
+            c.events,
+            preferences: c.portablePreferences,
+          ),
+        );
+        final preview = BackupService().validateBackupJson(json);
+        expect(preview.eventCount, c.events.length);
+      },
+    );
+  });
 }
