@@ -28,7 +28,8 @@ class WidgetsScreen extends ConsumerStatefulWidget {
   ConsumerState<WidgetsScreen> createState() => _WidgetsScreenState();
 }
 
-class _WidgetsScreenState extends ConsumerState<WidgetsScreen> {
+class _WidgetsScreenState extends ConsumerState<WidgetsScreen>
+    with WidgetsBindingObserver {
   late final WidgetChoiceService _service =
       widget.service ?? WidgetChoiceService();
   List<PlacedWidget> _placed = const [];
@@ -36,7 +37,22 @@ class _WidgetsScreenState extends ConsumerState<WidgetsScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _reload();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// The launcher's "Add widget" prompt (and the picker the user may open
+  /// instead) leaves the app; refresh the placed list when they come back so
+  /// a widget they just added shows up here.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _reload();
   }
 
   Future<void> _reload() async {
@@ -142,7 +158,7 @@ class _WidgetsScreenState extends ConsumerState<WidgetsScreen> {
             physics: const NeverScrollableScrollPhysics(),
             mainAxisSpacing: 12,
             crossAxisSpacing: 12,
-            childAspectRatio: 0.8,
+            childAspectRatio: 0.72,
             children: [
               for (final view in StretchedWidgetView.values)
                 _ChoiceCard(
@@ -257,7 +273,7 @@ class _ClassicPreview extends StatelessWidget {
     // Same labels and count as the real widget (strings.xml).
     final all = private
         ? const ['HELP', 'NOTE', 'RECORD', 'FOCUS']
-        : const ['SOS', 'LOG CRAVING', 'LOG RELAPSES', 'CODE INSTEAD'];
+        : const ['SOS', 'LOG CRAVING', 'I USED', 'CODE INSTEAD'];
     final buttons = all.take(kind == WidgetKind.large ? 4 : 3).toList();
     final tall = kind == WidgetKind.large;
     return Container(
@@ -373,7 +389,7 @@ class _ChoiceCard extends StatelessWidget {
             ),
             Text(
               view.description,
-              maxLines: 2,
+              maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodySmall,
             ),

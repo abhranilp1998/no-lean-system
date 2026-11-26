@@ -45,6 +45,7 @@ class MainActivity : FlutterFragmentActivity() {
                 val privacy = call.argument<Boolean>("privacy") ?: false
                 val riskStart = call.argument<Number>("riskStartMinutes")?.toInt()
                 val riskEnd = call.argument<Number>("riskEndMinutes")?.toInt()
+                val lastPledgeEpochMillis = call.argument<Number>("lastPledgeEpochMillis")?.toLong()
                 val editor = getSharedPreferences(NoLeanWidgetProvider.PREFERENCES_NAME, MODE_PRIVATE).edit()
                     .putString("clean_time", cleanTime)
                     .putString("streak_days", streak)
@@ -57,8 +58,18 @@ class MainActivity : FlutterFragmentActivity() {
                 if (privacy) {
                     // Privacy mode keeps no recovery data at rest for the widget.
                     editor.remove(NoLeanWidgetProvider.KEY_LAST_DOSE_EPOCH_MILLIS)
+                    editor.remove(NoLeanWidgetProvider.KEY_LAST_PLEDGE_EPOCH_MILLIS)
                 } else if (lastDoseEpochMillis != null && lastDoseEpochMillis > 0L) {
                     editor.putLong(NoLeanWidgetProvider.KEY_LAST_DOSE_EPOCH_MILLIS, lastDoseEpochMillis)
+                }
+                if (!privacy) {
+                    // No pledge yet (or an older app): clear it so a stale one
+                    // cannot read as "today".
+                    if (lastPledgeEpochMillis != null && lastPledgeEpochMillis > 0L) {
+                        editor.putLong(NoLeanWidgetProvider.KEY_LAST_PLEDGE_EPOCH_MILLIS, lastPledgeEpochMillis)
+                    } else {
+                        editor.remove(NoLeanWidgetProvider.KEY_LAST_PLEDGE_EPOCH_MILLIS)
+                    }
                 }
                 if (riskStart != null && riskEnd != null) {
                     editor.putInt(NightTimelineWidgetProvider.KEY_RISK_START, riskStart)

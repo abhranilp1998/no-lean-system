@@ -31,6 +31,33 @@ object WidgetPack {
     fun riskStart(context: Context) = prefs(context).getInt(NightTimelineWidgetProvider.KEY_RISK_START, 17 * 60)
     fun riskEnd(context: Context) = prefs(context).getInt(NightTimelineWidgetProvider.KEY_RISK_END, 21 * 60)
 
+    /**
+     * Pure: is [nowMillis] inside the configured risk window? Same window
+     * maths as the night timeline (an overnight window spans midnight; start
+     * equal to end means all day; the end minute itself is outside), so the
+     * classic widget's RISK WINDOW badge flips exactly when the timeline and
+     * the boundary alarm do, with no app involved.
+     */
+    fun riskActive(
+        nowMillis: Long,
+        startMinutes: Int,
+        endMinutes: Int,
+        calendar: Calendar = Calendar.getInstance(),
+    ): Boolean = NightTimeline.compute(nowMillis, startMinutes, endMinutes, 0L, calendar).phase == NightTimeline.Phase.ACTIVE
+
+    /**
+     * Pure: has the user pledged on today's local date? [lastPledgeMillis] of 0
+     * means the app has not sent one yet (older sync); then the stored flag
+     * is the best answer available.
+     */
+    fun pledgedToday(
+        nowMillis: Long,
+        lastPledgeMillis: Long,
+        storedFlag: Boolean,
+        calendar: Calendar = Calendar.getInstance(),
+    ): Boolean =
+        if (lastPledgeMillis > 0L) dateKey(lastPledgeMillis, calendar) == dateKey(nowMillis, calendar) else storedFlag
+
     /** Re-renders every widget in the pack. */
     fun updateAll(context: Context) {
         NightTimelineWidgetProvider.updateAll(context)

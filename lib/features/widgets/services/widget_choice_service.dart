@@ -47,7 +47,7 @@ enum WidgetKind {
   medium(
     'medium',
     'NO LEAN 4x2',
-    'Clean time, next milestone and SOS, log craving, log relapse buttons.',
+    'Clean time, next milestone, and SOS, log craving and I used buttons.',
   ),
   large(
     'large',
