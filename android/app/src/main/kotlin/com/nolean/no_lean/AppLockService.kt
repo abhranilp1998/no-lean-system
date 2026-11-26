@@ -90,7 +90,12 @@ class AppLockService : Service() {
         AppLockHealth.clearAlert(this)
         AppLockHealth.scheduleWatchdog(this)
         handler.removeCallbacks(tick)
-        lastEventQuery = System.currentTimeMillis() - 10_000L
+        // A restarted service re-reads recent history so the app already in
+        // front is checked on the first poll, not after the next app switch.
+        lastEventQuery = AppLockForeground.startQueryFrom(
+            System.currentTimeMillis(),
+            knowsForeground = foregroundPackage != null,
+        )
         handler.post(tick)
         return START_STICKY
     }

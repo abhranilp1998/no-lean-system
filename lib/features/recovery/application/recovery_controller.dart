@@ -62,6 +62,18 @@ import '../../dates/domain/high_risk_dates.dart'
     show upcomingHighRiskDates;
 import '../../zones/services/zone_entry_inbox.dart';
 
+/// Biometric/PIN prompt text for saving relapse entries. Benzo-only saves
+/// never move the lean/codeine clean timer, so the prompt must not say so.
+String relapseAuthReason(List<RelapseLogEntry>? entries) {
+  final benzoOnly =
+      entries != null &&
+      entries.isNotEmpty &&
+      entries.every((entry) => entry.effectiveType == RelapseType.benzo);
+  return benzoOnly
+      ? 'Authenticate to save this to your safety log. Your lean clean time is not reset.'
+      : 'Authenticate to save these relapse events and update clean time.';
+}
+
 /// Longest "medicines for my doctor" note kept in state and backups.
 const maxReportMedicinesLength = 600;
 
@@ -2065,8 +2077,7 @@ class RecoveryController extends ChangeNotifier {
       final authorization = await _authorizeProtectedAction(
         pin: pin,
         tryBiometrics: tryBiometrics,
-        reason:
-            'Authenticate to save these relapse events and update clean time.',
+        reason: relapseAuthReason(richEntries),
       );
       if (authorization != ProtectedActionResult.completed) {
         return authorization;

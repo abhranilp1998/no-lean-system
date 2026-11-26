@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:no_lean/core/theme/app_theme.dart';
@@ -63,5 +64,33 @@ void main() {
     expect(find.text('RELAPSE'), findsOneWidget);
     expect(find.text('LEGACY RELAPSE RECORD'), findsOneWidget);
     expect(find.text('3-DAY STREAK INTERRUPTED'), findsOneWidget);
+  });
+
+  testWidgets('relapse entry options menu is reachable by accessibility', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    final event = RecoveryEvent.create(
+      type: RecoveryEventType.relapse,
+      metadata: {'relapseType': RelapseType.fullLean.name, 'streakLost': 2},
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: buildNoLeanTheme(),
+          home: Scaffold(body: EventTile(event: event)),
+        ),
+      ),
+    );
+
+    // Before the fix the tile excluded the menu from semantics, so the
+    // nearest node was the tile summary with no tap action.
+    final node = tester.getSemantics(find.byTooltip('Entry options'));
+    final data = node.getSemanticsData();
+    expect(data.tooltip, 'Entry options');
+    expect(data.hasAction(SemanticsAction.tap), isTrue);
+    expect(data.label, isNot(contains('Relapse recorded')));
+    handle.dispose();
   });
 }

@@ -9,12 +9,11 @@ import 'app/no_lean_app.dart';
 
 export 'app/no_lean_app.dart' show NoLeanApp;
 
-/// TEST BRANCH ONLY (`test/device-debug-all-open-prs-2026-11-27`).
-/// Keeps the screen awake for this device-debug session. Override with
-/// `--dart-define=NL_DEVICE_DEBUG=false` if needed.
+/// Device-debug sessions only: keeps the screen awake while testing on a
+/// phone. Off in releases; turn on with `--dart-define=NL_DEVICE_DEBUG=true`.
 const bool kDeviceDebugSession = bool.fromEnvironment(
   'NL_DEVICE_DEBUG',
-  defaultValue: true,
+  defaultValue: false,
 );
 
 void main() {

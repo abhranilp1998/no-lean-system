@@ -293,7 +293,7 @@ class _RelapseEventCard extends StatelessWidget {
                               ),
                             ),
                             const Spacer(),
-                            ExcludeSemantics(child: _ActionsMenu(event: event)),
+                            _ActionsMenu(event: event),
                           ],
                         ),
                         const SizedBox(height: 10),
@@ -503,108 +503,118 @@ class _ActionsMenu extends ConsumerWidget {
     final isEditable = _ActionsMenu.isEditable(event);
     final canDelete = _ActionsMenu.canDelete(event);
 
-    return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, color: muted, size: 20),
-      color: panelRaised,
-      itemBuilder: (context) => [
-        if (isEditable)
-          const PopupMenuItem(
-            value: 'edit',
-            child: Row(
-              children: [
-                Icon(Icons.edit, color: cyan, size: 18),
-                SizedBox(width: 8),
-                Text('Edit', style: TextStyle(color: Colors.white)),
-              ],
-            ),
-          ),
-        if (canDelete)
-          const PopupMenuItem(
-            value: 'delete',
-            child: Row(
-              children: [
-                Icon(Icons.delete, color: red, size: 18),
-                SizedBox(width: 8),
-                Text('Delete Event', style: TextStyle(color: Colors.white)),
-              ],
-            ),
-          ),
-      ],
-      onSelected: (val) async {
-        try {
-          if (val == 'delete') {
-            final confirm = await showDialog<bool>(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                backgroundColor: panelRaised,
-                title: const Text(
-                  'Delete Event',
-                  style: TextStyle(color: Colors.white),
-                ),
-                content: const Text(
-                  'Are you sure? This may permanently alter your computed progress stats.',
-                  style: TextStyle(color: Colors.white70),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('CANCEL', style: TextStyle(color: muted)),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('DELETE', style: TextStyle(color: red)),
-                  ),
+    // Its own semantics node, so screen readers and UI automation can reach
+    // the menu even inside a tile that announces itself as one summary.
+    return Semantics(
+      container: true,
+      child: PopupMenuButton<String>(
+        tooltip: 'Entry options',
+        icon: const Icon(Icons.more_vert, color: muted, size: 20),
+        color: panelRaised,
+        itemBuilder: (context) => [
+          if (isEditable)
+            const PopupMenuItem(
+              value: 'edit',
+              child: Row(
+                children: [
+                  Icon(Icons.edit, color: cyan, size: 18),
+                  SizedBox(width: 8),
+                  Text('Edit', style: TextStyle(color: Colors.white)),
                 ],
               ),
-            );
-            if (confirm == true) {
-              final recovery = ref.read(recoveryProvider);
-              var result = await recovery.deleteEvent(id: event.id);
-              if (result == ProtectedActionResult.authenticationRequired &&
-                  context.mounted) {
-                final pin = await showRelapsePinDialog(
-                  context,
-                  actionLabel: 'AUTHORIZE DELETE',
-                );
-                if (pin == null) return;
-                result = await recovery.deleteEvent(
-                  id: event.id,
-                  pin: pin,
-                  tryBiometrics: false,
-                );
-              }
-              if (result != ProtectedActionResult.completed &&
-                  context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      result == ProtectedActionResult.lockedOut
-                          ? result.failureMessage
-                          : 'Authentication failed. History was not changed.',
-                    ),
-                    backgroundColor: red,
+            ),
+          if (canDelete)
+            const PopupMenuItem(
+              value: 'delete',
+              child: Row(
+                children: [
+                  Icon(Icons.delete, color: red, size: 18),
+                  SizedBox(width: 8),
+                  Text('Delete Event', style: TextStyle(color: Colors.white)),
+                ],
+              ),
+            ),
+        ],
+        onSelected: (val) async {
+          try {
+            if (val == 'delete') {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: panelRaised,
+                  title: const Text(
+                    'Delete Event',
+                    style: TextStyle(color: Colors.white),
                   ),
-                );
+                  content: const Text(
+                    'Are you sure? This may permanently alter your computed progress stats.',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text(
+                        'CANCEL',
+                        style: TextStyle(color: muted),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('DELETE', style: TextStyle(color: red)),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true) {
+                final recovery = ref.read(recoveryProvider);
+                var result = await recovery.deleteEvent(id: event.id);
+                if (result == ProtectedActionResult.authenticationRequired &&
+                    context.mounted) {
+                  final pin = await showRelapsePinDialog(
+                    context,
+                    actionLabel: 'AUTHORIZE DELETE',
+                  );
+                  if (pin == null) return;
+                  result = await recovery.deleteEvent(
+                    id: event.id,
+                    pin: pin,
+                    tryBiometrics: false,
+                  );
+                }
+                if (result != ProtectedActionResult.completed &&
+                    context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        result == ProtectedActionResult.lockedOut
+                            ? result.failureMessage
+                            : 'Authentication failed. History was not changed.',
+                      ),
+                      backgroundColor: red,
+                    ),
+                  );
+                }
               }
+            } else if (val == 'edit' &&
+                event.type == RecoveryEventType.relapse) {
+              await showRelapseEditSheet(context, event);
+            } else if (val == 'edit') {
+              await showDialog(
+                context: context,
+                builder: (ctx) => EventEditDialog(event: event),
+              );
             }
-          } else if (val == 'edit' && event.type == RecoveryEventType.relapse) {
-            await showRelapseEditSheet(context, event);
-          } else if (val == 'edit') {
-            await showDialog(
-              context: context,
-              builder: (ctx) => EventEditDialog(event: event),
-            );
+          } catch (_) {
+            if (context.mounted) {
+              AppNotice.show(
+                context,
+                'History could not be changed. Please try again.',
+                type: AppNoticeType.error,
+              );
+            }
           }
-        } catch (_) {
-          if (context.mounted) {
-            AppNotice.show(
-              context,
-              'History could not be changed. Please try again.',
-              type: AppNoticeType.error,
-            );
-          }
-        }
-      },
+        },
+      ),
     );
   }
 }
