@@ -50,6 +50,67 @@ void main() {
       expect(computeLastDose(events), DateTime(2023, 2, 1));
     });
 
+    test('benzo-only relapse does not move the lean clean timer', () {
+      final lean = RecoveryEvent.create(
+        type: RecoveryEventType.relapse,
+        timestamp: DateTime(2023, 1, 1),
+        metadata: {'relapseType': 'fullLean'},
+      );
+      final benzo = RecoveryEvent.create(
+        type: RecoveryEventType.relapse,
+        timestamp: DateTime(2023, 2, 1),
+        metadata: {'relapseType': 'benzo'},
+      );
+      expect(computeLastDose([lean, benzo]), DateTime(2023, 1, 1));
+      expect(resetsLeanCleanTimer(benzo), isFalse);
+      expect(resetsLeanCleanTimer(lean), isTrue);
+    });
+
+    test('lean after benzo still resets the lean clean timer', () {
+      final benzo = RecoveryEvent.create(
+        type: RecoveryEventType.relapse,
+        timestamp: DateTime(2023, 1, 1),
+        metadata: {'relapseType': 'benzo'},
+      );
+      final lean = RecoveryEvent.create(
+        type: RecoveryEventType.relapse,
+        timestamp: DateTime(2023, 2, 1),
+        metadata: {'relapseType': 'partial'},
+      );
+      expect(computeLastDose([benzo, lean]), DateTime(2023, 2, 1));
+    });
+
+    test('benzo-only day stays clean on the lean heat map', () {
+      final day = DateTime(2023, 3, 4, 18);
+      final events = [
+        RecoveryEvent.create(
+          type: RecoveryEventType.pledge,
+          timestamp: day,
+        ),
+        RecoveryEvent.create(
+          type: RecoveryEventType.relapse,
+          timestamp: day.add(const Duration(hours: 1)),
+          metadata: {'relapseType': 'benzo'},
+        ),
+      ];
+      final map = computeCleanDaysMap(events);
+      expect(map['2023-03-04'], isTrue);
+    });
+
+    test('imported benzo streakLost is ignored for longest lean streak', () {
+      final events = [
+        RecoveryEvent.create(
+          type: RecoveryEventType.relapse,
+          metadata: {'relapseType': 'benzo', 'streakLost': 99},
+        ),
+        RecoveryEvent.create(
+          type: RecoveryEventType.milestone,
+          metadata: {'days': 7},
+        ),
+      ];
+      expect(computeLongestStreak(events), 7);
+    });
+
     test('historical milestone survives without daily pledge records', () {
       final events = [
         RecoveryEvent.create(
