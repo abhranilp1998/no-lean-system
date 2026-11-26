@@ -1,3 +1,5 @@
+import '../domain/if_then_plan.dart';
+import '../domain/trigger_tags.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
@@ -227,6 +229,10 @@ class RecoveryController extends ChangeNotifier {
 
   /// Notes to self (state v14+). Shown only inside the app, behind the PIN.
   List<FutureLetter> futureLetters = [];
+
+  /// The user's own "if X, then I will Y" plans. Optional: older saves and
+  /// backups have none.
+  List<IfThenPlan> ifThenPlans = [];
   CompanionState companion = const CompanionState();
 
   /// In-app distance checks while NO LEAN is open (opt-in).
@@ -399,6 +405,7 @@ class RecoveryController extends ChangeNotifier {
       }
       zones = DangerZone.decodeList(map['zones']);
       futureLetters = _decodeLetters(map['futureLetters']);
+      ifThenPlans = IfThenPlan.decodeList(map['ifThenPlans']);
       companion = CompanionState.fromJson(map['companion']);
       relapseCooldownUntil = DateTime.tryParse(
         map['relapseCooldownUntil']?.toString() ?? '',
@@ -650,7 +657,12 @@ class RecoveryController extends ChangeNotifier {
     userMessages: reminderMessages,
     // Warn earlier when logged slips start before the window opens.
     leadMinutes: adaptiveLeadMinutes(computeSlipPattern(events, riskWindow)),
+    planLine: _windowPlans.isEmpty
+        ? null
+        : planNotificationLine(_windowPlans.first),
   );
+
+  List<IfThenPlan> get _windowPlans => plansForWindow(ifThenPlans);
 
   static List<RecoveryEvent> _decodeHidden(Object? raw) {
     if (raw is! List) return [];
@@ -702,6 +714,8 @@ class RecoveryController extends ChangeNotifier {
     'appLockPending': appLockPending,
     'zones': zones.map((zone) => zone.toJson()).toList(),
     'futureLetters': futureLetters.map((l) => l.toJson()).toList(),
+    if (ifThenPlans.isNotEmpty)
+      'ifThenPlans': ifThenPlans.map((p) => p.toJson()).toList(),
     'companion': companion.toJson(),
     'zoneMonitoring': zoneMonitoring,
     'streetTiles': streetTiles,
@@ -722,6 +736,7 @@ class RecoveryController extends ChangeNotifier {
     _restoreSettings(map);
     zones = DangerZone.decodeList(map['zones']);
     futureLetters = _decodeLetters(map['futureLetters']);
+    ifThenPlans = IfThenPlan.decodeList(map['ifThenPlans']);
     companion = CompanionState.fromJson(map['companion']);
     relapseCooldownUntil = DateTime.tryParse(
       map['relapseCooldownUntil']?.toString() ?? '',
@@ -998,6 +1013,67 @@ class RecoveryController extends ChangeNotifier {
         return updated;
       });
 
+  /// Adds the user's quick tags (where, who, mood, cash) to a craving they
+  /// logged. Optional context only: no PIN, nothing removed except the tag
+  /// keys themselves, no time or intensity changes. Returns false when the
+  /// craving is gone.
+  Future<bool> recordTriggerTags(String cravingId, TriggerTags tags) =>
+      _transaction(() async {
+        final i = events.indexWhere(
+          (e) => e.id == cravingId && e.type == RecoveryEventType.craving,
+        );
+        if (i < 0) return false;
+        events[i] = events[i].copyWith(
+          metadata: applyTriggerTags(events[i].metadata, tags, now: _now()),
+        );
+        return true;
+      });
+
+  Future<IfThenPlan> addIfThenPlan({
+    required String ifText,
+    required String thenText,
+    Set<PlanSurface> surfaces = IfThenPlan.defaultSurfaces,
+    String? zoneId,
+    String? mood,
+  }) async {
+    final plan = IfThenPlan.create(
+      ifText: ifText,
+      thenText: thenText,
+      at: _now(),
+      surfaces: surfaces,
+      zoneId: zoneId,
+      mood: mood,
+    );
+    await _transaction(() async {
+      if (ifThenPlans.length >= IfThenPlan.maxPlans) {
+        throw StateError('You can keep up to ${IfThenPlan.maxPlans} plans.');
+      }
+      ifThenPlans = [...ifThenPlans, plan];
+    });
+    unawaited(_syncRiskNotifications());
+    return plan;
+  }
+
+  Future<void> updateIfThenPlan(IfThenPlan plan) async {
+    await _transaction(() async {
+      ifThenPlans = [for (final p in ifThenPlans) p.id == plan.id ? plan : p];
+    });
+    unawaited(_syncRiskNotifications());
+  }
+
+  Future<void> deleteIfThenPlan(String id) async {
+    await _transaction(() async {
+      ifThenPlans = ifThenPlans.where((p) => p.id != id).toList();
+    });
+    unawaited(_syncRiskNotifications());
+  }
+
+  /// Plans to bring up now: in the risk window or near the usual peak.
+  List<IfThenPlan> get plansDueNow =>
+      isPlanMoment(now: _now(), window: riskWindow, events: events)
+      ? plansForWindow(ifThenPlans)
+      : const [];
+
   Future<void> clearRelapseCooldown(String reason) => _transaction(() async {
     if (relapseCooldownUntil == null && relapseCooldownEventId == null) return;
     relapseCooldownUntil = null;
@@ -1127,6 +1203,19 @@ class RecoveryController extends ChangeNotifier {
       throw StateError('This backup would exceed 100 notes.');
     }
     futureLetters = [...futureLetters, ...newLetters];
+    // Plans ride in the backup's preferences block. They are the user's own
+    // writing, so they merge by id like notes, whether or not the other
+    // preferences are restored.
+    if (preferences != null) {
+      final planIds = ifThenPlans.map((p) => p.id).toSet();
+      final newPlans = IfThenPlan.decodeList(
+        preferences['ifThenPlans'],
+      ).where((p) => planIds.add(p.id));
+      ifThenPlans = [
+        ...ifThenPlans,
+        ...newPlans,
+      ].take(IfThenPlan.maxPlans).toList();
+    }
     if (importedCompanion != null) {
       companion = companion.mergeImported(importedCompanion);
     }
@@ -1149,6 +1238,7 @@ class RecoveryController extends ChangeNotifier {
           ..remove('hideSensitiveNotifications')
           ..remove('backgroundGeofencing')
           ..remove('insightPreferences')
+          ..remove('ifThenPlans')
           ..remove('pin'),
       );
       if (riskWindow.startMinutes != previousWindow.startMinutes ||
@@ -1193,6 +1283,8 @@ class RecoveryController extends ChangeNotifier {
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
     'stretchedWidgetView': stretchedWidgetView.name,
+    if (ifThenPlans.isNotEmpty)
+      'ifThenPlans': ifThenPlans.map((p) => p.toJson()).toList(),
   };
 
   Future<void> pledge() async {

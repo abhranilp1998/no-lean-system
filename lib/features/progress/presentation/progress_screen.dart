@@ -1,3 +1,5 @@
+import '../../plans/presentation/if_then_plans_screen.dart';
+import '../../recovery/domain/trigger_pattern.dart';
 import '../../../core/layout/tab_layout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -93,6 +95,15 @@ class ProgressScreen extends ConsumerWidget {
           return;
         case PatternActionKind.pledge:
           showPledgeDialog(context, ref);
+          return;
+        case PatternActionKind.writePlan:
+          IfThenPlansScreen.open(
+            context,
+            suggestedIf: computeTriggerPattern(
+              recovery.events,
+              now: recovery.currentTime,
+            )?.ifSuggestion,
+          );
           return;
       }
     }

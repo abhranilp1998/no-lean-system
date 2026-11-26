@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../recovery/domain/event_derived_state.dart';
+import '../../recovery/domain/if_then_plan.dart';
 import '../../recovery/domain/recovery_event.dart';
 import '../../recovery/domain/risk_window.dart';
 import 'danger_zone.dart';
@@ -117,6 +118,7 @@ ZoneAlertCopy? backgroundZoneAlert({
     now: now,
     cleanSince: cleanSince,
     riskWindow: riskWindow,
+    plans: IfThenPlan.decodeList(map['ifThenPlans']),
   );
 }
 

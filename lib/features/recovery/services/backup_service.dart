@@ -704,6 +704,11 @@ class BackupService {
     ]) {
       if (input.containsKey(key)) preferences[key] = input[key];
     }
+    // The user's own if-then plans. Passed through as written; each item is
+    // read tolerantly when imported, so a bad one never rejects a backup.
+    if (input['ifThenPlans'] is List) {
+      preferences['ifThenPlans'] = input['ifThenPlans'];
+    }
     return preferences;
   }
 

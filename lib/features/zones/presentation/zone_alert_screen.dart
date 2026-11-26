@@ -1,3 +1,4 @@
+import '../../plans/presentation/plan_card.dart';
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -100,8 +101,19 @@ class _ZoneAlertScreenState extends State<ZoneAlertScreen> {
               ),
             ),
             const SizedBox(height: 14),
-            Text(copy.body, style: const TextStyle(fontSize: 14, height: 1.5)),
+            Text(
+              copy.screenText,
+              style: const TextStyle(fontSize: 14, height: 1.5),
+            ),
             const SizedBox(height: 20),
+            if (copy.plans.isNotEmpty) ...[
+              PlanCard(
+                key: const ValueKey('zone-alert-plan'),
+                plans: copy.plans,
+                heading: 'YOUR PLAN FOR THIS PLACE',
+              ),
+              const SizedBox(height: 20),
+            ],
             Container(
               key: const ValueKey('zone-alert-timer'),
               padding: const EdgeInsets.all(16),

@@ -3,6 +3,7 @@ import '../../recovery/domain/dose_units.dart';
 import '../../recovery/domain/recovery_event.dart';
 import '../../recovery/domain/relapse_log_entry.dart';
 import '../../recovery/domain/risk_window.dart';
+import '../../recovery/domain/trigger_pattern.dart';
 import '../../recovery/domain/sos_session.dart';
 import 'dose_insights.dart';
 
@@ -283,7 +284,13 @@ class SosCompletionSummary {
   double get completionRate => started == 0 ? 0 : completed / started;
 }
 
-enum PatternActionKind { logCraving, openSos, editRiskWindow, pledge }
+enum PatternActionKind {
+  logCraving,
+  openSos,
+  editRiskWindow,
+  pledge,
+  writePlan,
+}
 
 /// How much data stands behind an insight.
 enum InsightConfidence { early, moderate, strong }
@@ -570,6 +577,25 @@ List<PatternActionInsight> patternActionInsights({
         ),
       );
     }
+  }
+
+  final tagPattern = computeTriggerPattern(events.toList(), now: current);
+  if (tagPattern != null) {
+    results.add(
+      PatternActionInsight(
+        id: 'trigger-tags',
+        evidenceKey: tagPattern.evidenceKey,
+        evidenceCount: tagPattern.tagged,
+        title: 'YOUR CRAVINGS HAVE A SHAPE',
+        body:
+            '${tagPattern.sentence} That is useful: you can get ready for that exact moment. A plan written while you are steady is easier to follow than one made in the middle of a craving.',
+        evidence: tagPattern.evidence.toUpperCase(),
+        actionLabel: 'WRITE AN IF-THEN PLAN',
+        action: PatternActionKind.writePlan,
+        why:
+            'Built only from the tags you added to your own cravings (where, who with, mood, cash on hand). Needs at least $minTaggedCravings tagged cravings in the last 120 days, and at least $minPatternMatches that share the whole pattern. It counts what you logged; it does not say why.',
+      ),
+    );
   }
 
   final cost = relapseCost(

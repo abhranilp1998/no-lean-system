@@ -1,3 +1,4 @@
+import '../../plans/presentation/plan_card.dart';
 import '../../app_lock/presentation/app_lock_banner.dart';
 import '../../companion/presentation/companion_hub_screen.dart';
 import '../../companion/presentation/struggling_screen.dart';
@@ -76,6 +77,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               lockArmed: recovery.peakHourLock,
             ),
           if (recovery.isRiskWindow) const SizedBox(height: 14),
+          const PlanNowCard(),
           Text('THE COUNTER', style: eyebrowStyle.copyWith(color: cyan)),
           const SizedBox(height: 6),
           Text(

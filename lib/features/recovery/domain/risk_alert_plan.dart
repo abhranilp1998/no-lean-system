@@ -99,6 +99,10 @@ List<RiskAlert> buildRiskAlertPlan({
   List<String> userMessages = const [],
   int leadMinutes = 15,
   int inWindowCount = 4,
+
+  /// One line from the user's own if-then plan ("Your plan: If ..."), put
+  /// in the warning and the opening alert. Null when they have none.
+  String? planLine,
 }) {
   final label = window.label;
   final share = facts.windowSharePercent;
@@ -143,6 +147,7 @@ List<RiskAlert> buildRiskAlertPlan({
           triggerLine,
           placeLine,
           cleanLine,
+          planLine,
           'Set the plan before it starts: SOS, move, or call.',
         ]),
       ),
@@ -164,7 +169,12 @@ List<RiskAlert> buildRiskAlertPlan({
             ? 'RISK WINDOW OPEN // $label'
             : 'FOLLOW-UP // WINDOW ENDS ${RiskWindow.formatMinutes(window.endMinutes)}',
         body: isOpen
-            ? join([cleanLine, triggerLine ?? shareLine ?? noDataLine, message])
+            ? join([
+                cleanLine,
+                triggerLine ?? shareLine ?? noDataLine,
+                planLine,
+                message,
+              ])
             : join([
                 message ??
                     'Still inside the window. Tap I\'M SAFE or open SOS.',
