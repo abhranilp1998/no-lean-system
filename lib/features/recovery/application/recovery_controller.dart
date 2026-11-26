@@ -25,6 +25,7 @@ import '../domain/double_tap.dart' as double_tap;
 import '../domain/milestones.dart';
 import '../domain/use_check.dart';
 import '../domain/notification_policy.dart';
+import '../domain/swap_watch.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
 import '../domain/sos_session.dart';
@@ -252,6 +253,11 @@ class RecoveryController extends ChangeNotifier {
 
   /// Home widget privacy: neutral text, no counter, streak or risk state.
   bool widgetPrivacy = false;
+
+  /// Substance swap watch (default on). Missing key keeps this default.
+  bool swapWatchEnabled = true;
+  DateTime? swapWatchDismissedAt;
+  DateTime? swapWatchNotifiedAt;
 
   /// Quiet hours and lock-screen privacy for notifications.
   NotificationPrefs notificationPrefs = const NotificationPrefs();
@@ -560,6 +566,18 @@ class RecoveryController extends ChangeNotifier {
     if (map.containsKey('widgetPrivacy')) {
       widgetPrivacy = map['widgetPrivacy'] != false;
     }
+    // Default on: only an explicit false turns the swap watch off.
+    if (map.containsKey(swapWatchEnabledKey)) {
+      swapWatchEnabled = map[swapWatchEnabledKey] != false;
+    }
+    final dismissed = DateTime.tryParse(
+      map[swapWatchDismissedAtKey]?.toString() ?? '',
+    );
+    if (dismissed != null) swapWatchDismissedAt = dismissed;
+    final notified = DateTime.tryParse(
+      map[swapWatchNotifiedAtKey]?.toString() ?? '',
+    );
+    if (notified != null) swapWatchNotifiedAt = notified;
     if (map.containsKey('quietHoursEnabled') ||
         map.containsKey('quietHours') ||
         map.containsKey('hideSensitiveNotifications')) {
@@ -705,6 +723,11 @@ class RecoveryController extends ChangeNotifier {
     'zoneHistory': zoneHistory,
     'appLockPolicy': appLockPolicy.toJson(),
     'widgetPrivacy': widgetPrivacy,
+    swapWatchEnabledKey: swapWatchEnabled,
+    if (swapWatchDismissedAt != null)
+      swapWatchDismissedAtKey: swapWatchDismissedAt!.toIso8601String(),
+    if (swapWatchNotifiedAt != null)
+      swapWatchNotifiedAtKey: swapWatchNotifiedAt!.toIso8601String(),
     ...notificationPrefs.toJson(),
     'backgroundGeofencing': backgroundGeofencing,
     'intensity': intensity.name,
@@ -1131,6 +1154,11 @@ class RecoveryController extends ChangeNotifier {
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
     'stretchedWidgetView': stretchedWidgetView.name,
+    swapWatchEnabledKey: swapWatchEnabled,
+    if (swapWatchDismissedAt != null)
+      swapWatchDismissedAtKey: swapWatchDismissedAt!.toIso8601String(),
+    if (swapWatchNotifiedAt != null)
+      swapWatchNotifiedAtKey: swapWatchNotifiedAt!.toIso8601String(),
   };
 
   Future<void> pledge() async {
@@ -1985,6 +2013,69 @@ class RecoveryController extends ChangeNotifier {
   Future<void> updateCooldownMinutes(int minutes) => _transaction(() async {
     cooldownMinutes = minutes.clamp(1, 120).toInt();
   });
+
+  /// The swap-watch card to show on the dashboard / weekly view, or null.
+  /// Benzo-only history is counted as benzo days and never moves the lean timer.
+  SwapWatchInsight? get visibleSwapWatch {
+    final insight = detectSwapWatch(events: events, now: _now());
+    return swapWatchIsVisible(
+          insight: insight,
+          enabled: swapWatchEnabled,
+          dismissedAt: swapWatchDismissedAt,
+          now: _now(),
+        )
+        ? insight
+        : null;
+  }
+
+  Future<void> setSwapWatchEnabled(bool enabled) => _transaction(() async {
+    if (swapWatchEnabled == enabled) return;
+    swapWatchEnabled = enabled;
+    if (enabled) {
+      // Turning it back on should let a current insight show again.
+      swapWatchDismissedAt = null;
+    }
+  });
+
+  Future<void> dismissSwapWatch() => _transaction(() async {
+    swapWatchDismissedAt = _now();
+  });
+
+  /// Posts at most one privacy-safe notification a week when the card is
+  /// visible. Quiet hours and "hide sensitive content" are respected.
+  /// Failures never block history or the in-app card.
+  Future<void> offerSwapWatchNotification() async {
+    final visible = visibleSwapWatch != null;
+    final blocked = !notificationPrefs.allows(
+      NotificationKind.swapWatch,
+      _now(),
+    );
+    if (!shouldNotifySwapWatch(
+      visible: visible,
+      notifiedAt: swapWatchNotifiedAt,
+      now: _now(),
+      quietHoursBlocked: blocked,
+    )) {
+      return;
+    }
+    try {
+      await NotificationService.instance.showSwapWatch(
+        notificationPrefs.textFor(
+          swapWatchNotificationTitle,
+          swapWatchNotificationBody,
+        ),
+      );
+    } catch (_) {
+      return;
+    }
+    try {
+      await _transaction(() async {
+        swapWatchNotifiedAt = _now();
+      });
+    } on RecoverySaveException {
+      /* The in-app card still shows; the next open can retry the notice. */
+    }
+  }
 
   Future<void> setSetting(String key, dynamic value) => _transaction(() async {
     bool changed = false;

@@ -15,12 +15,18 @@ enum NotificationKind {
 
   /// 15-minute craving recheck. Non-critical: muted in quiet hours.
   cravingCheck,
+
+  /// Substance swap-watch heads-up. Non-critical: muted in quiet hours.
+  /// Wording must stay privacy-safe (see [swapWatchNotificationTitle]).
+  swapWatch,
 }
 
 extension NotificationKindPolicy on NotificationKind {
   bool get isCritical => switch (this) {
     NotificationKind.riskWindow || NotificationKind.dangerZone => true,
-    NotificationKind.codeTimer || NotificationKind.cravingCheck => false,
+    NotificationKind.codeTimer ||
+    NotificationKind.cravingCheck ||
+    NotificationKind.swapWatch => false,
   };
 }
 
