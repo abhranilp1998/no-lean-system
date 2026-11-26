@@ -19,6 +19,7 @@ import '../application/app_lock_providers.dart';
 import '../domain/exit_plan.dart';
 import '../domain/locked_app.dart';
 import '../services/app_lock_gateway.dart';
+import '../../emergency/presentation/hold_to_text_sos.dart';
 
 enum _Stage { locked, reason, waiting, ready }
 
@@ -306,6 +307,8 @@ class _AppBlockScreenState extends ConsumerState<AppBlockScreen> {
                       icon: Icons.emergency_outlined,
                       color: red,
                       onTap: () => unawaited(_openSos()),
+                      onHoldStart: SosHoldBinding(context, ref).start,
+                      onHold: SosHoldBinding(context, ref).open,
                     ),
                   ),
                   const SizedBox(width: 10),

@@ -9,6 +9,7 @@ import '../../companion/presentation/companion_common.dart';
 import '../../companion/presentation/companion_hub_screen.dart';
 import '../../companion/presentation/struggling_screen.dart';
 import '../../emergency/presentation/emergency_screen.dart';
+import '../../emergency/presentation/hold_to_text_sos.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/recovery_event.dart';
 import '../../recovery/domain/use_check.dart';
@@ -187,12 +188,15 @@ class _State extends ConsumerState<WithdrawalGuideScreen> {
       ],
     );
 
-    final sosButton = FilledButton.icon(
-      key: const Key('open-sos'),
-      style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
-      onPressed: _openSos,
-      icon: const Icon(Icons.sos),
-      label: const Text('Open SOS / trusted contact'),
+    final sosButton = HoldToTextSos(
+      onTap: _openSos,
+      child: FilledButton.icon(
+        key: const Key('open-sos'),
+        style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+        onPressed: () {},
+        icon: const Icon(Icons.sos),
+        label: const Text('Open SOS / trusted contact'),
+      ),
     );
 
     // Timeline with "you are here".

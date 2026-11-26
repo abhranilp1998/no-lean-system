@@ -8,6 +8,7 @@ import '../../../../core/theme/no_lean_visuals.dart';
 import '../../../../core/widgets/glass_card.dart';
 import '../../domain/recovery_insights.dart';
 import '../../domain/verified_safety_briefs.dart';
+import '../../../emergency/presentation/hold_to_text_sos.dart';
 
 class ActionableInsightsPanel extends StatelessWidget {
   const ActionableInsightsPanel({
@@ -280,24 +281,33 @@ class _PatternActionCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              FilledButton.icon(
-                onPressed: () {
+              _maybeHoldToText(
+                insight: insight,
+                onTap: () {
                   AppFeedback.tap();
                   onTap();
                 },
-                icon: const Icon(Icons.arrow_forward, size: 15),
-                label: Text(insight.actionLabel),
-                style: FilledButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  textStyle: const TextStyle(
-                    fontFamily: 'NoLeanMono',
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
+                child: FilledButton.icon(
+                  onPressed: insight.action == PatternActionKind.openSos
+                      ? () {}
+                      : () {
+                          AppFeedback.tap();
+                          onTap();
+                        },
+                  icon: const Icon(Icons.arrow_forward, size: 15),
+                  label: Text(insight.actionLabel),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: accent,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    textStyle: const TextStyle(
+                      fontFamily: 'NoLeanMono',
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
@@ -468,4 +478,13 @@ class _SafetyBriefCardState extends State<_SafetyBriefCard> {
       ),
     );
   }
+}
+
+Widget _maybeHoldToText({
+  required PatternActionInsight insight,
+  required VoidCallback onTap,
+  required Widget child,
+}) {
+  if (insight.action != PatternActionKind.openSos) return child;
+  return HoldToTextSos(onTap: onTap, child: child);
 }

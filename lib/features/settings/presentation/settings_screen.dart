@@ -198,7 +198,7 @@ class SettingsScreen extends ConsumerWidget {
             SettingAction(
               icon: Icons.contact_emergency,
               title: 'Trusted contact',
-              subtitle: 'Emergency dial during SOS',
+              subtitle: 'Call or hold-to-text from SOS',
               color: cyan,
               onTap: () => showTrustedContactDialog(context, ref),
             ),

@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/glow_button.dart';
 import '../../../core/widgets/status_pill.dart';
 import '../domain/zone_alert_copy.dart';
+import '../../emergency/presentation/hold_to_text_sos.dart';
 
 enum ZoneAlertChoice { sos, craving, exit }
 
@@ -145,12 +147,16 @@ class _ZoneAlertScreenState extends State<ZoneAlertScreen> {
               ),
             ),
             const SizedBox(height: 24),
-            GlowButton(
-              key: const ValueKey('zone-alert-sos'),
-              label: 'OPEN SOS',
-              icon: Icons.emergency_outlined,
-              color: red,
-              onTap: () => Navigator.pop(context, ZoneAlertChoice.sos),
+            Consumer(
+              builder: (context, ref, _) => GlowButton(
+                key: const ValueKey('zone-alert-sos'),
+                label: 'OPEN SOS',
+                icon: Icons.emergency_outlined,
+                color: red,
+                onTap: () => Navigator.pop(context, ZoneAlertChoice.sos),
+                onHoldStart: SosHoldBinding(context, ref).start,
+                onHold: SosHoldBinding(context, ref).open,
+              ),
             ),
             const SizedBox(height: 12),
             GlowButton(

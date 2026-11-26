@@ -1,4 +1,5 @@
 import '../domain/slip_tone.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/no_lean_visuals.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../emergency/presentation/emergency_screen.dart';
+import '../../emergency/presentation/hold_to_text_sos.dart';
 import '../application/recovery_provider.dart';
 
 class RelapseCooldownScreen extends ConsumerStatefulWidget {
@@ -165,8 +167,8 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
                 ),
               ],
               const SizedBox(height: 24),
-              FilledButton(
-                onPressed: () {
+              HoldToTextSos(
+                onTap: () {
                   AppFeedback.tap();
                   Navigator.push(
                     context,
@@ -176,11 +178,14 @@ class _RelapseCooldownScreenState extends ConsumerState<RelapseCooldownScreen> {
                     ),
                   );
                 },
-                style: FilledButton.styleFrom(
-                  backgroundColor: purple,
-                  foregroundColor: Colors.white,
+                child: FilledButton(
+                  onPressed: () {},
+                  style: FilledButton.styleFrom(
+                    backgroundColor: purple,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('EMERGENCY SOS'),
                 ),
-                child: const Text('EMERGENCY SOS'),
               ),
               TextButton(
                 onPressed: () => showRelapseLogSheet(context),

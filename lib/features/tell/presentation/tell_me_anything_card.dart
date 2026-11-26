@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../cravings/presentation/craving_dialog.dart';
 import '../../emergency/presentation/emergency_screen.dart';
+import '../../emergency/presentation/hold_to_text_sos.dart';
 import '../../recovery/presentation/relapse_log_sheet.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/use_check.dart';
@@ -79,15 +80,18 @@ class _TellState extends ConsumerState<TellMeAnythingCard> {
       const Text(
         "I hear you. Let's just get through the next 10 minutes together.",
       ),
-      _action('tell-open-sos', 'OPEN SOS', Icons.sos, () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const EmergencyScreen(),
-            fullscreenDialog: true,
-          ),
-        );
-      }),
+      HoldToTextSos(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const EmergencyScreen(),
+              fullscreenDialog: true,
+            ),
+          );
+        },
+        child: _action('tell-open-sos', 'OPEN SOS', Icons.sos, () {}),
+      ),
       _action(
         'tell-log-craving',
         'LOG CRAVING',

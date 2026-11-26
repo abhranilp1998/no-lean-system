@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/app_feedback.dart';
 import '../theme/app_theme.dart';
 import '../theme/no_lean_visuals.dart';
+import 'hold_to_act.dart';
 import 'glass_card.dart';
 
 class ActionTile extends StatelessWidget {
@@ -12,6 +13,9 @@ class ActionTile extends StatelessWidget {
     required this.subtitle,
     required this.color,
     required this.onTap,
+    this.onHold,
+    this.onHoldStart,
+    this.holdDuration,
     super.key,
   });
 
@@ -21,14 +25,21 @@ class ActionTile extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
 
+  /// When set, a ~2 s hold runs this instead of [onTap] (SOS hold-to-text).
+  final VoidCallback? onHold;
+  final VoidCallback? onHoldStart;
+  final Duration? holdDuration;
+
   @override
   Widget build(BuildContext context) {
     final visuals = NoLeanVisuals.of(context);
-    return InkWell(
-      onTap: () {
-        AppFeedback.tap();
-        onTap();
-      },
+    final tile = InkWell(
+      onTap: onHold == null
+          ? () {
+              AppFeedback.tap();
+              onTap();
+            }
+          : null,
       enableFeedback: false,
       borderRadius: BorderRadius.circular(15),
       child: GlassCard(
@@ -76,6 +87,18 @@ class ActionTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+    if (onHold == null) return tile;
+    return HoldToAct(
+      onTap: () {
+        AppFeedback.tap();
+        onTap();
+      },
+      onHold: onHold!,
+      onHoldStart: onHoldStart,
+      duration: holdDuration ?? const Duration(milliseconds: 2000),
+      color: color,
+      child: tile,
     );
   }
 }
