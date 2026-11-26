@@ -1,9 +1,11 @@
 import '../../../core/layout/tab_layout.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../recovery/domain/mixing_safety_net.dart';
 
 import '../../widgets/presentation/widgets_screen.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -211,6 +213,19 @@ class SettingsScreen extends ConsumerWidget {
               color: red,
               onTap: () => _pickMixingNet(context, ref),
             ),
+            SettingToggle(
+              key: const ValueKey('settings-swap-watch'),
+              title: 'Substance swap watch',
+              subtitle: recovery.swapWatchEnabled
+                  ? 'On // a gentle note when lean days drop but another substance rises'
+                  : 'Off // the dashboard card stays hidden',
+              value: recovery.swapWatchEnabled,
+              color: cyan,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).setSwapWatchEnabled(value),
+              ),
+            ),
             SettingAction(
               icon: Icons.schedule,
               title: 'Risk window',
@@ -236,9 +251,8 @@ class SettingsScreen extends ConsumerWidget {
               subtitle:
                   '${recovery.zones.length} marked // ${recovery.streetTiles ? 'street map' : 'grid map'}${recovery.zoneMonitoring || recovery.backgroundGeofencing ? ' // alerts on' : ''}',
               color: red,
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const ZonesScreen())),
+              onTap: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const ZonesScreen())),
             ),
             SettingToggle(
               key: const ValueKey('settings-position-notification'),
@@ -305,8 +319,7 @@ class SettingsScreen extends ConsumerWidget {
               SettingAction(
                 icon: Icons.alarm_on,
                 title: 'Exact alert timing',
-                subtitle:
-                    'Allow exact alarms so alerts land on time; otherwise Android may delay them',
+                subtitle: 'Allow exact alarms so alerts land on time; otherwise Android may delay them',
                 color: red,
                 onTap: () => requestExactAlertTiming(context, ref),
               ),

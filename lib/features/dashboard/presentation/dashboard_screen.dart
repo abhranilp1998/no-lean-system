@@ -32,6 +32,7 @@ import '../../withdrawal/presentation/withdrawal_guide_screen.dart';
 import '../../recovery/presentation/relapse_cooldown_screen.dart';
 import 'widgets/animated_counter.dart';
 import 'widgets/dashboard_notice_center.dart';
+import '../../progress/presentation/widgets/swap_watch_card.dart';
 import 'widgets/risk_window_banner.dart';
 import '../../zones/presentation/zone_use_check_card.dart';
 import '../domain/rough_day.dart';
@@ -154,6 +155,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           if (recovery.welcomeBackSince != null ||
               recovery.relapseCooldownUntil != null)
             const SizedBox(height: 14),
+          if (recovery.visibleSwapWatch != null) ...[
+            SwapWatchCard(
+              insight: recovery.visibleSwapWatch!,
+              onDismiss: () => ref.read(recoveryProvider).dismissSwapWatch(),
+            ),
+            const SizedBox(height: 14),
+          ],
           const CravingRecheckCard(),
           const ZoneUseCheckCard(),
           Row(
@@ -375,9 +383,7 @@ class _RiskSuggestionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     // We cast to List<RecoveryEvent> because the import is available.
     // wait, RecoveryEvent is from domain
-    final highRisk = computeHighRiskHours(
-      events as dynamic,
-    ); // Type hack to avoid another import if needed, but we imported event_derived_state.dart
+    final highRisk = computeHighRiskHours(events as dynamic); // Type hack to avoid another import if needed, but we imported event_derived_state.dart
 
     if (highRisk.isEmpty) {
       return const GlassCard(

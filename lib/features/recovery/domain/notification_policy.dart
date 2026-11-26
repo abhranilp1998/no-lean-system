@@ -18,6 +18,9 @@ enum NotificationKind {
 
   /// "Log it later" nudge from rough-day mode. Non-critical: muted in quiet hours.
   logReminder,
+  /// Substance swap-watch heads-up. Non-critical: muted in quiet hours.
+  /// Wording must stay privacy-safe (see [swapWatchNotificationTitle]).
+  swapWatch,
 }
 
 extension NotificationKindPolicy on NotificationKind {
@@ -25,7 +28,8 @@ extension NotificationKindPolicy on NotificationKind {
     NotificationKind.riskWindow || NotificationKind.dangerZone => true,
     NotificationKind.codeTimer ||
     NotificationKind.cravingCheck ||
-    NotificationKind.logReminder => false,
+    NotificationKind.logReminder ||
+    NotificationKind.swapWatch => false,
   };
 }
 
