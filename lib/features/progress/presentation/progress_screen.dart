@@ -12,6 +12,7 @@ import '../../../core/widgets/status_pill.dart';
 import '../../cravings/presentation/craving_dialog.dart';
 import '../../dashboard/presentation/dashboard_dialogs.dart';
 import '../../emergency/presentation/emergency_screen.dart';
+import '../../recap/presentation/weekly_recap_card.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/recovery_event.dart';
 import '../../settings/presentation/settings_dialogs.dart';
@@ -174,6 +175,8 @@ class ProgressScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 14),
         CravingTimelineCard(points: timeline),
+        const SizedBox(height: 14),
+        const WeeklyRecapSection(),
         const SizedBox(height: 14),
         WeeklySummaryCard(summary: weekly),
         if (recovery.visibleSwapWatch != null) ...[

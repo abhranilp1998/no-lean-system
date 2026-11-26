@@ -633,6 +633,12 @@ class BackupService {
         );
       }
     }
+    final reportMedicines = input['reportMedicines'];
+    if (reportMedicines != null &&
+        (reportMedicines is! String ||
+            reportMedicines.length > maxReportMedicinesLength)) {
+      throw const FormatException('reportMedicines must be short text.');
+    }
     final riskWindow = input['riskWindow'];
     if (riskWindow != null) {
       if (riskWindow is! Map ||
@@ -736,6 +742,9 @@ class BackupService {
           preferences[key] = input[key];
         }
       }
+    }
+    if (reportMedicines != null) {
+      preferences['reportMedicines'] = reportMedicines;
     }
     if (reasons != null) preferences['reasons'] = reasons;
     if (reminders != null) preferences['reminderMessages'] = reminders;

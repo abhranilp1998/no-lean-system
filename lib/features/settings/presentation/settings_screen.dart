@@ -33,6 +33,7 @@ import '../../timeline/presentation/timeline_screen.dart';
 import '../../timeline/domain/history_projection.dart';
 import '../../recovery/domain/dose_units.dart';
 import '../../recovery/domain/risk_window.dart';
+import '../../report/presentation/doctor_report_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -123,6 +124,15 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: 'Every event, spreadsheet-ready // read-only copy',
               color: toxic,
               onTap: () => exportRecoveryCsv(context, recovery),
+            ),
+            SettingAction(
+              key: const ValueKey('settings-doctor-report'),
+              icon: Icons.picture_as_pdf_outlined,
+              title: 'Doctor summary (PDF)',
+              subtitle:
+                  'Made on this phone // saved or shared only when you tap',
+              color: cyan,
+              onTap: () => DoctorReportScreen.open(context),
             ),
             SettingAction(
               icon: Icons.download_outlined,
@@ -357,6 +367,19 @@ class SettingsScreen extends ConsumerWidget {
                 () => ref
                     .read(recoveryProvider)
                     .setSetting('peakHourLock', value),
+              ),
+            ),
+            SettingToggle(
+              key: const ValueKey('settings-weekly-recap'),
+              title: 'Weekly recap',
+              subtitle: recovery.weeklyRecapNotify
+                  ? 'Sunday evening, never in quiet hours // text carries no numbers'
+                  : 'Off // you can still read your week on Progress',
+              value: recovery.weeklyRecapNotify,
+              color: toxic,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref.read(recoveryProvider).updateWeeklyRecapNotify(value),
               ),
             ),
             SettingToggle(

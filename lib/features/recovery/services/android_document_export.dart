@@ -21,10 +21,21 @@ class AndroidDocumentExport {
     String content, {
     required String fileName,
     required String mimeType,
+  }) => saveBytes(
+    Uint8List.fromList(utf8.encode(content)),
+    fileName: fileName,
+    mimeType: mimeType,
+  );
+
+  /// Same verified write for binary files such as a PDF.
+  Future<bool> saveBytes(
+    Uint8List bytes, {
+    required String fileName,
+    required String mimeType,
   }) async {
     try {
       final saved = await _channel.invokeMethod<bool>('save', {
-        'bytes': Uint8List.fromList(utf8.encode(content)),
+        'bytes': bytes,
         'fileName': fileName,
         'mimeType': mimeType,
       });

@@ -31,6 +31,9 @@ enum NotificationKind {
 
   /// 3-day-ahead high-risk date plan nudge. Non-critical: muted in quiet hours.
   highRiskDate,
+
+  /// Optional weekly recap. Non-critical: never delivered in quiet hours.
+  weeklyRecap,
 }
 
 extension NotificationKindPolicy on NotificationKind {
@@ -43,6 +46,7 @@ extension NotificationKindPolicy on NotificationKind {
     NotificationKind.cravingPeak ||
     NotificationKind.dailyCheckIn ||
     NotificationKind.highRiskDate => false,
+    NotificationKind.weeklyRecap => false,
   };
 }
 
