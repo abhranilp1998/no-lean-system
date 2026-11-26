@@ -32,6 +32,7 @@ import '../../recovery/presentation/relapse_cooldown_screen.dart';
 import 'widgets/animated_counter.dart';
 import 'widgets/dashboard_notice_center.dart';
 import 'widgets/risk_window_banner.dart';
+import '../../zones/presentation/zone_use_check_card.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -147,6 +148,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               recovery.relapseCooldownUntil != null)
             const SizedBox(height: 14),
           const CravingRecheckCard(),
+          const ZoneUseCheckCard(),
           Row(
             children: [
               Expanded(

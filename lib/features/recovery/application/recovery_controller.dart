@@ -38,6 +38,8 @@ import '../../widgets/domain/fullscreen_widgets.dart';
 import '../../widgets/services/fullscreen_widget_sync.dart';
 import '../../zones/domain/danger_zone.dart';
 import '../../zones/domain/zone_entry.dart';
+import '../../zones/domain/zone_use_check.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../zones/services/geofence_gateway.dart';
 import '../../zones/services/zone_entry_inbox.dart';
 
@@ -93,7 +95,18 @@ class RecoveryController extends ChangeNotifier {
     Future<void> Function()? cancelCravingCheck,
     Future<bool> Function(UseCheck check)? scheduleUseCheck,
     Future<void> Function()? cancelUseCheck,
-  }) : _scheduleUseCheck =
+    Future<UseCheck?> Function()? peekUseCheck,
+    Future<UseCheck?> Function()? takeUseCheck,
+    Future<String?> Function()? readZoneLedger,
+    Future<void> Function(String value)? writeZoneLedger,
+  }) : _peekUseCheck =
+           peekUseCheck ?? NotificationService.instance.peekPendingUseCheck,
+       _takeUseCheck =
+           takeUseCheck ??
+           (() => NotificationService.instance.takePendingUseCheck()),
+       _readZoneLedger = readZoneLedger ?? _readLedgerPref,
+       _writeZoneLedger = writeZoneLedger ?? _writeLedgerPref,
+       _scheduleUseCheck =
            scheduleUseCheck ?? NotificationService.instance.scheduleUseCheck,
        _cancelUseCheck =
            cancelUseCheck ?? NotificationService.instance.cancelUseCheck,
@@ -130,22 +143,156 @@ class RecoveryController extends ChangeNotifier {
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
   final Future<bool> Function(UseCheck check) _scheduleUseCheck;
   final Future<void> Function() _cancelUseCheck;
+  final Future<UseCheck?> Function() _peekUseCheck;
+  final Future<UseCheck?> Function() _takeUseCheck;
+  final Future<String?> Function() _readZoneLedger;
+  final Future<void> Function(String value) _writeZoneLedger;
+
+  static const zoneLedgerPrefsKey = 'zone_use_check_ledger_v1';
+  static Future<String?> _readLedgerPref() async =>
+      (await SharedPreferences.getInstance()).getString(zoneLedgerPrefsKey);
+  static Future<void> _writeLedgerPref(String value) async {
+    await (await SharedPreferences.getInstance()).setString(
+      zoneLedgerPrefsKey,
+      value,
+    );
+  }
 
   /// The question is answered: a relapse was logged or SOS ended with an
   /// outcome, so the pending "Did you use?" (id 740) must not fire.
   Future<void> cancelUseCheck() async {
+    pendingUseCheck = null;
     try {
       await _cancelUseCheck();
     } catch (_) {}
+    _notify();
   }
 
-  /// (A) Queues the "Did you use?" follow-up. Never blocks local history.
-  Future<void> queueUseCheck(UseCheckTrigger trigger, {DateTime? at}) async {
+  /// The single pending "Did you use?" check, mirrored from the device
+  /// store so the dashboard card can show it. Null when nothing is waiting.
+  UseCheck? pendingUseCheck;
+
+  /// Re-reads the pending check (on open, resume and after answers).
+  Future<void> refreshPendingUseCheck() async {
     try {
-      await _scheduleUseCheck(
-        UseCheck(trigger: trigger, triggeredAt: at ?? _now()),
-      );
+      pendingUseCheck = await _peekUseCheck();
     } catch (_) {}
+    _notify();
+  }
+
+  /// The pending zone check, only once it is due and not expired. Drives the
+  /// dashboard card.
+  UseCheck? get dueZoneUseCheck {
+    final check = pendingUseCheck;
+    final now = _now();
+    if (check == null || !check.trigger.isZoneCheck) return null;
+    if (zoneCheckExpired(check, now) || !check.isDue(now)) return null;
+    return check;
+  }
+
+  /// How many times "No, I stayed clean" was the answer after a zone visit.
+  int get zonesResisted => events
+      .where(
+        (e) =>
+            e.type == RecoveryEventType.cleanCheckIn &&
+            e.metadata['zoneResisted'] == true,
+      )
+      .length;
+
+  /// (A) Queues the "Did you use?" follow-up. Never blocks local history.
+  Future<void> queueUseCheck(
+    UseCheckTrigger trigger, {
+    DateTime? at,
+    String? zoneId,
+    String? zoneName,
+  }) async {
+    // The exit button on a zone alert asks sooner, but only when the visit
+    // check is not already waiting: that one carries the zone and visit time.
+    if (trigger == UseCheckTrigger.zoneExit &&
+        pendingUseCheck?.trigger == UseCheckTrigger.zoneVisit) {
+      return;
+    }
+    final check = UseCheck(
+      trigger: trigger,
+      triggeredAt: at ?? _now(),
+      zoneId: zoneId,
+      zoneName: zoneName,
+    );
+    try {
+      await _scheduleUseCheck(check);
+    } catch (_) {}
+    pendingUseCheck = check;
+    _notify();
+  }
+
+  /// Asks "Did you use?" after a visit to a saved danger zone, unless the
+  /// limits in zone_use_check.dart say not to. Works with zone history off
+  /// and fully offline. Returns whether a check was queued.
+  Future<bool> maybeQueueZoneUseCheck(ZoneEntry entry) async {
+    try {
+      final now = _now();
+      final ledger = ZoneUseCheckLedger.decode(await _readZoneLedger());
+      if (ledger.decide(entry, now) != ZoneUseCheckDecision.ask) return false;
+      await _writeZoneLedger(ledger.withVisit(entry, now).encode());
+      await queueUseCheck(
+        UseCheckTrigger.zoneVisit,
+        at: entry.at,
+        // The place name is only kept when the user keeps zone history on.
+        zoneId: zoneHistory ? entry.zoneId : null,
+        zoneName: zoneHistory ? entry.zoneName : null,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Takes the pending check off the device store (answering it).
+  Future<UseCheck?> takePendingUseCheck() async {
+    UseCheck? check;
+    try {
+      check = await _takeUseCheck();
+    } catch (_) {}
+    pendingUseCheck = null;
+    _notify();
+    return check;
+  }
+
+  /// "No, I stayed clean". A zone check counts as a zone resisted; the
+  /// event is a clean check-in either way. Returns the zones-resisted count.
+  Future<int> answerUseCheckClean(UseCheck? check) async {
+    final zone = check?.trigger.isZoneCheck == true;
+    await appendEvent(
+      RecoveryEvent.create(
+        type: RecoveryEventType.cleanCheckIn,
+        metadata: {
+          if (zone) ...{
+            'source': 'use_check',
+            'zoneResisted': true,
+            if (check!.zoneName != null) 'zoneName': check.zoneName,
+            'visitAt': check.triggeredAt.toIso8601String(),
+          },
+        },
+      ),
+    );
+    return zonesResisted;
+  }
+
+  /// "Not sure / later". Zone checks snooze 30 minutes up to
+  /// [zoneUseCheckMaxSnoozes] times, then are dropped for good. Returns true
+  /// when it will ask again.
+  Future<bool> snoozeUseCheck(UseCheck check) async {
+    if (check.trigger.isZoneCheck && zoneCheckExhausted(check)) {
+      await cancelUseCheck();
+      return false;
+    }
+    final next = check.snoozed(_now());
+    try {
+      await _scheduleUseCheck(next);
+    } catch (_) {}
+    pendingUseCheck = next;
+    _notify();
+    return true;
   }
 
   final Future<void> Function() _cancelCravingCheck;
@@ -1576,18 +1723,23 @@ class RecoveryController extends ChangeNotifier {
 
   /// Records a zone entry when zone history is on. Returns whether it was
   /// recorded (off, or a duplicate of a recent entry, records nothing).
-  Future<bool> recordZoneEntry(ZoneEntry entry) => _transaction(() async {
-    if (!zoneHistory || _isDuplicateEntry(entry)) return false;
-    events.add(
-      RecoveryEvent.create(
-        type: RecoveryEventType.zoneEntry,
-        timestamp: entry.at,
-        metadata: entry.metadata,
-      ),
-    );
-    _sortAndRecompute();
-    return true;
-  });
+  Future<bool> recordZoneEntry(ZoneEntry entry) async {
+    final recorded = await _transaction(() async {
+      if (!zoneHistory || _isDuplicateEntry(entry)) return false;
+      events.add(
+        RecoveryEvent.create(
+          type: RecoveryEventType.zoneEntry,
+          timestamp: entry.at,
+          metadata: entry.metadata,
+        ),
+      );
+      _sortAndRecompute();
+      return true;
+    });
+    // The follow-up question does not depend on zone history being on.
+    unawaited(maybeQueueZoneUseCheck(entry));
+    return recorded;
+  }
 
   /// Imports entries the background geofence left in the inbox. With zone
   /// history off they are discarded, never stored.
@@ -1615,6 +1767,11 @@ class RecoveryController extends ChangeNotifier {
       });
     }
     await _zoneInbox.acknowledge();
+    // Only the newest background visit is asked about: one pending check.
+    if (pending.isNotEmpty) {
+      final latest = pending.reduce((a, b) => b.at.isAfter(a.at) ? b : a);
+      unawaited(maybeQueueZoneUseCheck(latest));
+    }
     return added;
   }
 
