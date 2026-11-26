@@ -8,6 +8,9 @@ import '../features/zones/presentation/zone_use_check_card.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/companion/presentation/urge_surf_screen.dart';
+import '../features/dashboard/domain/rough_day.dart';
+
 import '../core/services/app_feedback.dart';
 import '../core/theme/app_theme.dart';
 import '../core/theme/no_lean_visuals.dart';
@@ -266,10 +269,21 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     );
   }
 
-  /// Daily check-in "Struggling" lands here. It opens the SOS screen, the
-  /// existing urge tool. Hook point for the rough-day home (PR #34) and the
-  /// urge timer: swap the body for their entry point and keep the one call.
-  void _openUrgeTools() => _handleWidgetAction('sos');
+  /// Daily check-in "Struggling" lands here: turns on the calm rough-day
+  /// home (#34) and opens the 10-minute ride-it-out timer (#38), the same
+  /// one rough-day "Ride it out" uses.
+  bool _urgeOpen = false;
+  void _openUrgeTools() {
+    if (!mounted || _urgeOpen) return;
+    _urgeOpen = true;
+    unawaited(
+      ref
+          .read(recoveryProvider)
+          .enterRoughDay(source: RoughDaySource.struggling)
+          .catchError((_) {}),
+    );
+    UrgeSurfScreen.openRideItOut(context).whenComplete(() => _urgeOpen = false);
+  }
 
   /// Daily check-in "Used" while the relapse lock is on (or an unwritable
   /// background answer): same one-tap slip, at the tap time, flagged for

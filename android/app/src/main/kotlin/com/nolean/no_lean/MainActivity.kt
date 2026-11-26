@@ -29,6 +29,9 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enqueueWidgetAction(intent)
+        if (intent?.getBooleanExtra(EXTRA_APP_BLOCK, false) == true) {
+            DeviceDebugLog.block("MainActivity.onCreate (cold start) with APP_BLOCK")
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -160,6 +163,7 @@ class MainActivity : FlutterFragmentActivity() {
         setIntent(intent)
         enqueueWidgetAction(intent)
         if (intent.getBooleanExtra(EXTRA_APP_BLOCK, false)) {
+            DeviceDebugLog.block("MainActivity.onNewIntent APP_BLOCK; channel=${appLockChannel != null}")
             // The request itself is queued by AppLockService; Dart drains it.
             intent.removeExtra(EXTRA_APP_BLOCK)
             appLockChannel?.notifyBlocksAvailable()

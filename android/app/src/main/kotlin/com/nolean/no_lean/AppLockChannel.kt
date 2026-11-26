@@ -59,7 +59,11 @@ class AppLockChannel(private val activity: Activity, messenger: BinaryMessenger)
                         AppLockHealth.check(activity)
                         result.success(true)
                     }
-                    "drainBlocks" -> result.success(AppLockConfig.drainBlocks(activity))
+                    "drainBlocks" -> {
+                        val blocks = AppLockConfig.drainBlocks(activity)
+                        DeviceDebugLog.block("drainBlocks from Dart -> count=${blocks.size}")
+                        result.success(blocks)
+                    }
                     else -> result.notImplemented()
                 }
             } catch (error: Exception) {
@@ -69,6 +73,7 @@ class AppLockChannel(private val activity: Activity, messenger: BinaryMessenger)
     }
 
     fun notifyBlocksAvailable() {
+        DeviceDebugLog.block("notifyBlocksAvailable -> Dart")
         channel.invokeMethod("blocksAvailable", null)
     }
 

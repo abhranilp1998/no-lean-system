@@ -188,14 +188,20 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
   }
 
   Future<void> _drain() async {
+    _debugLog(
+      'drain mounted=$mounted blockOpen=$_blockOpen '
+      'supported=${_gateway.isSupportedPlatform}',
+    );
     if (!mounted || _blockOpen || !_gateway.isSupportedPlatform) return;
     List<AppBlockRequest> requests;
     try {
       requests = await _gateway.drainBlockRequests();
-    } catch (_) {
+    } catch (error) {
+      _debugLog('drainBlockRequests FAILED: $error');
       // A failed native read can be retried on the next signal or resume.
       return;
     }
+    _debugLog('drained ${requests.length} request(s)');
     if (!mounted || requests.isEmpty || _blockOpen) return;
     final request = requests.last;
     final recovery = ref.read(recoveryProvider);
@@ -220,14 +226,25 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
         (!unconfirmed &&
             (!policy.enabled ||
                 !policy.enabledPackages.contains(request.packageName)))) {
+      _debugLog(
+        'SKIP ${request.packageName}: neverLockable='
+        '${isNeverLockable(request.packageName)} unconfirmed=$unconfirmed '
+        'enabled=${policy.enabled} listed='
+        '${policy.enabledPackages.contains(request.packageName)}',
+      );
       return;
     }
     _blockOpen = true;
     _blockingPackage = request.packageName;
     final route = AppBlockScreen.route(request);
     _blockRoute = route;
+    _debugLog('push AppBlockScreen for ${request.packageName}');
     try {
       await Navigator.of(context).push(route);
+      _debugLog('AppBlockScreen closed for ${request.packageName}');
+    } catch (error) {
+      _debugLog('AppBlockScreen push FAILED: $error');
+      rethrow;
     } finally {
       _blockOpen = false;
       _blockRoute = null;
@@ -241,4 +258,11 @@ class _AppLockHostState extends ConsumerState<AppLockHost>
     ref.listen(appLockRetryProvider, (_, _) => unawaited(_sync(force: true)));
     return widget.child;
   }
+}
+
+/// TEST BUILD ONLY: logcat lines (tag `flutter`, prefix `NL.AppBlockDart`)
+/// for debugging the danger-zone block overlay on a real phone.
+void _debugLog(String message) {
+  // ignore: avoid_print
+  print('NL.AppBlockDart: $message');
 }

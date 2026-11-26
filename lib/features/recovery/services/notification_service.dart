@@ -334,8 +334,10 @@ class NotificationService {
     if (checkInInQuietHours(prefs, minutes)) return false;
     try {
       await _initialize(requestPermission: true);
-      final copy = dailyCheckInCopy(hideSensitive: prefs.hideSensitive);
-      final channel = dailyCheckInChannel;
+      final surface = dailyCheckInSurface(
+        prefs: prefs,
+        usedOpensApp: usedOpensApp,
+      );
       final now = tz.TZDateTime.now(tz.local);
       var when = tz.TZDateTime(
         tz.local,
@@ -350,47 +352,10 @@ class NotificationService {
         exactAllowed: await exactAlarmsAllowed(),
         schedule: (mode) => _plugin.zonedSchedule(
           dailyCheckInId,
-          copy.title,
-          copy.body,
+          surface.title,
+          surface.body,
           when,
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              channel.id,
-              prefs.hideSensitive ? channel.privateName : channel.publicName,
-              channelDescription: prefs.hideSensitive
-                  ? channel.privateDescription
-                  : channel.publicDescription,
-              importance: Importance.high,
-              priority: Priority.high,
-              visibility: lockScreenVisibility,
-              category: AndroidNotificationCategory.reminder,
-              ticker: copy.title,
-              styleInformation: BigTextStyleInformation(
-                copy.body,
-                contentTitle: copy.title,
-              ),
-              actions: [
-                AndroidNotificationAction(
-                  checkInOkayAction,
-                  copy.okayLabel,
-                  showsUserInterface: false,
-                  cancelNotification: true,
-                ),
-                AndroidNotificationAction(
-                  checkInStrugglingAction,
-                  copy.strugglingLabel,
-                  showsUserInterface: true,
-                  cancelNotification: true,
-                ),
-                AndroidNotificationAction(
-                  usedOpensApp ? checkInUsedOpenAction : checkInUsedAction,
-                  copy.usedLabel,
-                  showsUserInterface: usedOpensApp,
-                  cancelNotification: true,
-                ),
-              ],
-            ),
-          ),
+          NotificationDetails(android: androidDetailsFor(surface)),
           androidScheduleMode: mode,
           matchDateTimeComponents: DateTimeComponents.time,
         ),
@@ -727,40 +692,16 @@ class NotificationService {
       );
       if (!prefs.allows(NotificationKind.cravingPeak, sample)) return;
       await _initialize(requestPermission: true);
-      final text = prefs.textFor(plan.copy.title, plan.copy.body);
-      final channel = cravingPeakChannel;
+      final text = cravingPeakSurface(
+        prefs: prefs,
+        title: plan.copy.title,
+        body: plan.copy.body,
+      );
       final details = NotificationDetails(
-        android: AndroidNotificationDetails(
-          channel.id,
-          prefs.hideSensitive ? channel.privateName : channel.publicName,
-          channelDescription: prefs.hideSensitive
-              ? channel.privateDescription
-              : channel.publicDescription,
-          importance: Importance.high,
-          priority: Priority.high,
+        android: androidDetailsFor(
+          text,
           color: red,
-          colorized: !prefs.hideSensitive,
-          visibility: lockScreenVisibility,
-          category: AndroidNotificationCategory.reminder,
-          ticker: text.title,
-          styleInformation: BigTextStyleInformation(
-            text.body,
-            contentTitle: text.title,
-          ),
-          actions: [
-            AndroidNotificationAction(
-              'action_code',
-              prefs.label('CODE INSTEAD', 'START TASK'),
-              showsUserInterface: true,
-              cancelNotification: true,
-            ),
-            AndroidNotificationAction(
-              'action_sos',
-              prefs.label('OPEN SOS', 'OPEN'),
-              showsUserInterface: true,
-              cancelNotification: true,
-            ),
-          ],
+          colorized: !text.hideSensitive,
         ),
       );
       var exactAllowed = await exactAlarmsAllowed();

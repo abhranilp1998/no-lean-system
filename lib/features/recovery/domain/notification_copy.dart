@@ -1,4 +1,6 @@
 import '../../zones/domain/position_status.dart';
+import 'craving_peak.dart';
+import 'daily_check_in.dart';
 import 'notification_policy.dart';
 import 'risk_alert_plan.dart';
 import 'risk_window.dart';
@@ -130,8 +132,28 @@ class NotificationChannels {
     importance: NotificationChannelImportance.defaultImportance,
   );
 
+  /// #37 heads-up before a usual peak. Wording from [cravingPeakChannel].
+  static final cravingPeak = NotificationChannelCopy(
+    id: cravingPeakChannel.id,
+    publicName: cravingPeakChannel.publicName,
+    publicDescription: cravingPeakChannel.publicDescription,
+    privateName: cravingPeakChannel.privateName,
+    privateDescription: cravingPeakChannel.privateDescription,
+    importance: NotificationChannelImportance.high,
+  );
+
+  /// #39 daily check-in. Wording from [dailyCheckInChannel].
+  static final dailyCheckIn = NotificationChannelCopy(
+    id: dailyCheckInChannel.id,
+    publicName: dailyCheckInChannel.publicName,
+    publicDescription: dailyCheckInChannel.publicDescription,
+    privateName: dailyCheckInChannel.privateName,
+    privateDescription: dailyCheckInChannel.privateDescription,
+    importance: NotificationChannelImportance.high,
+  );
+
   /// Every channel the Dart notification service posts through.
-  static const all = <NotificationChannelCopy>[
+  static final all = <NotificationChannelCopy>[
     riskWindow,
     dangerZone,
     positionStatus,
@@ -139,6 +161,8 @@ class NotificationChannels {
     useCheck,
     zoneFollowUp,
     cravingCheck,
+    cravingPeak,
+    dailyCheckIn,
   ];
 }
 
@@ -369,6 +393,57 @@ NotificationSurface cravingCheckSurface({required NotificationPrefs prefs}) =>
       ],
     );
 
+/// #37 usual-peak heads-up.
+NotificationSurface cravingPeakSurface({
+  required NotificationPrefs prefs,
+  required String title,
+  required String body,
+}) => _surface(
+  source: 'cravingPeak',
+  channel: NotificationChannels.cravingPeak,
+  prefs: prefs,
+  title: title,
+  body: body,
+  actions: [
+    _action(prefs, 'action_code', 'CODE INSTEAD', 'START TASK'),
+    _action(prefs, 'action_sos', 'OPEN SOS', 'OPEN'),
+  ],
+);
+
+/// #39 daily check-in. Its private wording comes from [dailyCheckInCopy]
+/// (custom labels, not [NotificationPrefs.textFor]).
+NotificationSurface dailyCheckInSurface({
+  required NotificationPrefs prefs,
+  bool usedOpensApp = false,
+}) {
+  final copy = dailyCheckInCopy(hideSensitive: prefs.hideSensitive);
+  return NotificationSurface(
+    source: 'dailyCheckIn',
+    channel: NotificationChannels.dailyCheckIn,
+    title: copy.title,
+    body: copy.body,
+    ticker: copy.title,
+    lockScreenPublic: prefs.hideSensitive,
+    hideSensitive: prefs.hideSensitive,
+    actions: [
+      NotificationActionCopy(
+        id: checkInOkayAction,
+        label: copy.okayLabel,
+        showsUserInterface: false,
+      ),
+      NotificationActionCopy(
+        id: checkInStrugglingAction,
+        label: copy.strugglingLabel,
+      ),
+      NotificationActionCopy(
+        id: usedOpensApp ? checkInUsedOpenAction : checkInUsedAction,
+        label: copy.usedLabel,
+        showsUserInterface: usedOpensApp,
+      ),
+    ],
+  );
+}
+
 /// Every Flutter notification the app can post, with representative copy.
 /// Native app-lock notifications are listed in [nativeNotificationSources].
 List<NotificationSurface> everyFlutterNotificationSurface(
@@ -432,6 +507,13 @@ List<NotificationSurface> everyFlutterNotificationSurface(
     zoneFollowUpSurface(prefs: prefs, index: 0),
     zoneFollowUpSurface(prefs: prefs, index: 1),
     cravingCheckSurface(prefs: prefs),
+    cravingPeakSurface(
+      prefs: prefs,
+      title: 'USUAL PEAK IN 30 MIN',
+      body: 'Cravings often hit around 21:00. Have a plan ready.',
+    ),
+    dailyCheckInSurface(prefs: prefs),
+    dailyCheckInSurface(prefs: prefs, usedOpensApp: true),
   ];
 }
 

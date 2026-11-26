@@ -49,12 +49,15 @@ class AppLockService : Service() {
     private var lastZoneCheck = 0L
     private var lastBeat = 0L
     private var insideZone: AppLockConfig.Zone? = null
+    private var lastActive: Boolean? = null
+    private var lastSkipLogged: String? = null
 
     private val tick = object : Runnable {
         override fun run() {
             val delay = try {
                 poll()
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                DeviceDebugLog.blockFail("poll crashed: ${error.javaClass.simpleName}: ${error.message}", error)
                 // Never crash-loop and never block on an error.
                 5_000L
             }
@@ -71,6 +74,12 @@ class AppLockService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         config = AppLockConfig.load(this)
+        DeviceDebugLog.service(
+            "onStartCommand armed=${config.armed} usageAccess=${hasUsageAccess(this)} " +
+                "overlay=${AppLockHealth.canDrawOverlays(this)} sdk=${Build.VERSION.SDK_INT} " +
+                "packages=${config.packages.size} zoneLock=${config.lockInsideDangerZones} " +
+                "zones=${config.zones.size} scheduleActive=${config.scheduleActive(Calendar.getInstance())}",
+        )
         if (!config.armed || !hasUsageAccess(this)) {
             startInForeground()
             stopSelfSafely(if (config.armed) "usage_access" else null)
@@ -87,12 +96,14 @@ class AppLockService : Service() {
     }
 
     override fun onDestroy() {
+        DeviceDebugLog.service("onDestroy")
         running = false
         handler.removeCallbacks(tick)
         super.onDestroy()
     }
 
     private fun stopSelfSafely(reason: String? = null) {
+        DeviceDebugLog.service("stopSelf reason=${reason ?: "disarmed"}")
         if (reason != null) {
             // Never a silent stop while armed: tell the user the shield is off.
             AppLockHealth.recordStop(this, reason)
@@ -128,6 +139,7 @@ class AppLockService : Service() {
                 return 60_000L
             }
             if (!AppLockHealth.canDrawOverlays(this)) {
+                DeviceDebugLog.blockFail("overlay permission missing: block screen cannot launch from background")
                 AppLockHealth.showAlert(this, "overlay", config.hideSensitive)
             } else {
                 AppLockHealth.clearAlert(this)
@@ -140,14 +152,32 @@ class AppLockService : Service() {
         }
         if (config.lockInsideDangerZones && config.zones.isNotEmpty() && now - lastZoneCheck > 30_000L) {
             lastZoneCheck = now
+            val before = insideZone?.id
             insideZone = currentZone()
+            DeviceDebugLog.zone("zone check inside=${insideZone?.id ?: "none"} (was ${before ?: "none"}) zones=${config.zones.size}")
         }
         val zoneActive = config.lockInsideDangerZones && insideZone != null
         val active = zoneActive || config.scheduleActive(Calendar.getInstance())
+        if (active != lastActive) {
+            lastActive = active
+            DeviceDebugLog.service("lock active=$active zoneActive=$zoneActive zoneLock=${config.lockInsideDangerZones}")
+        }
+        val previousForeground = foregroundPackage
         updateForeground(now)
+        if (foregroundPackage != previousForeground) {
+            DeviceDebugLog.service("foreground=${foregroundPackage ?: "?"} listed=${foregroundPackage?.let { config.packages.contains(it) } ?: false} active=$active")
+        }
         if (!active) return if (config.lockInsideDangerZones) 2_000L else 5_000L
         val pkg = foregroundPackage ?: return 1_000L
+        if (config.packages.contains(pkg) && !shouldBlock(pkg, now) && pkg != lastSkipLogged) {
+            lastSkipLogged = pkg
+            DeviceDebugLog.block(
+                "not blocking $pkg protected=${AppLockProtected.isProtected(this, pkg, config)} " +
+                    "granted=${AppLockConfig.isGranted(this, pkg, now)}",
+            )
+        }
         if (shouldBlock(pkg, now)) {
+            lastSkipLogged = null
             if (pkg != lastBlockedPackage || now - lastBlockAt > 3_000L) {
                 lastBlockedPackage = pkg
                 lastBlockAt = now
@@ -181,7 +211,10 @@ class AppLockService : Service() {
     private fun currentZone(): AppLockConfig.Zone? {
         val fine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) return null
+        if (!fine && !coarse) {
+            DeviceDebugLog.zone("no location permission (fine=$fine coarse=$coarse)")
+            return null
+        }
         return try {
             val manager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
             var best: Location? = null
@@ -199,10 +232,15 @@ class AppLockService : Service() {
             requestFreshFix(manager, fine)
             val fresh = freshFix
             val fix = listOfNotNull(best, fresh).maxByOrNull { it.time } ?: return null
+            DeviceDebugLog.zone("fix provider=${fix.provider} ageSec=${(now - fix.time) / 1000} accuracyM=${fix.accuracy.toInt()} fresh=${fix === fresh}")
             // Only a recent fix (2 min) is evidence of where the user is now.
-            if (now - fix.time > 2 * 60 * 1000L) return insideZone
+            if (now - fix.time > 2 * 60 * 1000L) {
+                DeviceDebugLog.zone("fix too old; keeping inside=${insideZone?.id ?: "none"}")
+                return insideZone
+            }
             AppLockConfig.zoneFor(config.zones, fix, insideZone?.id)
-        } catch (_: SecurityException) {
+        } catch (error: SecurityException) {
+            DeviceDebugLog.zone("location SecurityException: ${error.message}")
             null
         }
     }
@@ -248,17 +286,28 @@ class AppLockService : Service() {
                     Intent.FLAG_ACTIVITY_REORDER_TO_FRONT,
             )
         var started = false
+        val overlay = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || Settings.canDrawOverlays(this)
+        DeviceDebugLog.block(
+            "launch attempt pkg=$pkg cause=${if (zone != null) "zone" else "schedule"} " +
+                "zone=${zone?.id ?: "-"} overlay=$overlay sdk=${Build.VERSION.SDK_INT} " +
+                "interactive=${(getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive}",
+        )
         // Android 10+ only lets a background app open an activity when it
         // may display over other apps; without it, fall back to a prompt.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || Settings.canDrawOverlays(this)) {
+        if (overlay) {
             started = try {
                 startActivity(intent)
+                DeviceDebugLog.block("startActivity returned OK (MIUI may still drop it silently: needs 'Display pop-up windows while running in the background')")
                 true
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                DeviceDebugLog.blockFail("startActivity failed: ${error.javaClass.simpleName}: ${error.message}", error)
                 false
             }
         }
-        if (!started) postBlockPrompt(intent)
+        if (!started) {
+            DeviceDebugLog.blockFail("falling back to block notification (overlay=$overlay)")
+            postBlockPrompt(intent)
+        }
     }
 
     private fun postBlockPrompt(intent: Intent) {
@@ -282,7 +331,9 @@ class AppLockService : Service() {
             .build()
         try {
             manager.notify(BLOCK_NOTIFICATION_ID, notification)
-        } catch (_: SecurityException) {
+            DeviceDebugLog.block("block notification posted")
+        } catch (error: SecurityException) {
+            DeviceDebugLog.blockFail("block notification failed (notification permission?)", error)
         }
     }
 
@@ -376,6 +427,7 @@ class AppLockService : Service() {
             val intent = Intent(context, AppLockService::class.java)
             AppLockHealth.scheduleWatchdog(context)
             if (!config.armed || !hasUsageAccess(context)) {
+                DeviceDebugLog.service("sync: not starting armed=${config.armed} usageAccess=${hasUsageAccess(context)}")
                 if (running) context.stopService(intent)
                 if (config.armed) {
                     AppLockHealth.recordStop(context, "usage_access")
@@ -384,6 +436,7 @@ class AppLockService : Service() {
                 return false
             }
             startRequestedAt = System.currentTimeMillis()
+            DeviceDebugLog.service("sync: starting service")
             return try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)
@@ -391,7 +444,8 @@ class AppLockService : Service() {
                     context.startService(intent)
                 }
                 true
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                DeviceDebugLog.service("sync: start failed ${error.javaClass.simpleName}: ${error.message}")
                 // e.g. background start not allowed right now; the app retries on resume.
                 startRequestedAt = 0L
                 false

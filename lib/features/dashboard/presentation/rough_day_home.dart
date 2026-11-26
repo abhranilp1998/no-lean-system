@@ -10,7 +10,9 @@ import '../../../core/widgets/glow_button.dart';
 import '../../companion/presentation/companion_common.dart';
 import '../../companion/presentation/struggling_screen.dart';
 import '../../companion/presentation/urge_surf_screen.dart';
+import '../../plans/presentation/plan_card.dart';
 import '../../recovery/application/recovery_controller.dart';
+import '../../recovery/domain/if_then_plan.dart';
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/presentation/relapse_log_sheet.dart';
 import 'dashboard_dialogs.dart';
@@ -77,6 +79,11 @@ class RoughDayHome extends ConsumerWidget {
           copy.body,
           style: const TextStyle(fontSize: 15, height: 1.45, color: muted),
         ),
+        // #40: the user's own if-then plan, when they have one.
+        if (plansForCraving(recovery.ifThenPlans).isNotEmpty) ...[
+          const SizedBox(height: 16),
+          PlanCard(plans: plansForCraving(recovery.ifThenPlans)),
+        ],
         if (recovery.welcomeBackSince != null ||
             recovery.relapseCooldownUntil != null) ...[
           const SizedBox(height: 16),
@@ -111,7 +118,7 @@ class RoughDayHome extends ConsumerWidget {
               onRideItOut!();
               return;
             }
-            UrgeSurfScreen.open(context);
+            UrgeSurfScreen.openRideItOut(context);
           },
         ),
         const SizedBox(height: 14),
