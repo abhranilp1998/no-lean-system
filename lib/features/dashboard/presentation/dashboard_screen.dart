@@ -35,6 +35,7 @@ import '../../recovery/presentation/relapse_cooldown_screen.dart';
 import 'widgets/animated_counter.dart';
 import 'widgets/dashboard_notice_center.dart';
 import '../../progress/presentation/widgets/swap_watch_card.dart';
+import '../../dates/presentation/high_risk_dates_card.dart';
 import 'widgets/risk_window_banner.dart';
 import '../../zones/presentation/zone_use_check_card.dart';
 import '../domain/rough_day.dart';
@@ -252,7 +253,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
+          const HighRiskDatesCard(),
+          const SizedBox(height: 8),
           Text(
             'ADAPTIVE INSIGHT',
             style: eyebrowStyle.copyWith(color: magenta),

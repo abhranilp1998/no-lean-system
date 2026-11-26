@@ -738,6 +738,34 @@ class BackupService {
     for (final key in ['dailyCheckIn', 'dailyCheckInMinutes']) {
       if (input.containsKey(key)) preferences[key] = input[key];
     }
+    // Optional high-risk date keys: never fail a backup over them.
+    if (input['highRiskDateReminders'] is bool) {
+      preferences['highRiskDateReminders'] = input['highRiskDateReminders'];
+    }
+    if (input['weekdayNudges'] is bool) {
+      preferences['weekdayNudges'] = input['weekdayNudges'];
+    }
+    final payday = input['paydayDay'];
+    if (payday is int && payday >= 1 && payday <= 31) {
+      preferences['paydayDay'] = payday;
+    } else if (payday is num &&
+        payday == payday.roundToDouble() &&
+        payday.round() >= 1 &&
+        payday.round() <= 31) {
+      preferences['paydayDay'] = payday.round();
+    }
+    final custom = input['customHighRiskDates'];
+    if (custom is List) {
+      preferences['customHighRiskDates'] = custom;
+    }
+    final disabled = input['disabledBundledDateIds'];
+    if (disabled is List) {
+      preferences['disabledBundledDateIds'] = disabled;
+    }
+    final plans = input['highRiskPlans'];
+    if (plans is Map) {
+      preferences['highRiskPlans'] = Map<String, dynamic>.from(plans);
+    }
     return preferences;
   }
 

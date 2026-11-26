@@ -13,6 +13,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../../../core/theme/app_theme.dart';
 import '../domain/notification_copy.dart';
 import '../domain/craving_peak.dart';
+import '../../dates/domain/high_risk_dates.dart';
 import '../domain/notification_policy.dart';
 import '../../dashboard/domain/rough_day.dart';
 import '../domain/risk_alert_plan.dart';
@@ -465,6 +466,14 @@ class NotificationService {
     if (payload == logLaterPayload || notificationId == logLaterId) {
       return logLaterOpenAction;
     }
+    if (payload != null && payload.startsWith(highRiskPayloadPrefix)) {
+      return '$highRiskPlanAction${payload.substring(highRiskPayloadPrefix.length)}';
+    }
+    if (notificationId != null &&
+        notificationId >= highRiskDateIdStart &&
+        notificationId <= highRiskDateIdEnd) {
+      return highRiskPlanAction;
+    }
     return notificationId == useCheckId ? useCheckOpenAction : null;
   }
 
@@ -527,7 +536,8 @@ class NotificationService {
 
   static const cravingCheckId = 710;
   // 750 is the rough-day log-later nudge (#34).
-  static const swapWatchId = 760;
+  static const swapWatchId =
+      790; // 750 = log-later (#34), 760–775 = high-risk dates (#41)
 
   /// Delay before the craving recheck prompt.
   static const cravingCheckDelay = Duration(minutes: 15);
@@ -768,6 +778,63 @@ class NotificationService {
   Future<void> _cancelScheduled() async {
     for (var id = riskAlertFirstId; id <= riskAlertLastId; id++) {
       await _plugin.cancel(id);
+    }
+  }
+
+  Future<void> cancelHighRiskDateReminders() async {
+    try {
+      await _initialize(requestPermission: false);
+      for (var id = highRiskDateIdStart; id <= highRiskDateIdEnd; id++) {
+        await _plugin.cancel(id);
+      }
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
+  /// Posts the 3-day-ahead plan nudges. Quiet hours and private wording
+  /// are already applied on each [HighRiskNudge].
+  Future<void> scheduleHighRiskDateReminders(List<HighRiskNudge> nudges) async {
+    await cancelHighRiskDateReminders();
+    if (nudges.isEmpty) return;
+    try {
+      await _initialize(requestPermission: true);
+      final exactAllowed = await exactAlarmsAllowed();
+      for (final nudge in nudges) {
+        if (nudge.id < highRiskDateIdStart || nudge.id > highRiskDateIdEnd) {
+          continue;
+        }
+        if (!prefs.allows(NotificationKind.highRiskDate, nudge.fireAt)) {
+          continue;
+        }
+        final text = prefs.textFor(nudge.title, nudge.body);
+        await scheduleWithExactFallback(
+          exactAllowed: exactAllowed,
+          schedule: (mode) => _plugin.zonedSchedule(
+            nudge.id,
+            text.title,
+            text.body,
+            tz.TZDateTime.from(nudge.fireAt, tz.local),
+            NotificationDetails(
+              android: AndroidNotificationDetails(
+                'high_risk_dates_v1',
+                'Upcoming date reminders',
+                channelDescription:
+                    'Reminds you a few days before a date you want to plan for',
+                importance: Importance.defaultImportance,
+                priority: Priority.defaultPriority,
+                visibility: lockScreenVisibility,
+                category: AndroidNotificationCategory.reminder,
+                ticker: neutralNotificationText.title,
+              ),
+            ),
+            androidScheduleMode: mode,
+            payload: '$highRiskPayloadPrefix${nudge.key}',
+          ),
+        );
+      }
+    } catch (_) {
+      // Notifications never block local history.
     }
   }
 }

@@ -23,6 +23,9 @@ import '../features/cravings/presentation/craving_dialog.dart';
 import '../features/cravings/presentation/craving_wave_screen.dart';
 import '../features/zones/presentation/zones_screen.dart';
 import '../features/dashboard/presentation/dashboard_screen.dart';
+import '../features/dates/domain/high_risk_dates.dart';
+import '../features/dates/presentation/high_risk_dates_screen.dart';
+import '../features/dates/presentation/high_risk_plan_sheet.dart';
 import '../features/emergency/presentation/emergency_screen.dart';
 import '../features/progress/presentation/milestone_celebration.dart';
 import '../features/progress/presentation/progress_screen.dart';
@@ -121,6 +124,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
           unawaited(_importZoneInbox());
           unawaited(ref.read(recoveryProvider).refreshPendingUseCheck());
           unawaited(_importCheckIns());
+          unawaited(_syncHighRiskDateReminders());
         }),
       );
       unawaited(WidgetActionService.instance.initialize());
@@ -256,6 +260,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       unawaited(_importCheckIns());
       unawaited(_syncMilestones());
       unawaited(ref.read(recoveryProvider).refreshPendingUseCheck());
+      unawaited(_syncHighRiskDateReminders());
     }
   }
 
@@ -353,6 +358,26 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     } catch (_) {
       /* Entries stay in the inbox until the next resume. */
     }
+  }
+
+  Future<void> _syncHighRiskDateReminders() async {
+    if (!mounted) return;
+    try {
+      await ref.read(recoveryProvider).resyncHighRiskDateReminders();
+    } catch (_) {
+      /* Retried on the next resume. */
+    }
+  }
+
+  Future<void> _openHighRiskPlan(String key) async {
+    if (!mounted) return;
+    final recovery = ref.read(recoveryProvider);
+    final item = recovery.highRiskOccurrenceByKey(key);
+    if (item == null) {
+      await HighRiskDatesScreen.open(context);
+      return;
+    }
+    await showHighRiskPlanSheet(context, ref, item);
   }
 
   Future<void> _syncMilestones() async {
@@ -567,6 +592,12 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
 
   void _handleNotificationAction(String actionId) {
     if (!mounted) return;
+    if (actionId.startsWith(highRiskPlanAction)) {
+      unawaited(
+        _openHighRiskPlan(actionId.substring(highRiskPlanAction.length)),
+      );
+      return;
+    }
     if (actionId == 'action_sos') {
       _handleWidgetAction('sos');
     } else if (actionId == 'action_crave') {

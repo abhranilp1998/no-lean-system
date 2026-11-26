@@ -28,6 +28,9 @@ enum NotificationKind {
 
   /// Daily one-tap check-in. Non-critical: muted in quiet hours.
   dailyCheckIn,
+
+  /// 3-day-ahead high-risk date plan nudge. Non-critical: muted in quiet hours.
+  highRiskDate,
 }
 
 extension NotificationKindPolicy on NotificationKind {
@@ -38,7 +41,8 @@ extension NotificationKindPolicy on NotificationKind {
     NotificationKind.logReminder ||
     NotificationKind.swapWatch ||
     NotificationKind.cravingPeak ||
-    NotificationKind.dailyCheckIn => false,
+    NotificationKind.dailyCheckIn ||
+    NotificationKind.highRiskDate => false,
   };
 }
 

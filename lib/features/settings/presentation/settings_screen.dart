@@ -28,6 +28,7 @@ import '../services/recovery_export_service.dart';
 import 'settings_dialogs.dart';
 import 'trusted_contact_dialog.dart';
 import 'widgets/settings_controls.dart';
+import '../../dates/presentation/high_risk_dates_screen.dart';
 import '../../zones/presentation/zones_screen.dart';
 import '../../timeline/presentation/timeline_screen.dart';
 import '../../timeline/domain/history_projection.dart';
@@ -358,6 +359,27 @@ class SettingsScreen extends ConsumerWidget {
                     .read(recoveryProvider)
                     .setSetting('riskReminders', value),
               ),
+            ),
+            SettingToggle(
+              key: const Key('high-risk-reminders-toggle-settings'),
+              title: 'High-risk date reminders',
+              subtitle:
+                  'A plan nudge three days before festivals, your dates, and payday. On by default.',
+              value: recovery.highRiskDateReminders,
+              color: cyan,
+              onChanged: (value) => saveAction(
+                context,
+                () =>
+                    ref.read(recoveryProvider).setHighRiskDateReminders(value),
+              ),
+            ),
+            SettingAction(
+              key: const Key('high-risk-dates-settings'),
+              icon: Icons.event_note_outlined,
+              title: 'High-risk dates',
+              subtitle: 'Festivals, your dates, payday, and a harder weekday',
+              color: cyan,
+              onTap: () => HighRiskDatesScreen.open(context),
             ),
             if (recovery.riskReminders)
               SettingAction(
