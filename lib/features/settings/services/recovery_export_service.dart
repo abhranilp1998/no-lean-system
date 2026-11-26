@@ -147,10 +147,13 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
         // Check-ins are optional; events already merged.
       }
       if (context.mounted) {
+        final keptWindow = recovery.lastImportKeptRiskWindow;
         AppNotice.show(
           context,
           choice.restorePreferences
-              ? 'BACKUP MERGED // EVENTS AND CUSTOMIZATIONS RESTORED.'
+              ? keptWindow
+                    ? 'BACKUP MERGED // CUSTOMIZATIONS RESTORED. RISK WINDOW KEPT — THE BACKUP WOULD HAVE SHORTENED LOCK HOURS. CHANGE IT IN SETTINGS WITH YOUR PIN IF YOU WANT.'
+                    : 'BACKUP MERGED // EVENTS AND CUSTOMIZATIONS RESTORED.'
               : 'BACKUP MERGED // EVENTS UPDATED.',
           type: AppNoticeType.success,
         );

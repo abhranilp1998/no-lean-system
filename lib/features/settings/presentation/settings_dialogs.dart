@@ -470,6 +470,13 @@ Future<void> showRiskWindowDialog(BuildContext context, WidgetRef ref) async {
               'Choose the hours when interruption matters most. Overnight windows are supported.',
               style: TextStyle(color: muted, fontSize: 12, height: 1.45),
             ),
+            const SizedBox(height: 10),
+            Text(
+              recovery.requirePinAfterRelapse
+                  ? 'Shrinking or moving these hours needs your PIN. They also control the lock and PIN wall.'
+                  : 'These hours also control the lock and PIN wall. Set a PIN in lock settings to protect them.',
+              style: const TextStyle(color: muted, fontSize: 12, height: 1.45),
+            ),
             const SizedBox(height: 16),
             _TimeSelector(
               label: 'WINDOW START',
