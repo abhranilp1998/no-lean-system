@@ -1027,6 +1027,61 @@ class RecoveryController extends ChangeNotifier {
     return ProtectedActionResult.completed;
   });
 
+  /// Edits one saved relapse in place: its facts and when it happened.
+  ///
+  /// The event keeps its id, batch, source and original `recordedAt`, so a
+  /// day saved by a multi-day log can be corrected without touching the
+  /// other days from the same save. `editedAt` records the change. Clean
+  /// time, milestones and the heat map are recomputed from the new time.
+  Future<ProtectedActionResult> editRelapseEntry({
+    required String id,
+    required RelapseLogEntry entry,
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    final index = events.indexWhere((e) => e.id == id);
+    if (index == -1 || events[index].type != RecoveryEventType.relapse) {
+      return ProtectedActionResult.denied;
+    }
+    entry.validate();
+    final authorization = await _authorizeProtectedAction(
+      pin: pin,
+      tryBiometrics: tryBiometrics,
+      reason: 'Authenticate to permanently change recovery history.',
+    );
+    if (authorization != ProtectedActionResult.completed) return authorization;
+
+    final original = events[index];
+    final at = entry.occurredAt;
+    final others = [
+      for (final e in events)
+        if (e.id != id) e,
+    ];
+    final resetsLean = entry.effectiveType != RelapseType.benzo;
+    final resets =
+        others
+            .where((e) => resetsLeanCleanTimer(e) && !e.timestamp.isAfter(at))
+            .toList()
+          ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final lost = !resetsLean || resets.isEmpty
+        ? 0
+        : at.difference(resets.last.timestamp).inDays;
+    final metadata = Map<String, dynamic>.from(original.metadata)
+      ..removeWhere((key, _) => RelapseLogEntry.metadataKeys.contains(key))
+      ..addAll(entry.toMetadata())
+      ..['streakLost'] = lost
+      ..['editedAt'] = DateTime.now().toIso8601String();
+    events[index] = RecoveryEvent.fromJson({
+      'id': original.id,
+      'type': RecoveryEventType.relapse.name,
+      'timestamp': at.toIso8601String(),
+      'metadata': metadata,
+    });
+    _reconcileCooldown();
+    _sortAndRecompute();
+    return ProtectedActionResult.completed;
+  });
+
   Future<ProtectedActionResult> mergeImportedEvents(
     List<RecoveryEvent> importedEvents, {
     List<DangerZone> importedZones = const [],
@@ -1304,6 +1359,9 @@ class RecoveryController extends ChangeNotifier {
         return ProtectedActionResult.completed;
       }
       RecoveryEvent? latest;
+      // One save moment for the whole batch, so a multi-day catch-up reads
+      // as one save of several days.
+      final recordedAt = DateTime.now().toIso8601String();
       for (var index = 0; index < times.length; index++) {
         final at = times[index];
         final richEntry = richEntries?[index];
@@ -1337,7 +1395,7 @@ class RecoveryController extends ChangeNotifier {
           'metadata': {
             'batchId': batch,
             'source': source,
-            'recordedAt': DateTime.now().toIso8601String(),
+            'recordedAt': recordedAt,
             'postSos': postSos,
             'streakLost': lost,
             ...extraMetadata,
