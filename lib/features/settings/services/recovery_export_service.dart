@@ -141,6 +141,7 @@ Future<void> importRecoveryData(BuildContext context, WidgetRef ref) async {
         return;
       }
       try {
+        await recovery.mergeImportedPlans(preview.preferences);
         await SymptomCheckInStore().importSection(preview.withdrawal);
         await importFeedbackNotes(preview.feedbackNotes);
       } catch (_) {

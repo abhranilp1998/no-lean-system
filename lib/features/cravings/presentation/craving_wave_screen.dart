@@ -3,6 +3,9 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../plans/presentation/plan_card.dart';
+import '../../recovery/domain/if_then_plan.dart';
+
 import '../../recovery/application/recovery_provider.dart';
 import '../../recovery/domain/craving_entry.dart';
 import '../domain/craving_wave.dart';
@@ -110,6 +113,16 @@ class _CravingWaveScreenState extends ConsumerState<CravingWaveScreen>
                 key: const Key('wave-last-time'),
                 style: theme.textTheme.titleMedium,
               ),
+              if (controller.ifThenPlans.isNotEmpty &&
+                  plansForCraving(controller.ifThenPlans).isNotEmpty) ...[
+                const SizedBox(height: 12),
+                PlanCard(
+                  key: const ValueKey('wave-plan'),
+                  plans: plansForCraving(controller.ifThenPlans),
+                  heading: 'YOUR PLAN',
+                  maxShown: 1,
+                ),
+              ],
               const SizedBox(height: 16),
               Expanded(
                 child: AnimatedBuilder(

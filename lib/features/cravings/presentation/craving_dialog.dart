@@ -1,4 +1,5 @@
 import '../../../core/layout/tab_layout.dart';
+import 'trigger_tags_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -16,10 +17,10 @@ Future<void> showCravingDialog(BuildContext context, WidgetRef ref) async {
     builder: (dialogContext) => const _CravingDialog(),
   );
   if (entry != null && context.mounted) {
-    if (!await saveAction(
-      context,
-      () => ref.read(recoveryProvider).recordCraving(entry),
-    )) {
+    String? cravingId;
+    if (!await saveAction(context, () async {
+      cravingId = await ref.read(recoveryProvider).recordCraving(entry);
+    })) {
       return;
     }
     if (context.mounted) {
@@ -28,6 +29,10 @@ Future<void> showCravingDialog(BuildContext context, WidgetRef ref) async {
         'CRAVING LOGGED // RECHECK IN 15 MIN.',
         type: AppNoticeType.success,
       );
+    }
+    // Optional quick tags (where / who / mood / cash): three taps at most.
+    if (cravingId != null && context.mounted) {
+      await showTriggerTagsSheet(context, cravingId!);
     }
   }
 }

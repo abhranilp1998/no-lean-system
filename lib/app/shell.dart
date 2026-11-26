@@ -187,6 +187,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
           now: DateTime.now(),
           cleanSince: recovery.lastDose,
           riskWindow: recovery.riskWindow,
+          plans: recovery.ifThenPlans,
         ),
       );
       unawaited(
