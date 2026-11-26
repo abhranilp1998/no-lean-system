@@ -14,6 +14,7 @@ void main() {
     expect(NotificationKind.riskWindow.isCritical, isTrue);
     expect(NotificationKind.dangerZone.isCritical, isTrue);
     expect(NotificationKind.codeTimer.isCritical, isFalse);
+    expect(NotificationKind.cravingPeak.isCritical, isFalse);
   });
 
   test('quiet hours mute non-critical kinds only, across midnight', () {
@@ -22,6 +23,7 @@ void main() {
     final afternoon = DateTime(2026, 10, 10, 15);
     for (final at in [lateNight, earlyMorning]) {
       expect(overnight.allows(NotificationKind.codeTimer, at), isFalse);
+      expect(overnight.allows(NotificationKind.cravingPeak, at), isFalse);
       expect(overnight.allows(NotificationKind.riskWindow, at), isTrue);
       expect(overnight.allows(NotificationKind.dangerZone, at), isTrue);
     }
