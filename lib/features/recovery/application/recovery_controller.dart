@@ -407,7 +407,7 @@ class RecoveryController extends ChangeNotifier {
       final staleCooldownFixed = _reconcileCooldown();
       lastOpenedAt = DateTime.tryParse(map['lastOpenedAt']?.toString() ?? '');
       _ensureBaselineEvent();
-      _sortAndRecompute();
+      final reconciled = _sortAndRecompute();
       final previousVisit =
           lastOpenedAt ?? (events.isEmpty ? null : events.last.timestamp);
       welcomeBackSince =
@@ -416,8 +416,9 @@ class RecoveryController extends ChangeNotifier {
                   const Duration(hours: 6)
           ? previousVisit
           : null;
-      // One write covers both a migration and a stale-cooldown fix.
-      if (version != stateVersion || staleCooldownFixed) {
+      // One write covers a migration, a stale-cooldown fix and a milestone
+      // reconcile.
+      if (version != stateVersion || staleCooldownFixed || reconciled) {
         await _store.write(jsonEncode(_snapshot()));
       }
       isLoaded = true;
@@ -476,12 +477,19 @@ class RecoveryController extends ChangeNotifier {
     );
   }
 
-  void _sortAndRecompute() {
+  /// Sorts by occurred time, reconciles milestones and `streakLost` with
+  /// any backdated, edited or imported relapse, then recomputes derived
+  /// state. Returns true when the reconcile pass changed an event.
+  bool _sortAndRecompute() {
     events.sort((a, b) {
       final byTime = a.timestamp.compareTo(b.timestamp);
       return byTime != 0 ? byTime : a.id.compareTo(b.id);
     });
+    final reconciled = reconcileMilestones(events);
+    final changed = !identical(reconciled, events);
+    if (changed) events = reconciled;
     _recomputeDerivedState();
+    return changed;
   }
 
   void _restoreSettings(Map<String, dynamic> map) {
