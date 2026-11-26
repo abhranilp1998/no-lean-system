@@ -18,6 +18,7 @@ import '../../app_lock/domain/locked_app.dart';
 import '../../app_lock/presentation/app_lock_settings_screen.dart';
 import '../../app_lock/services/app_lock_gateway.dart';
 import '../../recovery/application/recovery_provider.dart';
+import '../../recovery/domain/craving_peak.dart';
 import '../services/biometric_service.dart';
 import '../services/recovery_export_service.dart';
 import 'settings_dialogs.dart';
@@ -310,6 +311,22 @@ class SettingsScreen extends ConsumerWidget {
                 color: red,
                 onTap: () => requestExactAlertTiming(context, ref),
               ),
+            SettingToggle(
+              key: const ValueKey('settings-craving-peak'),
+              title: 'Craving-peak heads-up',
+              subtitle: cravingPeakSettingSubtitle(
+                enabled: recovery.cravingPeakHeadsUp,
+                insight: recovery.cravingPeakInsight,
+              ),
+              value: recovery.cravingPeakHeadsUp,
+              color: red,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setSetting('cravingPeakHeadsUp', value),
+              ),
+            ),
             SettingToggle(
               title: 'Relapse lock',
               subtitle: recovery.requirePinAfterRelapse

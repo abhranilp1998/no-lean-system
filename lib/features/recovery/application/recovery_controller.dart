@@ -24,6 +24,7 @@ import '../domain/data_fixes_v12.dart';
 import '../domain/double_tap.dart' as double_tap;
 import '../domain/milestones.dart';
 import '../domain/use_check.dart';
+import '../domain/craving_peak.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
@@ -125,7 +126,7 @@ class RecoveryController extends ChangeNotifier {
   /// v16 adds `companion` (substances, triggers, reach-out texts, message
   /// history, slip notes). v13–v15 snapshots load with defaults.
   /// v17: (C) data fixes (see data_fixes_v12.dart), applied once on read.
-  static const stateVersion = 17;
+  static const stateVersion = 18;
 
   final Future<bool> Function(DateTime at) _scheduleCravingCheck;
   final Future<bool> Function(UseCheck check) _scheduleUseCheck;
@@ -208,6 +209,7 @@ class RecoveryController extends ChangeNotifier {
   bool reduceMotion = false;
   bool highContrast = false;
   bool riskReminders = false;
+  bool cravingPeakHeadsUp = true;
   bool peakHourLock = true;
   bool soundscape = false;
   bool hapticFeedback = true;
@@ -425,6 +427,7 @@ class RecoveryController extends ChangeNotifier {
       _notify();
       unawaited(syncWidget());
       unawaited(_syncRiskNotifications());
+      unawaited(_syncCravingPeak());
       unawaited(_syncGeofences());
     } catch (_) {
       isLoaded = false;
@@ -533,6 +536,7 @@ class RecoveryController extends ChangeNotifier {
     reduceMotion = flag('reduceMotion', reduceMotion);
     highContrast = flag('highContrast', highContrast);
     riskReminders = flag('riskReminders', riskReminders);
+    cravingPeakHeadsUp = flag('cravingPeakHeadsUp', cravingPeakHeadsUp);
     peakHourLock = flag('peakHourLock', peakHourLock);
     soundscape = flag('soundscape', soundscape);
     hapticFeedback = flag('hapticFeedback', hapticFeedback);
@@ -689,6 +693,7 @@ class RecoveryController extends ChangeNotifier {
     'reduceMotion': reduceMotion,
     'highContrast': highContrast,
     'riskReminders': riskReminders,
+    'cravingPeakHeadsUp': cravingPeakHeadsUp,
     'peakHourLock': peakHourLock,
     'soundscape': soundscape,
     'hapticFeedback': hapticFeedback,
@@ -749,7 +754,8 @@ class RecoveryController extends ChangeNotifier {
           throw const RecoverySaveException();
         }
         saveMessage = null;
-        if (before['riskReminders'] != next['riskReminders'] ||
+        final riskOrPeakChanged =
+            before['riskReminders'] != next['riskReminders'] ||
             jsonEncode(before['riskWindow']) !=
                 jsonEncode(next['riskWindow']) ||
             jsonEncode(before['reminderMessages']) !=
@@ -758,8 +764,16 @@ class RecoveryController extends ChangeNotifier {
             before['hideSensitiveNotifications'] !=
                 next['hideSensitiveNotifications'] ||
             (before['events'] as List).length !=
-                (next['events'] as List).length) {
+                (next['events'] as List).length;
+        if (riskOrPeakChanged) {
           unawaited(_syncRiskNotifications());
+        }
+        if (riskOrPeakChanged ||
+            before['cravingPeakHeadsUp'] != next['cravingPeakHeadsUp'] ||
+            before['quietHoursEnabled'] != next['quietHoursEnabled'] ||
+            jsonEncode(before['quietHours']) !=
+                jsonEncode(next['quietHours'])) {
+          unawaited(_syncCravingPeak());
         }
         if (jsonEncode(before['zones']) != jsonEncode(next['zones']) ||
             before['backgroundGeofencing'] != next['backgroundGeofencing']) {
@@ -1124,6 +1138,7 @@ class RecoveryController extends ChangeNotifier {
     'reduceMotion': reduceMotion,
     'highContrast': highContrast,
     'riskReminders': riskReminders,
+    'cravingPeakHeadsUp': cravingPeakHeadsUp,
     'peakHourLock': peakHourLock,
     'soundscape': soundscape,
     'hapticFeedback': hapticFeedback,
@@ -2013,6 +2028,12 @@ class RecoveryController extends ChangeNotifier {
           changed = true;
         }
         break;
+      case 'cravingPeakHeadsUp':
+        if (cravingPeakHeadsUp != value) {
+          cravingPeakHeadsUp = value as bool;
+          changed = true;
+        }
+        break;
       case 'peakHourLock':
         if (peakHourLock != value) {
           peakHourLock = value as bool;
@@ -2091,7 +2112,15 @@ class RecoveryController extends ChangeNotifier {
   });
 
   /// Reschedules alerts, e.g. after the user grants exact alarms.
-  Future<void> resyncRiskNotifications() => _syncRiskNotifications();
+  Future<void> resyncRiskNotifications() async {
+    await _syncRiskNotifications();
+    await _syncCravingPeak();
+  }
+
+  CravingPeakInsight get cravingPeakInsight =>
+      analyzeCravingPeak(events: events, riskWindow: riskWindow, now: _now());
+
+  CravingPeakPlan? get cravingPeakPlan => cravingPeakInsight.plan;
 
   Future<void> _syncRiskNotifications() async {
     try {
@@ -2102,6 +2131,18 @@ class RecoveryController extends ChangeNotifier {
         );
       } else {
         await NotificationService.instance.cancelRiskWindow();
+      }
+    } catch (_) {
+      /* Notifications never block local history. */
+    }
+  }
+
+  Future<void> _syncCravingPeak() async {
+    try {
+      if (cravingPeakHeadsUp) {
+        await NotificationService.instance.scheduleCravingPeak(cravingPeakPlan);
+      } else {
+        await NotificationService.instance.cancelCravingPeak();
       }
     } catch (_) {
       /* Notifications never block local history. */

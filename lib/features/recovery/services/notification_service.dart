@@ -10,6 +10,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/theme/app_theme.dart';
 import '../../zones/domain/zone_entry_recency.dart';
+import '../domain/craving_peak.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
@@ -666,6 +667,120 @@ class NotificationService {
     } catch (_) {
       // Notifications are optional on tests and unsupported platforms.
     }
+  }
+
+  /// Daily or weekday-repeat heads-up 30 minutes before the user's peak.
+  /// Cancels any previous schedule first. A null [plan], a disabled fire
+  /// time that falls in quiet hours, or a scheduling error leaves nothing
+  /// pending (max one heads-up a day).
+  Future<void> scheduleCravingPeak(CravingPeakPlan? plan) async {
+    try {
+      await cancelCravingPeak();
+      if (plan == null) return;
+      final sample = DateTime(
+        2026,
+        1,
+        5,
+        plan.headsUpMinutes ~/ 60,
+        plan.headsUpMinutes % 60,
+      );
+      if (!prefs.allows(NotificationKind.cravingPeak, sample)) return;
+      await _initialize(requestPermission: true);
+      final text = prefs.textFor(plan.copy.title, plan.copy.body);
+      final channel = cravingPeakChannel;
+      final details = NotificationDetails(
+        android: AndroidNotificationDetails(
+          channel.id,
+          prefs.hideSensitive ? channel.privateName : channel.publicName,
+          channelDescription: prefs.hideSensitive
+              ? channel.privateDescription
+              : channel.publicDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          color: red,
+          colorized: !prefs.hideSensitive,
+          visibility: lockScreenVisibility,
+          category: AndroidNotificationCategory.reminder,
+          ticker: text.title,
+          styleInformation: BigTextStyleInformation(
+            text.body,
+            contentTitle: text.title,
+          ),
+          actions: [
+            AndroidNotificationAction(
+              'action_code',
+              prefs.label('CODE INSTEAD', 'START TASK'),
+              showsUserInterface: true,
+              cancelNotification: true,
+            ),
+            AndroidNotificationAction(
+              'action_sos',
+              prefs.label('OPEN SOS', 'OPEN'),
+              showsUserInterface: true,
+              cancelNotification: true,
+            ),
+          ],
+        ),
+      );
+      var exactAllowed = await exactAlarmsAllowed();
+      final slots = plan.isDaily
+          ? const <(int?, int)>[(null, cravingPeakFirstId)]
+          : [for (final day in plan.weekdays) (day, cravingPeakFirstId + day)];
+      for (final slot in slots) {
+        final scheduled = _nextClock(plan.headsUpMinutes, weekday: slot.$1);
+        final mode = await scheduleWithExactFallback(
+          exactAllowed: exactAllowed,
+          schedule: (mode) => _plugin.zonedSchedule(
+            slot.$2,
+            text.title,
+            text.body,
+            scheduled,
+            details,
+            androidScheduleMode: mode,
+            matchDateTimeComponents: slot.$1 == null
+                ? DateTimeComponents.time
+                : DateTimeComponents.dayOfWeekAndTime,
+          ),
+        );
+        exactAllowed = mode == AndroidScheduleMode.exactAllowWhileIdle;
+      }
+    } catch (_) {
+      // Notification support must never prevent local recovery tracking.
+    }
+  }
+
+  Future<void> cancelCravingPeak() async {
+    try {
+      for (var id = cravingPeakFirstId; id <= cravingPeakLastId; id++) {
+        await _plugin.cancel(id);
+      }
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
+  tz.TZDateTime _nextClock(int minuteOfDay, {int? weekday}) {
+    final hour = minuteOfDay ~/ 60;
+    final minute = minuteOfDay % 60;
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      hour,
+      minute,
+    );
+    if (weekday == null) {
+      if (!scheduled.isAfter(now)) {
+        scheduled = scheduled.add(const Duration(days: 1));
+      }
+      return scheduled;
+    }
+    while (scheduled.weekday != weekday || !scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+    return scheduled;
   }
 
   Future<void> _cancelScheduled() async {
