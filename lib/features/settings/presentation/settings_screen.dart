@@ -1,9 +1,11 @@
 import '../../../core/layout/tab_layout.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../recovery/domain/mixing_safety_net.dart';
 
 import '../../widgets/presentation/widgets_screen.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -23,6 +25,7 @@ import '../services/recovery_export_service.dart';
 import 'settings_dialogs.dart';
 import 'trusted_contact_dialog.dart';
 import 'widgets/settings_controls.dart';
+import '../../dates/presentation/high_risk_dates_screen.dart';
 import '../../zones/presentation/zones_screen.dart';
 import '../../timeline/presentation/timeline_screen.dart';
 import '../../timeline/domain/history_projection.dart';
@@ -236,9 +239,8 @@ class SettingsScreen extends ConsumerWidget {
               subtitle:
                   '${recovery.zones.length} marked // ${recovery.streetTiles ? 'street map' : 'grid map'}${recovery.zoneMonitoring || recovery.backgroundGeofencing ? ' // alerts on' : ''}',
               color: red,
-              onTap: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const ZonesScreen())),
+              onTap: () => Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const ZonesScreen())),
             ),
             SettingToggle(
               key: const ValueKey('settings-position-notification'),
@@ -301,12 +303,31 @@ class SettingsScreen extends ConsumerWidget {
                     .setSetting('riskReminders', value),
               ),
             ),
+            SettingToggle(
+              key: const Key('high-risk-reminders-toggle-settings'),
+              title: 'High-risk date reminders',
+              subtitle: 'A plan nudge three days before festivals, your dates, and payday. On by default.',
+              value: recovery.highRiskDateReminders,
+              color: cyan,
+              onChanged: (value) => saveAction(
+                context,
+                () =>
+                    ref.read(recoveryProvider).setHighRiskDateReminders(value),
+              ),
+            ),
+            SettingAction(
+              key: const Key('high-risk-dates-settings'),
+              icon: Icons.event_note_outlined,
+              title: 'High-risk dates',
+              subtitle: 'Festivals, your dates, payday, and a harder weekday',
+              color: cyan,
+              onTap: () => HighRiskDatesScreen.open(context),
+            ),
             if (recovery.riskReminders)
               SettingAction(
                 icon: Icons.alarm_on,
                 title: 'Exact alert timing',
-                subtitle:
-                    'Allow exact alarms so alerts land on time; otherwise Android may delay them',
+                subtitle: 'Allow exact alarms so alerts land on time; otherwise Android may delay them',
                 color: red,
                 onTap: () => requestExactAlertTiming(context, ref),
               ),
