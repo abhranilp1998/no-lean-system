@@ -13,6 +13,7 @@ import '../../../recovery/domain/relapse_log_entry.dart';
 import '../../../recovery/presentation/relapse_auth_dialog.dart';
 import '../../domain/history_projection.dart';
 import 'event_edit_dialog.dart';
+import 'urge_ride_label.dart';
 import 'history_record_facts.dart';
 
 class EventTile extends ConsumerWidget {
@@ -22,7 +23,8 @@ class EventTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final (label, icon, color) = _getEventDetails(event);
+    final (label, icon, color) =
+        urgeRideDetails(event) ?? _getEventDetails(event);
 
     if (event.type == RecoveryEventType.relapse) {
       return _RelapseEventCard(
@@ -63,7 +65,13 @@ class EventTile extends ConsumerWidget {
                       : _formatDate(event.timestamp),
                   style: TextStyle(color: muted, fontSize: 11),
                 ),
-                if (event.metadata.isNotEmpty) ...[
+                if (urgeRideDetails(event) != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'You stayed with it.',
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                ] else if (event.metadata.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   if (event.type == RecoveryEventType.settingsChange)
                     SettingsChangeFacts(event: event)

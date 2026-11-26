@@ -4,18 +4,48 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/services/app_feedback.dart';
+import '../../../core/services/app_notice.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../cravings/domain/urge_ride.dart';
 import '../../recovery/application/recovery_provider.dart';
 import 'companion_common.dart';
 
-/// 20-minute urge-surf timer: rate at start, watch the wave, rate at end.
+/// 10-minute ride-it-out timer, built on the existing urge-surf wave.
+///
+/// [open] and [openRideItOut] are the same entry. Rough-day mode (PR #34)
+/// already calls [open] for "Ride it out"; once that PR is merged it will
+/// pick this 10-minute flow up with no extra hook.
 class UrgeSurfScreen extends ConsumerStatefulWidget {
-  const UrgeSurfScreen({super.key, this.minutes = 20});
+  const UrgeSurfScreen({
+    super.key,
+    this.minutes = 10,
+    this.onPace,
+    this.now = DateTime.now,
+  });
+
   final int minutes;
 
-  static Future<void> open(BuildContext context) => Navigator.of(
-    context,
-  ).push(MaterialPageRoute(builder: (_) => const UrgeSurfScreen()));
+  /// Test seam: called on each breathing-phase change when haptic pacing
+  /// is on. The real haptic goes through [AppFeedback].
+  final void Function(BreathPhase phase)? onPace;
+
+  /// Test seam so the timer can be advanced without waiting on the wall clock.
+  final DateTime Function() now;
+
+  static Future<void> open(BuildContext context) => openRideItOut(context);
+
+  static Future<void> openRideItOut(
+    BuildContext context, {
+    int minutes = 10,
+    void Function(BreathPhase phase)? onPace,
+    DateTime Function() now = DateTime.now,
+  }) => Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) =>
+          UrgeSurfScreen(minutes: minutes, onPace: onPace, now: now),
+    ),
+  );
 
   @override
   ConsumerState<UrgeSurfScreen> createState() => _UrgeSurfState();
@@ -30,8 +60,14 @@ class _UrgeSurfState extends ConsumerState<UrgeSurfScreen>
   Timer? _tick;
   DateTime? _start;
   int _before = 6;
-  int? _after;
   Duration _left = Duration.zero;
+  bool _paceBreathing = true;
+  BreathPhase? _lastPhase;
+  UrgeRideOutcome? _outcome;
+  UrgeRideActivity? _activity;
+  bool _saving = false;
+
+  int get _planned => widget.minutes;
 
   @override
   void dispose() {
@@ -40,27 +76,90 @@ class _UrgeSurfState extends ConsumerState<UrgeSurfScreen>
     super.dispose();
   }
 
+  void _pulse(BreathPhase phase) {
+    if (!_paceBreathing) return;
+    if (!ref.read(recoveryProvider).hapticFeedback) return;
+    widget.onPace?.call(phase);
+    AppFeedback.selection();
+  }
+
   void _go() {
+    _tick?.cancel();
     setState(() {
-      _start = DateTime.now();
-      _left = Duration(minutes: widget.minutes);
+      _start = widget.now();
+      _left = Duration(minutes: _planned);
+      _outcome = null;
+      _activity = null;
+      _lastPhase = breathPhaseAt(Duration.zero);
     });
+    _pulse(_lastPhase!);
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-      final left =
-          Duration(minutes: widget.minutes) -
-          DateTime.now().difference(_start!);
+      final elapsed = widget.now().difference(_start!);
+      final left = Duration(minutes: _planned) - elapsed;
+      final phase = breathPhaseAt(elapsed);
       setState(() => _left = left.isNegative ? Duration.zero : left);
-      if (left.isNegative) _tick?.cancel();
+      if (phase != _lastPhase) {
+        _lastPhase = phase;
+        _pulse(phase);
+      }
+      if (left.isNegative || left == Duration.zero) _tick?.cancel();
+    });
+  }
+
+  void _finishEarly({UrgeRideOutcome? outcome}) {
+    _tick?.cancel();
+    setState(() {
+      _left = Duration.zero;
+      if (outcome != null) _outcome = outcome;
     });
   }
 
   String get _phase {
     if (_start == null) return '';
-    final done = 1 - _left.inSeconds / (widget.minutes * 60);
+    if (_left == Duration.zero) return 'You stayed with it. That is the work.';
+    final done = 1 - _left.inSeconds / (_planned * 60);
     if (done < .3) return 'Rising. Breathe out slowly. You do not have to act.';
     if (done < .6) return 'Peak. This is the strongest it gets. Stay with it.';
-    if (done < 1) return 'Falling. Notice it getting quieter.';
-    return 'You rode it out.';
+    return 'Falling. Notice it getting quieter.';
+  }
+
+  Future<void> _save() async {
+    if (_saving || _outcome == null || _activity == null || _start == null) {
+      return;
+    }
+    _saving = true;
+    try {
+      await ref
+          .read(recoveryProvider)
+          .recordUrgeRide(
+            startedAt: _start!,
+            outcome: _outcome!,
+            activity: _activity!,
+            hapticPacing: _paceBreathing,
+            intensityBefore: _before,
+            plannedMinutes: _planned,
+          );
+      if (!mounted) return;
+      AppFeedback.success();
+      AppNotice.show(
+        context,
+        _outcome == UrgeRideOutcome.no
+            ? 'Logged. You stayed with it, and that still counts.'
+            : 'Logged. That is data you can use next time.',
+        type: AppNoticeType.success,
+      );
+      Navigator.pop(context);
+    } catch (_) {
+      if (mounted) {
+        AppNotice.show(
+          context,
+          'Could not save that ride. Please try again.',
+          type: AppNoticeType.error,
+        );
+      }
+    } finally {
+      _saving = false;
+    }
   }
 
   @override
@@ -70,15 +169,15 @@ class _UrgeSurfState extends ConsumerState<UrgeSurfScreen>
     final finished = _start != null && _left == Duration.zero;
     final mm = _left.inMinutes.toString().padLeft(2, '0');
     final ss = (_left.inSeconds % 60).toString().padLeft(2, '0');
+    final canPace = recovery.hapticFeedback;
     return Scaffold(
-      appBar: AppBar(title: const Text('Ride the wave')),
+      appBar: AppBar(title: const Text('Ride it out')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           const Text(
-            'Cravings usually rise and fall within about 15 to 30 minutes. '
-            'You watch it, you do not have to obey it.',
-            style: TextStyle(height: 1.35),
+            'Ten minutes. You do not have to win it. You only have to stay with it.',
+            style: TextStyle(height: 1.35, fontSize: 15),
           ),
           const SizedBox(height: 16),
           SizedBox(
@@ -88,9 +187,7 @@ class _UrgeSurfState extends ConsumerState<UrgeSurfScreen>
               builder: (_, _) => CustomPaint(
                 painter: _WavePainter(
                   _wave.value,
-                  _start == null
-                      ? 0
-                      : 1 - _left.inSeconds / (widget.minutes * 60),
+                  _start == null ? 0 : 1 - _left.inSeconds / (_planned * 60),
                 ),
                 size: Size.infinite,
               ),
@@ -100,34 +197,61 @@ class _UrgeSurfState extends ConsumerState<UrgeSurfScreen>
           if (_start == null) ...[
             Text('How strong is it right now? $_before / 10'),
             Slider(
+              key: const ValueKey('urge-ride-intensity'),
               value: _before.toDouble(),
+              min: 1,
               max: 10,
-              divisions: 10,
+              divisions: 9,
               onChanged: (v) => setState(() => _before = v.round()),
             ),
+            SwitchListTile(
+              key: const ValueKey('urge-ride-haptic-toggle'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Pace my breathing with a gentle haptic'),
+              subtitle: Text(
+                canPace
+                    ? 'A soft pulse on each in-breath and out-breath.'
+                    : 'Turn on vibration in Settings to use this.',
+              ),
+              value: _paceBreathing && canPace,
+              onChanged: canPace
+                  ? (v) => setState(() => _paceBreathing = v)
+                  : null,
+            ),
+            const SizedBox(height: 8),
             FilledButton.icon(
+              key: const ValueKey('urge-ride-start'),
               onPressed: _go,
               icon: const Icon(Icons.waves),
-              label: Text('Start ${widget.minutes}-minute timer'),
+              label: Text('Start $_planned-minute timer'),
             ),
           ],
           if (running) ...[
             Center(
               child: Text(
                 '$mm:$ss',
+                key: const ValueKey('urge-ride-timer'),
                 style: const TextStyle(
                   fontSize: 44,
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ),
+            const SizedBox(height: 6),
+            if (_paceBreathing && canPace)
+              Center(
+                child: Text(
+                  breathPhaseLabel(_lastPhase ?? BreathPhase.inhale),
+                  key: const ValueKey('urge-ride-breath'),
+                  style: eyebrowStyle.copyWith(color: cyan, fontSize: 16),
+                ),
+              ),
+            const SizedBox(height: 8),
             Center(child: Text(_phase, textAlign: TextAlign.center)),
             const SizedBox(height: 12),
             OutlinedButton(
-              onPressed: () => setState(() {
-                _tick?.cancel();
-                _left = Duration.zero;
-              }),
+              key: const ValueKey('urge-ride-already-passed'),
+              onPressed: () => _finishEarly(outcome: UrgeRideOutcome.yes),
               child: const Text('It already passed'),
             ),
             TextButton.icon(
@@ -137,34 +261,60 @@ class _UrgeSurfState extends ConsumerState<UrgeSurfScreen>
             ),
           ],
           if (finished) ...[
-            Text('How strong is it now? ${_after ?? _before} / 10'),
-            Slider(
-              value: (_after ?? _before).toDouble(),
-              max: 10,
-              divisions: 10,
-              onChanged: (v) => setState(() => _after = v.round()),
+            Text(_phase, style: const TextStyle(height: 1.35, fontSize: 15)),
+            const SizedBox(height: 16),
+            const Text(
+              'Did it pass?',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
             ),
-            Text(
-              (_after ?? _before) < _before
-                  ? 'From $_before to ${_after ?? _before}. That is the wave falling, and you stayed on the board.'
-                  : 'Still strong? That happens. Start another round, or message your person.',
-              style: const TextStyle(color: toxic, height: 1.35),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final outcome in UrgeRideOutcome.values)
+                  ChoiceChip(
+                    key: ValueKey('urge-ride-passed-${outcome.name}'),
+                    label: Text(outcome.label),
+                    selected: _outcome == outcome,
+                    onSelected: (_) => setState(() => _outcome = outcome),
+                  ),
+              ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
+            const Text(
+              'What did you use?',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final activity in UrgeRideActivity.values)
+                  ChoiceChip(
+                    key: ValueKey('urge-ride-activity-${activity.name}'),
+                    label: Text(activity.label),
+                    selected: _activity == activity,
+                    onSelected: (_) => setState(() => _activity = activity),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
             FilledButton(
-              onPressed: () async {
-                await recovery.updateCompanion(
-                  (s) =>
-                      s.rate('i11', wasHelpful: (_after ?? _before) < _before),
-                );
-                if (context.mounted) Navigator.pop(context);
-              },
-              child: const Text('Done'),
+              key: const ValueKey('urge-ride-save'),
+              onPressed: _outcome != null && _activity != null && !_saving
+                  ? _save
+                  : null,
+              child: const Text('SAVE THIS RIDE'),
             ),
             TextButton(
               onPressed: () => setState(() {
+                _tick?.cancel();
                 _start = null;
-                _after = null;
+                _outcome = null;
+                _activity = null;
+                _left = Duration.zero;
               }),
               child: const Text('Another round'),
             ),
