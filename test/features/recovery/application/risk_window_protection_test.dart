@@ -139,16 +139,46 @@ void main() {
     expect(reloaded.riskWindow.toJson(), moved.toJson());
   });
 
-  test('unprotected reminder hours stay editable', () async {
-    final (controller, _, lock) = await load();
-    await controller.setRiskWindowLock(false, pin: '1234');
-    await controller.updateAppLockPolicy(
-      apps.copyWith(schedule: AppLockSchedule.always),
+  test(
+    'shrinking still needs the PIN when the wall and app lock are off',
+    () async {
+      final (controller, _, lock) = await load();
+      await controller.setRiskWindowLock(false, pin: '1234');
+      await controller.updateAppLockPolicy(
+        apps.copyWith(schedule: AppLockSchedule.always),
+      );
+      expect(
+        await controller.updateRiskWindow(moved, tryBiometrics: false),
+        ProtectedActionResult.authenticationRequired,
+      );
+      expect(
+        controller.riskWindow.toJson(),
+        const RiskWindow.defaultWindow().toJson(),
+      );
+      expect(
+        await controller.updateRiskWindow(moved, pin: '1234'),
+        ProtectedActionResult.completed,
+      );
+      expect(controller.riskWindow.toJson(), moved.toJson());
+    },
+  );
+
+  test('without a PIN, shrinking the window is allowed', () async {
+    final store = MemoryRecoveryStore();
+    final lock = FakeRelapseLock();
+    final controller = RecoveryController(
+      store: store,
+      relapseLock: lock,
+      now: () => DateTime(2026, 10, 10, 18),
     );
+    addTearDown(controller.dispose);
+    await controller.load();
+    expect(controller.requirePinAfterRelapse, isFalse);
     expect(
       await controller.updateRiskWindow(moved),
       ProtectedActionResult.completed,
     );
+    expect(controller.riskWindow.toJson(), moved.toJson());
     expect(lock.challenges, 0);
   });
 
@@ -170,9 +200,10 @@ void main() {
   );
 
   test(
-    'a risk window restored from a backup is logged on the timeline',
+    'import will not shrink lock hours; the kept window is audited',
     () async {
       final (controller, store, lock) = await load();
+      final current = const RiskWindow.defaultWindow();
       final result = await controller.mergeImportedEvents(
         const [],
         preferences: {'riskWindow': moved.toJson()},
@@ -180,7 +211,8 @@ void main() {
         pin: '1234',
       );
       expect(result, ProtectedActionResult.completed);
-      expect(controller.riskWindow.startMinutes, moved.startMinutes);
+      expect(controller.lastImportKeptRiskWindow, isTrue);
+      expect(controller.riskWindow.toJson(), current.toJson());
       final logged = controller.events.where(
         (e) =>
             e.type == RecoveryEventType.settingsChange &&
@@ -188,23 +220,68 @@ void main() {
             e.metadata['source'] == 'import',
       );
       expect(logged, hasLength(1));
-      expect(
-        logged.single.metadata['from'],
-        const RiskWindow.defaultWindow().label,
-      );
-      expect(logged.single.metadata['newValue'], moved.label);
+      expect(logged.single.metadata['from'], current.label);
+      expect(logged.single.metadata['newValue'], current.label);
+      expect(logged.single.metadata['kept'], isTrue);
+      expect(logged.single.metadata['ignored'], moved.label);
       expect(logged.single.timestamp, DateTime(2026, 10, 10, 18));
       final audit = logged.single.toJson();
       final reloaded = RecoveryController(store: store, relapseLock: lock);
       addTearDown(reloaded.dispose);
       await reloaded.load();
-      expect(reloaded.riskWindow.toJson(), moved.toJson());
+      expect(reloaded.riskWindow.toJson(), current.toJson());
       expect(
         reloaded.events
             .singleWhere((event) => event.id == audit['id'])
             .toJson(),
         audit,
       );
+    },
+  );
+
+  test(
+    'an imported window that keeps every protected minute is applied',
+    () async {
+      final (controller, _, _) = await load();
+      const wider = RiskWindow(startMinutes: 16 * 60, endMinutes: 22 * 60);
+      final result = await controller.mergeImportedEvents(
+        const [],
+        preferences: {'riskWindow': wider.toJson()},
+        restorePreferences: true,
+        pin: '1234',
+      );
+      expect(result, ProtectedActionResult.completed);
+      expect(controller.lastImportKeptRiskWindow, isFalse);
+      expect(controller.riskWindow.toJson(), wider.toJson());
+      final logged = controller.events.singleWhere(
+        (e) =>
+            e.type == RecoveryEventType.settingsChange &&
+            e.metadata['setting'] == 'riskWindow' &&
+            e.metadata['source'] == 'import',
+      );
+      expect(logged.metadata['from'], const RiskWindow.defaultWindow().label);
+      expect(logged.metadata['newValue'], wider.label);
+      expect(logged.metadata.containsKey('kept'), isFalse);
+    },
+  );
+
+  test(
+    'a narrower import is applied when the wall and app lock are off',
+    () async {
+      final (controller, _, _) = await load();
+      await controller.setRiskWindowLock(false, pin: '1234');
+      await controller.updateAppLockPolicy(
+        apps.copyWith(schedule: AppLockSchedule.always),
+      );
+      final result = await controller.mergeImportedEvents(
+        const [],
+        preferences: {'riskWindow': moved.toJson()},
+        restorePreferences: true,
+        pin: '1234',
+      );
+      expect(result, ProtectedActionResult.completed);
+      expect(controller.lastImportKeptRiskWindow, isFalse);
+      expect(controller.riskWindow.toJson(), moved.toJson());
     },
   );
 
