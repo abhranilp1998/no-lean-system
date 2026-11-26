@@ -63,8 +63,7 @@ enum ProtectedActionResult {
 
 extension ProtectedActionResultMessage on ProtectedActionResult {
   String get failureMessage => switch (this) {
-    ProtectedActionResult.lockedOut =>
-      'Too many incorrect PIN attempts. PIN entry is paused: 5 minutes, then 15, then 60 on repeat lockouts. Biometrics still work.',
+    ProtectedActionResult.lockedOut => 'Too many incorrect PIN attempts. PIN entry is paused: 5 minutes, then 15, then 60 on repeat lockouts. Biometrics still work.',
     ProtectedActionResult.denied =>
       'Authentication failed. Nothing was changed.',
     ProtectedActionResult.authenticationRequired =>
@@ -347,8 +346,7 @@ class RecoveryController extends ChangeNotifier {
       if (stored != null &&
           (version is! int || version < 2 || version > stateVersion)) {
         loadStatus = RecoveryLoadStatus.incompatible;
-        loadMessage =
-            'This recovery history needs a compatible app version. It has been kept unchanged.';
+        loadMessage = 'This recovery history needs a compatible app version. It has been kept unchanged.';
         _notify();
         return;
       }
@@ -429,8 +427,7 @@ class RecoveryController extends ChangeNotifier {
     } catch (_) {
       isLoaded = false;
       loadStatus = RecoveryLoadStatus.error;
-      loadMessage =
-          'Your recovery history could not be opened. Nothing has been reset. Retry, or export a preserved copy.';
+      loadMessage = 'Your recovery history could not be opened. Nothing has been reset. Retry, or export a preserved copy.';
       _notify();
     }
   }
@@ -1029,88 +1026,126 @@ class RecoveryController extends ChangeNotifier {
     bool restorePreferences = false,
     String? pin,
     bool tryBiometrics = true,
-  }) => _transaction(() async {
-    final authorization = await _authorizeProtectedAction(
-      reason: 'Authenticate to merge recovery history.',
-      pin: pin,
-      tryBiometrics: tryBiometrics,
-    );
-    if (authorization != ProtectedActionResult.completed) return authorization;
-    final existingIds = {
-      ...events.map((e) => e.id),
-      ...hiddenDuplicates.map((e) => e.id),
-    };
-    for (final event in importedEvents) {
-      if (existingIds.add(event.id)) events.add(event);
-    }
-    hiddenDuplicates = _mergeHidden(
-      hiddenDuplicates,
-      importedHidden.where((e) => !events.any((v) => v.id == e.id)),
-    );
-    final zoneIds = zones.map((zone) => zone.id).toSet();
-    final newZones = importedZones
-        .where((zone) => zoneIds.add(zone.id))
-        .toList();
-    if (zones.length + newZones.length > DangerZone.maxZones) {
-      throw StateError(
-        'This backup would exceed ${DangerZone.maxZones} danger zones.',
-      );
-    }
-    zones = [...zones, ...newZones];
-    final letterIds = futureLetters.map((l) => l.id).toSet();
-    final newLetters = importedLetters
-        .where((l) => letterIds.add(l.id))
-        .toList();
-    if (futureLetters.length + newLetters.length > FutureLetter.maxLetters) {
-      throw StateError('This backup would exceed 100 notes.');
-    }
-    futureLetters = [...futureLetters, ...newLetters];
-    if (importedCompanion != null) {
-      companion = companion.mergeImported(importedCompanion);
-    }
-    if (restorePreferences && preferences != null) {
-      final previousWindow = riskWindow;
-      _restoreSettings(
-        Map<String, dynamic>.from(preferences)
-          ..remove('requirePinAfterRelapse')
-          ..remove('riskWindowLock')
-          ..remove('appLockPending')
-          ..remove('zones')
-          ..remove('zoneMonitoring')
-          ..remove('streetTiles')
-          ..remove('positionNotification')
-          ..remove('zoneHistory')
-          ..remove('appLockPolicy')
-          ..remove('widgetPrivacy')
-          ..remove('quietHoursEnabled')
-          ..remove('quietHours')
-          ..remove('hideSensitiveNotifications')
-          ..remove('backgroundGeofencing')
-          ..remove('insightPreferences')
-          ..remove('pin'),
-      );
-      if (riskWindow.startMinutes != previousWindow.startMinutes ||
-          riskWindow.endMinutes != previousWindow.endMinutes) {
-        // Same audit trail as a manual edit, so imports can't move the
-        // window silently.
-        events.add(
-          RecoveryEvent.create(
-            type: RecoveryEventType.settingsChange,
-            timestamp: _now(),
-            metadata: {
-              'setting': 'riskWindow',
-              'from': previousWindow.label,
-              'newValue': riskWindow.label,
-              'source': 'import',
-            },
-          ),
+  }) async {
+    lastImportKeptRiskWindow = false;
+    var keptWindow = false;
+    try {
+      final result = await _transaction(() async {
+        final authorization = await _authorizeProtectedAction(
+          reason: 'Authenticate to merge recovery history.',
+          pin: pin,
+          tryBiometrics: tryBiometrics,
         );
-      }
+        if (authorization != ProtectedActionResult.completed) {
+          return authorization;
+        }
+        final existingIds = {
+          ...events.map((e) => e.id),
+          ...hiddenDuplicates.map((e) => e.id),
+        };
+        for (final event in importedEvents) {
+          if (existingIds.add(event.id)) events.add(event);
+        }
+        hiddenDuplicates = _mergeHidden(
+          hiddenDuplicates,
+          importedHidden.where((e) => !events.any((v) => v.id == e.id)),
+        );
+        final zoneIds = zones.map((zone) => zone.id).toSet();
+        final newZones = importedZones
+            .where((zone) => zoneIds.add(zone.id))
+            .toList();
+        if (zones.length + newZones.length > DangerZone.maxZones) {
+          throw StateError(
+            'This backup would exceed ${DangerZone.maxZones} danger zones.',
+          );
+        }
+        zones = [...zones, ...newZones];
+        final letterIds = futureLetters.map((l) => l.id).toSet();
+        final newLetters = importedLetters
+            .where((l) => letterIds.add(l.id))
+            .toList();
+        if (futureLetters.length + newLetters.length >
+            FutureLetter.maxLetters) {
+          throw StateError('This backup would exceed 100 notes.');
+        }
+        futureLetters = [...futureLetters, ...newLetters];
+        if (importedCompanion != null) {
+          companion = companion.mergeImported(importedCompanion);
+        }
+        if (restorePreferences && preferences != null) {
+          final previousWindow = riskWindow;
+          final incoming = Map<String, dynamic>.from(preferences)
+            ..remove('requirePinAfterRelapse')
+            ..remove('riskWindowLock')
+            ..remove('appLockPending')
+            ..remove('zones')
+            ..remove('zoneMonitoring')
+            ..remove('streetTiles')
+            ..remove('positionNotification')
+            ..remove('zoneHistory')
+            ..remove('appLockPolicy')
+            ..remove('widgetPrivacy')
+            ..remove('quietHoursEnabled')
+            ..remove('quietHours')
+            ..remove('hideSensitiveNotifications')
+            ..remove('backgroundGeofencing')
+            ..remove('insightPreferences')
+            ..remove('pin');
+          // Import already needs the PIN when one exists, but that PIN is for
+          // merging history, not for shortening lock hours. If the backup
+          // window would remove minutes that currently protect the wall or a
+          // risk-window app schedule, keep the current hours.
+          final importedWindow = incoming.containsKey('riskWindow')
+              ? RiskWindow.fromJson(incoming['riskWindow'])
+              : previousWindow;
+          final keepWindow =
+              riskWindowProtectsLocks && !importedWindow.covers(previousWindow);
+          if (keepWindow) incoming.remove('riskWindow');
+          keptWindow = keepWindow;
+          _restoreSettings(incoming);
+          if (keepWindow) {
+            events.add(
+              RecoveryEvent.create(
+                type: RecoveryEventType.settingsChange,
+                timestamp: _now(),
+                metadata: {
+                  'setting': 'riskWindow',
+                  'from': previousWindow.label,
+                  'newValue': previousWindow.label,
+                  'source': 'import',
+                  'kept': true,
+                  'ignored': importedWindow.label,
+                },
+              ),
+            );
+          } else if (riskWindow.startMinutes != previousWindow.startMinutes ||
+              riskWindow.endMinutes != previousWindow.endMinutes) {
+            events.add(
+              RecoveryEvent.create(
+                type: RecoveryEventType.settingsChange,
+                timestamp: _now(),
+                metadata: {
+                  'setting': 'riskWindow',
+                  'from': previousWindow.label,
+                  'newValue': riskWindow.label,
+                  'source': 'import',
+                },
+              ),
+            );
+          }
+        }
+        _ensureBaselineEvent();
+        _sortAndRecompute();
+        return ProtectedActionResult.completed;
+      });
+      lastImportKeptRiskWindow =
+          result == ProtectedActionResult.completed && keptWindow;
+      return result;
+    } catch (error) {
+      lastImportKeptRiskWindow = false;
+      rethrow;
     }
-    _ensureBaselineEvent();
-    _sortAndRecompute();
-    return ProtectedActionResult.completed;
-  });
+  }
 
   Map<String, dynamic> get portablePreferences => {
     'dailySpend': dailySpend,
@@ -1937,8 +1972,22 @@ class RecoveryController extends ChangeNotifier {
     dismissedInsights = {};
   });
 
-  /// Removing protected minutes authenticates for either wall using this
-  /// window. Expanding it keeps every protected minute and remains free.
+  /// Whether the evening wall or a risk-window app-lock schedule is using
+  /// these hours. A narrower imported window must not loosen that.
+  bool get riskWindowProtectsLocks =>
+      riskWindowWallArmed ||
+      (appLockPolicy.armed &&
+          appLockPolicy.schedule == AppLockSchedule.riskWindow);
+
+  /// Set after a preference import that would have shortened lock hours.
+  /// Not persisted; the UI reads it once to explain that the window was kept.
+  bool lastImportKeptRiskWindow = false;
+
+  /// Removing protected minutes always needs the PIN when one is set, even
+  /// if the wall or app lock is off right now — otherwise the hours can be
+  /// shortened first and the lock turned back on over a weaker window.
+  /// Expanding the window cannot loosen a lock and stays free. With no PIN
+  /// there is nothing to authenticate with, so the change is allowed.
   Future<ProtectedActionResult> updateRiskWindow(
     RiskWindow value, {
     String? pin,
@@ -1948,10 +1997,7 @@ class RecoveryController extends ChangeNotifier {
         value.endMinutes == riskWindow.endMinutes) {
       return ProtectedActionResult.completed;
     }
-    final protectsApps =
-        appLockPolicy.armed &&
-        appLockPolicy.schedule == AppLockSchedule.riskWindow;
-    if ((riskWindowWallArmed || protectsApps) && !value.covers(riskWindow)) {
+    if (requirePinAfterRelapse && !value.covers(riskWindow)) {
       final authorization = await _authorizeProtectedAction(
         reason: 'Authenticate to remove protected hours from the risk window.',
         pin: pin,
