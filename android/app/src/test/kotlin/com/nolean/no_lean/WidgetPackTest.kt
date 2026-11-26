@@ -119,3 +119,53 @@ class StretchedViewsTest {
         }
     }
 }
+
+class WidgetLiveStateTest {
+    private val zone = java.util.TimeZone.getTimeZone("Asia/Kolkata")
+    private fun at(day: Int, hour: Int, minute: Int = 0, month: Int = java.util.Calendar.NOVEMBER): Long =
+        java.util.Calendar.getInstance(zone).apply { clear(); set(2026, month, day, hour, minute) }.timeInMillis
+    private fun cal() = java.util.Calendar.getInstance(zone)
+
+    @Test fun riskBadgeFlipsAtTheWindowEdgesWithoutTheApp() {
+        val start = 17 * 60
+        val end = 21 * 60
+        assertEquals(false, WidgetPack.riskActive(at(26, 16, 59), start, end, cal()))
+        assertEquals(true, WidgetPack.riskActive(at(26, 17, 0), start, end, cal()))
+        assertEquals(true, WidgetPack.riskActive(at(26, 20, 59), start, end, cal()))
+        // The end minute is outside, same as the night timeline and its alarm.
+        assertEquals(false, WidgetPack.riskActive(at(26, 21, 0), start, end, cal()))
+        assertEquals(false, WidgetPack.riskActive(at(26, 3, 0), start, end, cal()))
+    }
+
+    @Test fun overnightWindowSpansMidnight() {
+        val start = 22 * 60
+        val end = 2 * 60
+        assertEquals(true, WidgetPack.riskActive(at(26, 23, 30), start, end, cal()))
+        assertEquals(true, WidgetPack.riskActive(at(27, 1, 59), start, end, cal()))
+        assertEquals(false, WidgetPack.riskActive(at(27, 2, 0), start, end, cal()))
+        assertEquals(false, WidgetPack.riskActive(at(26, 12, 0), start, end, cal()))
+    }
+
+    @Test fun equalStartAndEndMeansAllDay() {
+        assertEquals(true, WidgetPack.riskActive(at(26, 4, 0), 9 * 60, 9 * 60, cal()))
+        assertEquals(true, WidgetPack.riskActive(at(26, 15, 0), 9 * 60, 9 * 60, cal()))
+    }
+
+    @Test fun pledgeLockEndsAtLocalMidnight() {
+        val pledge = at(26, 23, 50)
+        assertEquals(true, WidgetPack.pledgedToday(at(26, 23, 59), pledge, false, cal()))
+        assertEquals(false, WidgetPack.pledgedToday(at(27, 0, 5), pledge, true, cal()))
+    }
+
+    @Test fun pledgeFallsBackToTheStoredFlagBeforeTheFirstSync() {
+        assertEquals(true, WidgetPack.pledgedToday(at(26, 10, 0), 0L, true, cal()))
+        assertEquals(false, WidgetPack.pledgedToday(at(26, 10, 0), 0L, false, cal()))
+    }
+
+    @Test fun pledgeUsesTheLocalDateNotUtc() {
+        // 00:30 IST on the 27th is still the 26th in UTC.
+        val pledge = at(27, 0, 30)
+        assertEquals(true, WidgetPack.pledgedToday(at(27, 22, 0), pledge, false, cal()))
+        assertEquals(false, WidgetPack.pledgedToday(at(26, 22, 0), pledge, false, cal()))
+    }
+}

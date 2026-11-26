@@ -13,6 +13,7 @@ Map<String, Object> homeWidgetPayload({
   required bool privacy,
   int? riskStartMinutes,
   int? riskEndMinutes,
+  DateTime? lastPledge,
 }) {
   if (privacy) {
     return const <String, Object>{
@@ -28,11 +29,19 @@ Map<String, Object> homeWidgetPayload({
     'privacy': false,
     'lastDoseEpochMillis': lastDose.millisecondsSinceEpoch,
     'cleanTime': cleanTime,
-    'streak': '$streak DAYS',
+    'streak': widgetStreakText(streak),
     'isRiskWindow': isRiskWindow,
     'hasPledgedToday': hasPledgedToday,
     // The night-timeline widget redraws hourly from these without the app.
     'riskStartMinutes': ?riskStartMinutes,
     'riskEndMinutes': ?riskEndMinutes,
+    // The widget compares this with its own clock, so "TODAY LOCKED" ends at
+    // midnight even if the app is not opened.
+    'lastPledgeEpochMillis': ?lastPledge?.millisecondsSinceEpoch,
   };
 }
+
+/// "1 DAY CLEAN" / "12 DAYS CLEAN": same wording as the native widget's
+/// `widget_clean_days` plural, used before the first live tick.
+String widgetStreakText(int days) =>
+    '$days ${days == 1 ? 'DAY' : 'DAYS'} CLEAN';

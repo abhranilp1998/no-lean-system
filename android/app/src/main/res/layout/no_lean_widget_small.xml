@@ -31,12 +31,18 @@
             android:textSize="9sp"
             android:textStyle="bold" />
 
+        <!-- "100d 12:30:15" is wider than the room left beside the SOS
+             button on a 2-cell widget; shrink to fit instead of cutting it. -->
         <Chronometer
             android:id="@+id/widget_clean_time"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:autoSizeMaxTextSize="15sp"
+            android:autoSizeMinTextSize="9sp"
+            android:autoSizeStepGranularity="1sp"
+            android:autoSizeTextType="uniform"
             android:fontFamily="monospace"
-            android:singleLine="true"
+            android:maxLines="1"
             android:text="@string/widget_counter_placeholder"
             android:textColor="@android:color/white"
             android:textSize="15sp"

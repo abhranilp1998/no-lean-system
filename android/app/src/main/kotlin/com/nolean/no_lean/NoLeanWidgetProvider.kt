@@ -171,8 +171,24 @@ open class NoLeanWidgetProvider(
     ) {
         val wholeDays = elapsedMillis / DAY_MILLIS
         val withinDayMillis = elapsedMillis % DAY_MILLIS
-        val isRiskWindow = prefs.getBoolean(KEY_IS_RISK_WINDOW, false)
-        val hasPledgedToday = prefs.getBoolean(KEY_HAS_PLEDGED_TODAY, false)
+        // Both are re-derived from the widget's own clock on every redraw. The
+        // stored booleans are only a snapshot from the last time the app ran, so
+        // trusting them left RISK WINDOW / TODAY LOCKED stale until app open.
+        val now = System.currentTimeMillis()
+        val isRiskWindow = if (prefs.contains(NightTimelineWidgetProvider.KEY_RISK_START)) {
+            WidgetPack.riskActive(
+                now,
+                prefs.getInt(NightTimelineWidgetProvider.KEY_RISK_START, 17 * 60),
+                prefs.getInt(NightTimelineWidgetProvider.KEY_RISK_END, 21 * 60),
+            )
+        } else {
+            prefs.getBoolean(KEY_IS_RISK_WINDOW, false)
+        }
+        val hasPledgedToday = WidgetPack.pledgedToday(
+            now,
+            prefs.getLong(KEY_LAST_PLEDGE_EPOCH_MILLIS, 0L),
+            prefs.getBoolean(KEY_HAS_PLEDGED_TODAY, false),
+        )
 
         if (size.hasTitle) {
             views.setTextViewText(R.id.widget_title, context.getString(R.string.widget_title))
@@ -298,6 +314,8 @@ open class NoLeanWidgetProvider(
         if (allWidgetIds(context).isEmpty()) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             alarmManager.cancel(refreshPendingIntent(context))
+            // Also the window-edge alarm scheduled in onUpdate.
+            alarmManager.cancel(WidgetPack.broadcast(context, NoLeanWidgetProvider::class.java, ACTION_REFRESH_BOUNDARY, 70))
         }
     }
 
@@ -391,6 +409,7 @@ open class NoLeanWidgetProvider(
         const val KEY_LAST_DOSE_EPOCH_MILLIS = "last_dose_epoch_millis"
         const val KEY_IS_RISK_WINDOW = "is_risk_window"
         const val KEY_HAS_PLEDGED_TODAY = "has_pledged_today"
+        const val KEY_LAST_PLEDGE_EPOCH_MILLIS = "last_pledge_epoch_millis"
         const val KEY_PRIVACY = "privacy"
 
         private const val ACTION_REFRESH_BOUNDARY =
