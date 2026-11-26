@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 120 800 280">
+  <title>Recovery position: lying on their side, top knee bent, head tilted back</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#101820"/>
+      <stop offset="1" stop-color="#0a1016"/>
+    </linearGradient>
+  </defs>
+  <rect y="120" width="800" height="280" rx="28" fill="url(#bg)"/>
+  <!-- floor -->
+  <rect x="40" y="338" width="720" height="10" rx="5" fill="#243241"/>
+  <!-- lower leg (straight, on the floor) -->
+  <path d="M470 308 L690 312" stroke="#7fd0ff" stroke-width="40" stroke-linecap="round" fill="none"/>
+  <!-- torso -->
+  <path d="M290 296 L490 296" stroke="#7fd0ff" stroke-width="78" stroke-linecap="round" fill="none"/>
+  <!-- lower arm (stretched out in front, supports the body) -->
+  <path d="M290 318 L160 330" stroke="#7fd0ff" stroke-width="30" stroke-linecap="round" fill="none"/>
+  <!-- head, tilted back -->
+  <circle cx="200" cy="268" r="46" fill="#7fd0ff"/>
+  <!-- top leg bent at the knee (highlight) -->
+  <path d="M490 270 L600 214 L650 304" stroke="#ffc857" stroke-width="34"
+        stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- top arm bent, hand under the cheek (highlight) -->
+  <path d="M312 262 L262 214 L228 262" stroke="#ffc857" stroke-width="28"
+        stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- airway arrow: chin up -->
+  <path d="M150 218 Q 122 190 140 160" stroke="#ffffff" stroke-width="7"
+        stroke-linecap="round" fill="none" opacity="0.85"/>
+  <path d="M128 168 L140 158 L152 170" stroke="#ffffff" stroke-width="7"
+        stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.85"/>
+</svg>

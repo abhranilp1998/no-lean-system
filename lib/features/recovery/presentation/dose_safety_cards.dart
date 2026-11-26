@@ -221,32 +221,8 @@ class OverdoseSignsCard extends StatelessWidget {
   }
 }
 
-/// (B) Shown after any mixed relapse save. Contact first; 112 stays behind
-/// the card's own second tap.
-Future<void> showMixingSafetyNetSheet(BuildContext context) =>
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          key: const ValueKey('mixing-after-save'),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'You mixed. Please let someone know tonight.',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 12),
-              const MixingSafetyNetCard(),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('CLOSE'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+/// Superseded: the mixing safety card is now raised by the controller after
+/// any save (every entry point, one card per save) and shown full-screen by
+/// the app shell as `MixingAlertScreen`. Kept as a no-op so existing callers
+/// (the relapse log and edit sheets) don't show a second, older sheet.
+Future<void> showMixingSafetyNetSheet(BuildContext context) async {}
