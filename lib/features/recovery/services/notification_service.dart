@@ -435,14 +435,20 @@ class NotificationService {
   /// (A) "Did you use?" with YES / NO / LATER. The trigger is kept in prefs
   /// so a tapped action (which carries no payload) can prefill the logger.
   Future<bool> scheduleUseCheck(UseCheck check, {DateTime? at}) async {
-    final due = at ?? check.dueAt;
+    var due = at ?? check.dueAt;
     final store = await SharedPreferences.getInstance();
     await store.setString(useCheckPrefsKey, check.encode());
+    // A visit imported late can already be past due: ask in a few seconds
+    // rather than scheduling into the past.
+    final soonest = DateTime.now().add(const Duration(seconds: 10));
+    if (due.isBefore(soonest)) due = soonest;
+    // Non-critical: muted in quiet hours. The in-app card still waits.
     if (!prefs.allows(NotificationKind.cravingCheck, due)) return false;
     final text = prefs.textFor(
-      'DID YOU USE?',
+      check.trigger.notificationTitle,
       '${check.trigger.body} Did you use? Either answer is OK.',
     );
+    final zone = check.trigger == UseCheckTrigger.zoneVisit;
     try {
       await _initialize(requestPermission: true);
       await scheduleWithExactFallback(
@@ -471,13 +477,13 @@ class NotificationService {
                 ),
                 AndroidNotificationAction(
                   'action_use_no',
-                  prefs.label('NO', 'NO'),
+                  prefs.label(zone ? 'NO, STAYED CLEAN' : 'NO', 'NO'),
                   showsUserInterface: true,
                   cancelNotification: true,
                 ),
                 AndroidNotificationAction(
                   'action_use_later',
-                  prefs.label('LATER', 'LATER'),
+                  prefs.label(zone ? 'NOT SURE' : 'LATER', 'LATER'),
                   showsUserInterface: true,
                   cancelNotification: true,
                 ),

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../features/recovery/domain/use_check.dart';
+import '../features/zones/domain/zone_use_check.dart';
+import '../features/zones/presentation/zone_use_check_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/services/app_feedback.dart';
@@ -63,6 +65,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
 
   /// (A) "Yes" while locked: the prefilled time survives the unlock.
   DateTime? _deferredUseCheckAt;
+  String? _deferredUseCheckNote;
   bool _deferredLetter = false;
   Timer? _lockTicker;
   late final ZoneMonitor _zoneMonitor = ZoneMonitor(
@@ -98,6 +101,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         ref.read(recoveryProvider).markOpened().whenComplete(() {
           unawaited(_syncMilestones());
           unawaited(_importZoneInbox());
+          unawaited(ref.read(recoveryProvider).refreshPendingUseCheck());
         }),
       );
       unawaited(WidgetActionService.instance.initialize());
@@ -230,6 +234,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       unawaited(WidgetActionService.instance.initialize());
       unawaited(_importZoneInbox());
       unawaited(_syncMilestones());
+      unawaited(ref.read(recoveryProvider).refreshPendingUseCheck());
     }
   }
 
@@ -294,8 +299,10 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
           context,
           source: 'use_check',
           initialOccurredAt: useCheckAt,
+          initialNote: _deferredUseCheckNote,
         ),
       );
+      _deferredUseCheckNote = null;
     } else if (_deferredRelapse) {
       _deferredRelapse = false;
       _pendingActions.add('relapse');
@@ -456,8 +463,14 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   /// NO counts as a safe check-in; LATER asks again in 30 minutes.
   /// Body tap on the "Did you use?" notification: ask in the app.
   Future<void> _openUseCheckPrompt() async {
+    final recovery = ref.read(recoveryProvider);
     final check = await NotificationService.instance.peekPendingUseCheck();
     if (!mounted) return;
+    if (check != null && check.trigger == UseCheckTrigger.zoneVisit) {
+      // Zone visits get the warm three-answer prompt, same as the card.
+      await showZoneUseCheckDialog(context, recovery, check);
+      return;
+    }
     final answer = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -489,21 +502,47 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   }
 
   Future<void> _answerUseCheck(String actionId) async {
-    final service = NotificationService.instance;
-    final check = await service.takePendingUseCheck();
+    final recovery = ref.read(recoveryProvider);
+    final check = await recovery.takePendingUseCheck();
     if (!mounted) return;
     final now = DateTime.now();
     if (actionId == 'action_use_later') {
       if (check != null) {
-        await service.scheduleUseCheck(check, at: now.add(useCheckSnooze));
+        final again = await recovery.snoozeUseCheck(check);
+        if (mounted) {
+          AppNotice.show(
+            context,
+            again
+                ? (check.trigger.isZoneCheck
+                      ? zoneCheckSnoozedMessage
+                      : 'OK. I\'LL ASK AGAIN IN 30 MIN.')
+                : zoneCheckDroppedMessage,
+          );
+        }
       }
-      if (mounted) AppNotice.show(context, 'OK. I\'LL ASK AGAIN IN 30 MIN.');
     } else if (actionId == 'action_use_no') {
-      await _checkIn();
+      if (check != null && check.trigger.isZoneCheck) {
+        // Counted as a zone resisted, then celebrated.
+        final count = await recovery.answerUseCheckClean(check);
+        AppFeedback.success();
+        if (mounted) {
+          AppNotice.show(
+            context,
+            zoneResistedMessage(count),
+            type: AppNoticeType.success,
+          );
+        }
+      } else {
+        await _checkIn();
+      }
     } else {
       final prefill = check == null ? now : useCheckPrefill(check, now);
+      final note = check != null && check.trigger.isZoneCheck
+          ? zoneCheckPrefillNote(check)
+          : null;
       if (_resolveLock() != null) {
         _deferredUseCheckAt = prefill;
+        _deferredUseCheckNote = note;
         AppNotice.show(
           context,
           'Unlock to log it. Thank you for being honest.',
@@ -514,6 +553,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         context,
         source: 'use_check',
         initialOccurredAt: prefill,
+        initialNote: note,
       );
     }
   }
