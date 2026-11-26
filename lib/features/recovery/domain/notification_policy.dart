@@ -23,6 +23,8 @@ enum NotificationKind {
   swapWatch,
   /// 30-minute heads-up before a usual craving peak. Non-critical.
   cravingPeak,
+  /// Daily one-tap check-in. Non-critical: muted in quiet hours.
+  dailyCheckIn,
 }
 
 extension NotificationKindPolicy on NotificationKind {
@@ -32,7 +34,8 @@ extension NotificationKindPolicy on NotificationKind {
     NotificationKind.cravingCheck ||
     NotificationKind.logReminder ||
     NotificationKind.swapWatch ||
-    NotificationKind.cravingPeak => false,
+    NotificationKind.cravingPeak ||
+    NotificationKind.dailyCheckIn => false,
   };
 }
 

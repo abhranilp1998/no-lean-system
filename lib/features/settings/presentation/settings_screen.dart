@@ -2,7 +2,9 @@ import '../../../core/layout/tab_layout.dart';
 
 import 'package:flutter/material.dart';
 
+import '../../recovery/domain/daily_check_in.dart';
 import '../../recovery/domain/mixing_safety_net.dart';
+import 'check_in_time_picker.dart';
 
 import '../../widgets/presentation/widgets_screen.dart';
 
@@ -30,6 +32,7 @@ import '../../zones/presentation/zones_screen.dart';
 import '../../timeline/presentation/timeline_screen.dart';
 import '../../timeline/domain/history_projection.dart';
 import '../../recovery/domain/dose_units.dart';
+import '../../recovery/domain/risk_window.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -245,6 +248,45 @@ class SettingsScreen extends ConsumerWidget {
               color: purple,
               onTap: () => showQuietHoursDialog(context, ref),
             ),
+            SettingToggle(
+              key: const ValueKey('settings-daily-check-in'),
+              title: 'Daily check-in',
+              subtitle: dailyCheckInSubtitle(
+                enabled: recovery.dailyCheckIn,
+                minutes: recovery.dailyCheckInMinutes,
+                prefs: recovery.notificationPrefs,
+              ),
+              value: recovery.dailyCheckIn,
+              color: cyan,
+              onChanged: (value) => saveAction(
+                context,
+                () => ref
+                    .read(recoveryProvider)
+                    .setSetting('dailyCheckIn', value),
+              ),
+            ),
+            if (recovery.dailyCheckIn)
+              SettingAction(
+                key: const ValueKey('settings-check-in-time'),
+                icon: Icons.access_time,
+                title: 'Check-in time',
+                subtitle:
+                    '${RiskWindow.formatMinutes(recovery.dailyCheckInMinutes)} // tap to change',
+                color: cyan,
+                onTap: () async {
+                  final minutes = await pickCheckInTime(
+                    context,
+                    recovery.dailyCheckInMinutes,
+                  );
+                  if (minutes == null || !context.mounted) return;
+                  await saveAction(
+                    context,
+                    () => ref
+                        .read(recoveryProvider)
+                        .setSetting('dailyCheckInMinutes', minutes),
+                  );
+                },
+              ),
             SettingAction(
               key: const ValueKey('settings-danger-zones'),
               icon: Icons.dangerous_outlined,

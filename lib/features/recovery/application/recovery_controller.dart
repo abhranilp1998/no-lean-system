@@ -12,6 +12,7 @@ import '../../../core/services/feedback_preferences.dart';
 import '../../../core/utils/formatters.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../../dashboard/domain/rough_day.dart';
+import '../domain/daily_check_in.dart';
 import '../domain/double_tap.dart';
 import '../domain/relapse_cooldown.dart';
 import '../domain/craving_entry.dart';
@@ -19,6 +20,7 @@ import '../../cravings/domain/urge_ride.dart';
 import '../domain/dose_units.dart';
 import '../domain/quantity_upgrade.dart';
 import '../domain/legacy_recovery_migration.dart';
+import '../services/check_in_inbox.dart';
 import '../services/recovery_state_store.dart';
 import '../domain/effect_intensity.dart';
 import '../domain/event_derived_state.dart';
@@ -98,6 +100,7 @@ class RecoveryController extends ChangeNotifier {
     DateTime Function()? now,
     GeofenceGateway? geofences,
     ZoneEntryInbox? zoneInbox,
+    CheckInInbox? checkInInbox,
     Future<bool> Function(DateTime at)? scheduleCravingCheck,
     Future<void> Function()? cancelCravingCheck,
     Future<bool> Function(UseCheck check)? scheduleUseCheck,
@@ -133,6 +136,7 @@ class RecoveryController extends ChangeNotifier {
            cancelLogLater ??
            NotificationService.instance.cancelLogLaterReminder,
        _zoneInbox = zoneInbox ?? const NoopZoneEntryInbox(),
+       _checkInInbox = checkInInbox ?? const NoopCheckInInbox(),
        _relapseLock = relapseLock ?? SecureRelapseLockService.instance,
        _store = store ?? PreferencesRecoveryStateStore(),
        _now = now ?? DateTime.now,
@@ -358,6 +362,7 @@ class RecoveryController extends ChangeNotifier {
   final Future<void> Function() _cancelCravingCheck;
 
   final ZoneEntryInbox _zoneInbox;
+  final CheckInInbox _checkInInbox;
 
   final RelapseLockGateway _relapseLock;
   final RecoveryStateStore _store;
@@ -431,6 +436,11 @@ class RecoveryController extends ChangeNotifier {
   bool hapticFeedback = true;
   FeedbackSoundEffect feedbackSound = FeedbackSoundEffect.neonPulse;
   bool requirePinAfterRelapse = false;
+
+  /// Daily one-tap check-in notification. Optional keys, so no version bump:
+  /// a state without them means off at 20:00.
+  bool dailyCheckIn = false;
+  int dailyCheckInMinutes = defaultCheckInMinutes;
 
   /// Auto-locks the app inside [riskWindow] when a PIN exists.
   bool riskWindowLock = true;
@@ -655,6 +665,7 @@ class RecoveryController extends ChangeNotifier {
       unawaited(syncWidget());
       unawaited(_syncRiskNotifications());
       unawaited(_syncCravingPeak());
+      unawaited(_syncDailyCheckIn());
       unawaited(_syncGeofences());
     } catch (_) {
       isLoaded = false;
@@ -786,6 +797,11 @@ class RecoveryController extends ChangeNotifier {
     zoneMonitoring = flag('zoneMonitoring', zoneMonitoring);
     streetTiles = flag('streetTiles', streetTiles);
     positionNotification = flag('positionNotification', positionNotification);
+    dailyCheckIn = flag('dailyCheckIn', dailyCheckIn);
+    dailyCheckInMinutes = checkInMinutesFrom(
+      map['dailyCheckInMinutes'],
+      dailyCheckInMinutes,
+    );
     if (map.containsKey('appLockPolicy')) {
       appLockPolicy = AppLockPolicy.fromJson(map['appLockPolicy']);
     }
@@ -977,6 +993,8 @@ class RecoveryController extends ChangeNotifier {
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
     'stretchedWidgetView': stretchedWidgetView.name,
+    'dailyCheckIn': dailyCheckIn,
+    'dailyCheckInMinutes': dailyCheckInMinutes,
   };
 
   void _restoreSnapshot(Map<String, dynamic> map) {
@@ -1038,6 +1056,17 @@ class RecoveryController extends ChangeNotifier {
             jsonEncode(before['quietHours']) !=
                 jsonEncode(next['quietHours'])) {
           unawaited(_syncCravingPeak());
+        }
+        if (before['dailyCheckIn'] != next['dailyCheckIn'] ||
+            before['dailyCheckInMinutes'] != next['dailyCheckInMinutes'] ||
+            before['quietHoursEnabled'] != next['quietHoursEnabled'] ||
+            jsonEncode(before['quietHours']) !=
+                jsonEncode(next['quietHours']) ||
+            before['hideSensitiveNotifications'] !=
+                next['hideSensitiveNotifications'] ||
+            before['requirePinAfterRelapse'] !=
+                next['requirePinAfterRelapse']) {
+          unawaited(_syncDailyCheckIn());
         }
         if (jsonEncode(before['zones']) != jsonEncode(next['zones']) ||
             before['backgroundGeofencing'] != next['backgroundGeofencing']) {
@@ -1649,6 +1678,8 @@ class RecoveryController extends ChangeNotifier {
       swapWatchDismissedAtKey: swapWatchDismissedAt!.toIso8601String(),
     if (swapWatchNotifiedAt != null)
       swapWatchNotifiedAtKey: swapWatchNotifiedAt!.toIso8601String(),
+    'dailyCheckIn': dailyCheckIn,
+    'dailyCheckInMinutes': dailyCheckInMinutes,
   };
 
   Future<void> pledge() async {
@@ -2707,6 +2738,19 @@ class RecoveryController extends ChangeNotifier {
           changed = true;
         }
         break;
+      case 'dailyCheckIn':
+        if (dailyCheckIn != value) {
+          dailyCheckIn = value as bool;
+          changed = true;
+        }
+        break;
+      case 'dailyCheckInMinutes':
+        final minutes = checkInMinutesFrom(value, dailyCheckInMinutes);
+        if (dailyCheckInMinutes != minutes) {
+          dailyCheckInMinutes = minutes;
+          changed = true;
+        }
+        break;
       case 'feedbackSound':
         if (feedbackSound != value) {
           feedbackSound = value as FeedbackSoundEffect;
@@ -2804,6 +2848,162 @@ class RecoveryController extends ChangeNotifier {
     }
   }
 
+  Future<void> _syncDailyCheckIn() async {
+    try {
+      if (dailyCheckIn) {
+        await NotificationService.instance.scheduleDailyCheckIn(
+          minutes: dailyCheckInMinutes,
+          usedOpensApp: requirePinAfterRelapse,
+        );
+      } else {
+        await NotificationService.instance.cancelDailyCheckIn();
+      }
+    } catch (_) {
+      /* Notifications never block local history. */
+    }
+  }
+
+  /// Turns the answers the background isolate left (Okay / Used on the daily
+  /// check-in) into events at the tap time. Safe to call repeatedly: every
+  /// event id comes from the entry id, so a replay adds nothing.
+  ///
+  /// With the relapse lock on, a background "Used" is not written (the lock
+  /// exists to ask first); it is handed back in [CheckInImport.askToLog] so
+  /// the app can open the relapse logger prefilled with the tap time.
+  Future<CheckInImport> importCheckInInbox() async {
+    if (!isLoaded) return const CheckInImport();
+    final pending = await _checkInInbox.drain();
+    if (pending.isEmpty) {
+      await _checkInInbox.acknowledge();
+      return const CheckInImport();
+    }
+    var okay = 0;
+    var used = 0;
+    final askToLog = <DateTime>[];
+    for (final entry in pending) {
+      switch (entry.answer) {
+        case CheckInAnswer.okay:
+          final saved = await _transaction(() async {
+            final id = const Uuid().v5(
+              Namespace.url.value,
+              'no-lean/check-in/okay/${entry.id}',
+            );
+            if (events.any((e) => e.id == id)) return false;
+            events.add(
+              RecoveryEvent.fromJson({
+                'id': id,
+                'type': RecoveryEventType.cleanCheckIn.name,
+                'timestamp': entry.at.toIso8601String(),
+                'metadata': {
+                  'source': 'checkin_notification',
+                  'recordedAt': DateTime.now().toIso8601String(),
+                },
+              }),
+            );
+            _sortAndRecompute();
+            return true;
+          });
+          if (saved) okay++;
+        case CheckInAnswer.used:
+          if (requirePinAfterRelapse) {
+            askToLog.add(entry.at);
+            continue;
+          }
+          final result = await recordCheckInUsed(
+            at: entry.at,
+            entryId: entry.id,
+            tryBiometrics: false,
+          );
+          if (result == ProtectedActionResult.completed) used++;
+      }
+    }
+    await _checkInInbox.acknowledge();
+    return CheckInImport(okay: okay, used: used, askToLog: askToLog);
+  }
+
+  /// A "Used" tap on the daily check-in: a placeholder slip at the tap time,
+  /// marked [needsDetailsKey] so the app asks for details on next open. With
+  /// no relapse type it counts as lean (resets the lean timer) until the
+  /// details say otherwise. Double taps are one use.
+  Future<ProtectedActionResult> recordCheckInUsed({
+    required DateTime at,
+    String? entryId,
+    String? pin,
+    bool tryBiometrics = true,
+  }) async {
+    final operation = const Uuid().v5(
+      Namespace.url.value,
+      'no-lean/check-in/used/${entryId ?? at.toIso8601String()}',
+    );
+    // Two taps within a minute are one use. Compared by tap time, since a
+    // background answer may be written down much later than it was tapped.
+    final duplicate = events.any(
+      (e) =>
+          e.type == RecoveryEventType.relapse &&
+          e.metadata['source'] == 'checkin_notification' &&
+          e.timestamp.difference(at).abs() <= doubleTapWindow,
+    );
+    if (duplicate) return ProtectedActionResult.completed;
+    return recordRelapse(
+      pin: pin,
+      tryBiometrics: tryBiometrics,
+      occurredAt: [at.isAfter(DateTime.now()) ? DateTime.now() : at],
+      operationId: operation,
+      source: 'checkin_notification',
+      extraMetadata: const {'quick': true, needsDetailsKey: true},
+    );
+  }
+
+  /// Slips waiting for details, oldest first.
+  List<RecoveryEvent> get slipsNeedingDetails => [
+    for (final e in events)
+      if (e.type == RecoveryEventType.relapse &&
+          e.metadata[needsDetailsKey] == true)
+        e,
+  ];
+
+  /// Finishes a placeholder slip. A null [type] keeps it as lean. Choosing
+  /// benzo-only stops it resetting the lean timer (and everything derived is
+  /// recalculated), so that one change asks for the relapse lock first.
+  Future<ProtectedActionResult> completeSlipDetails({
+    required String id,
+    RelapseType? type,
+    String note = '',
+    String? pin,
+    bool tryBiometrics = true,
+  }) => _transaction(() async {
+    final index = events.indexWhere((e) => e.id == id);
+    if (index == -1 || events[index].type != RecoveryEventType.relapse) {
+      return ProtectedActionResult.denied;
+    }
+    if (type == RelapseType.benzo) {
+      final authorization = await _authorizeProtectedAction(
+        pin: pin,
+        tryBiometrics: tryBiometrics,
+        reason: 'Authenticate to change what this slip was.',
+      );
+      if (authorization != ProtectedActionResult.completed) {
+        return authorization;
+      }
+    }
+    final metadata = Map<String, dynamic>.from(events[index].metadata)
+      ..remove(needsDetailsKey)
+      ..['detailsCompletedAt'] = DateTime.now().toIso8601String();
+    if (type != null) {
+      metadata['relapseType'] = type.name;
+      if (type == RelapseType.benzo) metadata['streakLost'] = 0;
+    }
+    if (note.trim().isNotEmpty) metadata['note'] = note.trim();
+    events[index] = events[index].copyWith(
+      metadata: RecoveryEvent.validateMetadata(
+        RecoveryEventType.relapse,
+        metadata,
+      ),
+    );
+    _sortAndRecompute();
+    return ProtectedActionResult.completed;
+  });
+
   Future<void> syncWidget() async {
     await _syncHomeWidget();
     // Garden and radar art; a no-op off Android and in tests.
@@ -2827,4 +3027,17 @@ class RecoveryController extends ChangeNotifier {
     riskWindow: riskWindow,
     lastPledge: lastPledge,
   );
+}
+
+/// What [RecoveryController.importCheckInInbox] did.
+class CheckInImport {
+  const CheckInImport({this.okay = 0, this.used = 0, this.askToLog = const []});
+
+  final int okay;
+  final int used;
+
+  /// Tap times of "Used" answers that need the app's own flow (relapse lock).
+  final List<DateTime> askToLog;
+
+  bool get isEmpty => okay == 0 && used == 0 && askToLog.isEmpty;
 }

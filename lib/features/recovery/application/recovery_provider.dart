@@ -4,11 +4,13 @@ import 'recovery_controller.dart';
 import '../services/recovery_state_store.dart';
 import '../../zones/services/native_geofence_gateway.dart';
 import '../../zones/services/zone_entry_inbox.dart';
+import '../services/check_in_inbox.dart';
 
 final recoveryProvider = ChangeNotifierProvider<RecoveryController>((ref) {
   return RecoveryController(
     store: FileRecoveryStateStore(),
     geofences: NativeGeofenceGateway(),
     zoneInbox: FileZoneEntryInbox(),
+    checkInInbox: FileCheckInInbox(),
   )..load();
 });
