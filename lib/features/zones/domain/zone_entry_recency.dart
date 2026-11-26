@@ -1,3 +1,4 @@
+import '../../recovery/domain/notification_copy.dart';
 import '../../recovery/domain/notification_policy.dart';
 import '../../recovery/domain/recovery_event.dart';
 
@@ -21,10 +22,7 @@ RecoveryEvent? recentZoneEntry(Iterable<RecoveryEvent> events, DateTime now) {
 /// the zone (a notification can be read over a shoulder), privacy mode or
 /// not. Privacy mode still swaps in the fully neutral text via
 /// [NotificationPrefs.textFor].
-NotificationText zoneFollowUpText(NotificationPrefs prefs, int index) =>
-    prefs.textFor(
-      'CHECKING IN',
-      index == 0
-          ? 'It\'s been 15 minutes. Still OK? Tap if you need SOS.'
-          : 'Quick check: how are you doing? No judgement either way.',
-    );
+NotificationText zoneFollowUpText(NotificationPrefs prefs, int index) {
+  final source = zoneFollowUpSource(index);
+  return prefs.textFor(source.title, source.body);
+}

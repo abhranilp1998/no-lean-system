@@ -9,7 +9,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/theme/app_theme.dart';
-import '../../zones/domain/zone_entry_recency.dart';
+import '../domain/notification_copy.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
@@ -129,15 +129,19 @@ class NotificationService {
           scheduled = scheduled.add(const Duration(days: 1));
         }
         // Risk-window alerts are critical: quiet hours never mute them.
-        final text = prefs.textFor(alert.title, alert.body);
+        final surface = riskWindowSurface(
+          prefs: prefs,
+          alert: alert,
+          riskWindow: riskWindow,
+        );
         final mode = await scheduleWithExactFallback(
           exactAllowed: exactAllowed,
           schedule: (mode) => _plugin.zonedSchedule(
             alert.id,
-            text.title,
-            text.body,
+            surface.title,
+            surface.body,
             scheduled,
-            _details(alert, riskWindow, text),
+            _details(surface),
             androidScheduleMode: mode,
             matchDateTimeComponents: DateTimeComponents.time,
           ),
@@ -149,69 +153,50 @@ class NotificationService {
     }
   }
 
-  NotificationDetails _details(
-    RiskAlert alert,
-    RiskWindow riskWindow,
-    NotificationText text,
-  ) => NotificationDetails(
-    android: AndroidNotificationDetails(
-      'risk_window_v2',
-      'NO LEAN risk window',
-      channelDescription:
-          'High-visibility recovery interrupts during your configured risk window',
-      importance: Importance.max,
-      priority: Priority.high,
-      color: red,
-      colorized: !prefs.hideSensitive,
-      enableLights: true,
-      ledColor: cyan,
-      enableVibration: true,
-      playSound: true,
-      visibility: lockScreenVisibility,
-      category: AndroidNotificationCategory.reminder,
-      ticker: neutralNotificationText.title,
-      subText: prefs.hideSensitive ? null : riskWindow.label,
-      styleInformation: BigTextStyleInformation(
-        text.body,
-        contentTitle: text.title,
-      ),
-      actions: [
-        AndroidNotificationAction(
-          'action_sos',
-          prefs.label('OPEN SOS', 'OPEN'),
-          showsUserInterface: true,
-          cancelNotification: true,
+  NotificationDetails _details(NotificationSurface surface) =>
+      NotificationDetails(
+        android: androidDetailsFor(
+          surface,
+          color: red,
+          colorized: !surface.hideSensitive,
+          enableLights: true,
+          ledColor: cyan,
         ),
-        if (alert.kind == RiskAlertKind.preWindow)
-          AndroidNotificationAction(
-            'action_code',
-            prefs.label('CODE INSTEAD', 'START TASK'),
-            showsUserInterface: true,
-            cancelNotification: true,
-          )
-        else
-          AndroidNotificationAction(
-            'action_safe',
-            prefs.label('I\'M SAFE', 'OK'),
-            showsUserInterface: true,
-            cancelNotification: true,
-          ),
-        AndroidNotificationAction(
-          'action_crave',
-          prefs.label('LOG CRAVING', 'LOG'),
-          showsUserInterface: true,
-          cancelNotification: true,
-        ),
-      ],
-    ),
-  );
+      );
 
-  /// Every notification is VISIBILITY_PRIVATE: on lock screens set to hide
-  /// sensitive content, Android shows its own neutral public version (app
-  /// name + "Contents hidden"). flutter_local_notifications 19.5 cannot set a
-  /// custom publicVersion, so "hide sensitive content" additionally makes the
-  /// posted title, body and action labels neutral everywhere.
+  /// Default lock-screen visibility when private notifications are off:
+  /// Android redacts the content on lock screens set to hide sensitive
+  /// notifications. When private notifications are on, each post uses
+  /// [NotificationVisibility.public] because the wording is already
+  /// neutral, so the lock screen shows "Reminder" instead of
+  /// "Contents hidden". flutter_local_notifications 19.5 cannot set a
+  /// custom publicVersion.
   static const lockScreenVisibility = NotificationVisibility.private;
+
+  /// Rewrites every channel's visible name and description to match
+  /// [prefs], and refreshes a pending use-check so it does not fire with
+  /// the old wording. Risk-window alerts are rescheduled by the
+  /// controller when the setting changes.
+  Future<void> applyPrivacy() async {
+    try {
+      await _initialize(requestPermission: false);
+      final hide = prefs.hideSensitive;
+      for (final channel in NotificationChannels.all) {
+        await _android?.createNotificationChannel(
+          AndroidNotificationChannel(
+            channel.id,
+            channel.name(hide),
+            description: channel.description(hide),
+            importance: importanceFor(channel.importance),
+          ),
+        );
+      }
+      final check = await peekPendingUseCheck();
+      if (check != null) await scheduleUseCheck(check);
+    } catch (_) {
+      // Channel updates must never block the setting itself.
+    }
+  }
 
   bool _launchActionTaken = false;
 
@@ -246,59 +231,20 @@ class NotificationService {
   }) async {
     // Zone alerts are critical: quiet hours never mute them.
     final policy = prefs ?? this.prefs;
-    final text = policy.textFor(title, body);
+    final surface = dangerZoneSurface(prefs: policy, title: title, body: body);
     try {
       await _initialize(requestPermission: false);
       await _plugin.show(
         zoneAlertId,
-        text.title,
-        text.body,
+        surface.title,
+        surface.body,
         payload: zoneAlertPayload,
         NotificationDetails(
-          android: AndroidNotificationDetails(
-            'danger_zone_v1',
-            'NO LEAN danger zones',
-            channelDescription:
-                'Interrupts when you enter a place you marked as a danger zone',
-            importance: Importance.max,
-            priority: Priority.max,
+          android: androidDetailsFor(
+            surface,
             color: red,
             colorized: !policy.hideSensitive,
-            enableVibration: true,
-            playSound: true,
             fullScreenIntent: true,
-            visibility: lockScreenVisibility,
-            category: AndroidNotificationCategory.reminder,
-            ticker: neutralNotificationText.title,
-            styleInformation: BigTextStyleInformation(
-              text.body,
-              contentTitle: text.title,
-            ),
-            actions: [
-              AndroidNotificationAction(
-                'action_sos',
-                policy.label('OPEN SOS', 'OPEN'),
-                showsUserInterface: true,
-                cancelNotification: true,
-              ),
-              AndroidNotificationAction(
-                'action_crave',
-                policy.label('LOG CRAVING', 'LOG'),
-                showsUserInterface: true,
-                cancelNotification: true,
-              ),
-              AndroidNotificationAction(
-                'action_locate',
-                policy.label('LOCATE ME', 'CHECK'),
-                showsUserInterface: true,
-                cancelNotification: true,
-              ),
-              AndroidNotificationAction(
-                'action_zone_exit',
-                policy.label('I\'M LEAVING', 'DISMISS'),
-                cancelNotification: true,
-              ),
-            ],
           ),
         ),
       );
@@ -327,18 +273,18 @@ class NotificationService {
   }) async {
     try {
       await _initialize(requestPermission: true);
+      final surface = positionStatusSurface(
+        prefs: prefs,
+        title: title,
+        body: body,
+      );
       await _plugin.show(
         positionStatusId,
-        title,
-        body,
+        surface.title,
+        surface.body,
         NotificationDetails(
-          android: AndroidNotificationDetails(
-            'position_status_v1',
-            'Position status',
-            channelDescription:
-                'Quiet, always-on position indicator while NO LEAN is open',
-            importance: Importance.low,
-            priority: Priority.low,
+          android: androidDetailsFor(
+            surface,
             ongoing: true,
             autoCancel: false,
             onlyAlertOnce: true,
@@ -347,12 +293,7 @@ class NotificationService {
             enableVibration: false,
             showWhen: false,
             timeoutAfter: positionStatusTimeout.inMilliseconds,
-            visibility: lockScreenVisibility,
             category: AndroidNotificationCategory.status,
-            styleInformation: BigTextStyleInformation(
-              body,
-              contentTitle: title,
-            ),
           ),
         ),
       );
@@ -386,10 +327,7 @@ class NotificationService {
       await cancelCodeTimer();
       return false;
     }
-    final text = prefs.textFor(
-      'CODE BLOCK DONE',
-      'Time is up on: $task Log how it went, or start another block.',
-    );
+    final surface = codeTimerSurface(prefs: prefs, task: task);
     try {
       await _initialize(requestPermission: true);
       final when = tz.TZDateTime.from(endsAt, tz.local);
@@ -397,21 +335,10 @@ class NotificationService {
         exactAllowed: await exactAlarmsAllowed(),
         schedule: (mode) => _plugin.zonedSchedule(
           codeTimerId,
-          text.title,
-          text.body,
+          surface.title,
+          surface.body,
           when,
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              'code_timer_v1',
-              'NO LEAN focus timer',
-              channelDescription: 'Tells you when a Code Instead block ends',
-              importance: Importance.defaultImportance,
-              priority: Priority.defaultPriority,
-              visibility: lockScreenVisibility,
-              category: AndroidNotificationCategory.reminder,
-              ticker: neutralNotificationText.title,
-            ),
-          ),
+          NotificationDetails(android: androidDetailsFor(surface)),
           androidScheduleMode: mode,
         ),
       );
@@ -439,51 +366,17 @@ class NotificationService {
     final store = await SharedPreferences.getInstance();
     await store.setString(useCheckPrefsKey, check.encode());
     if (!prefs.allows(NotificationKind.cravingCheck, due)) return false;
-    final text = prefs.textFor(
-      'DID YOU USE?',
-      '${check.trigger.body} Did you use? Either answer is OK.',
-    );
+    final surface = useCheckSurface(prefs: prefs, check: check);
     try {
       await _initialize(requestPermission: true);
       await scheduleWithExactFallback(
         exactAllowed: await exactAlarmsAllowed(),
         schedule: (mode) => _plugin.zonedSchedule(
           useCheckId,
-          text.title,
-          text.body,
+          surface.title,
+          surface.body,
           tz.TZDateTime.from(due, tz.local),
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              'use_check_v1',
-              'NO LEAN follow-up check-in',
-              channelDescription: 'Asks "did you use?" after a risky moment',
-              importance: Importance.defaultImportance,
-              priority: Priority.defaultPriority,
-              visibility: lockScreenVisibility,
-              category: AndroidNotificationCategory.reminder,
-              ticker: neutralNotificationText.title,
-              actions: [
-                AndroidNotificationAction(
-                  'action_use_yes',
-                  prefs.label('YES', 'YES'),
-                  showsUserInterface: true,
-                  cancelNotification: true,
-                ),
-                AndroidNotificationAction(
-                  'action_use_no',
-                  prefs.label('NO', 'NO'),
-                  showsUserInterface: true,
-                  cancelNotification: true,
-                ),
-                AndroidNotificationAction(
-                  'action_use_later',
-                  prefs.label('LATER', 'LATER'),
-                  showsUserInterface: true,
-                  cancelNotification: true,
-                ),
-              ],
-            ),
-          ),
+          NotificationDetails(android: androidDetailsFor(surface)),
           androidScheduleMode: mode,
         ),
       );
@@ -544,41 +437,17 @@ class NotificationService {
     var scheduled = 0;
     for (var i = 0; i < zoneFollowUpIds.length; i++) {
       final at = enteredAt.add(zoneFollowUpDelays[i]);
-      final text = zoneFollowUpText(prefs, i);
+      final surface = zoneFollowUpSurface(prefs: prefs, index: i);
       try {
         await _initialize(requestPermission: true);
         await scheduleWithExactFallback(
           exactAllowed: await exactAlarmsAllowed(),
           schedule: (mode) => _plugin.zonedSchedule(
             zoneFollowUpIds[i],
-            text.title,
-            text.body,
+            surface.title,
+            surface.body,
             tz.TZDateTime.from(at, tz.local),
-            NotificationDetails(
-              android: AndroidNotificationDetails(
-                'zone_followup_v1',
-                'NO LEAN check-ins',
-                channelDescription: 'Checks on you after a danger zone',
-                importance: Importance.high,
-                priority: Priority.high,
-                visibility: lockScreenVisibility,
-                category: AndroidNotificationCategory.reminder,
-                ticker: neutralNotificationText.title,
-                actions: [
-                  AndroidNotificationAction(
-                    'action_safe',
-                    prefs.label('I\'M OK', 'OK'),
-                    cancelNotification: true,
-                  ),
-                  AndroidNotificationAction(
-                    'action_sos',
-                    prefs.label('OPEN SOS', 'OPEN'),
-                    showsUserInterface: true,
-                    cancelNotification: true,
-                  ),
-                ],
-              ),
-            ),
+            NotificationDetails(android: androidDetailsFor(surface)),
             androidScheduleMode: mode,
           ),
         );
@@ -601,46 +470,17 @@ class NotificationService {
       await cancelCravingCheck();
       return false;
     }
-    final text = prefs.textFor(
-      'CRAVING RECHECK',
-      '15 minutes on. Rate it again: did it pass, ease or grow?',
-    );
+    final surface = cravingCheckSurface(prefs: prefs);
     try {
       await _initialize(requestPermission: true);
       await scheduleWithExactFallback(
         exactAllowed: await exactAlarmsAllowed(),
         schedule: (mode) => _plugin.zonedSchedule(
           cravingCheckId,
-          text.title,
-          text.body,
+          surface.title,
+          surface.body,
           tz.TZDateTime.from(at, tz.local),
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              'craving_check_v1',
-              'NO LEAN craving recheck',
-              channelDescription:
-                  'Asks how a logged craving is going 15 minutes later',
-              importance: Importance.defaultImportance,
-              priority: Priority.defaultPriority,
-              visibility: lockScreenVisibility,
-              category: AndroidNotificationCategory.reminder,
-              ticker: neutralNotificationText.title,
-              actions: [
-                AndroidNotificationAction(
-                  'action_recheck',
-                  prefs.label('RATE IT NOW', 'OPEN'),
-                  showsUserInterface: true,
-                  cancelNotification: true,
-                ),
-                AndroidNotificationAction(
-                  'action_used',
-                  prefs.label('I USED', 'LOG'),
-                  showsUserInterface: true,
-                  cancelNotification: true,
-                ),
-              ],
-            ),
-          ),
+          NotificationDetails(android: androidDetailsFor(surface)),
           androidScheduleMode: mode,
         ),
       );
@@ -674,6 +514,87 @@ class NotificationService {
     }
   }
 }
+
+/// Maps our pure importance values onto the plugin's.
+Importance importanceFor(NotificationChannelImportance value) =>
+    switch (value) {
+      NotificationChannelImportance.min => Importance.min,
+      NotificationChannelImportance.low => Importance.low,
+      NotificationChannelImportance.defaultImportance =>
+        Importance.defaultImportance,
+      NotificationChannelImportance.high => Importance.high,
+      NotificationChannelImportance.max => Importance.max,
+    };
+
+Priority priorityFor(NotificationChannelImportance value) => switch (value) {
+  NotificationChannelImportance.min => Priority.min,
+  NotificationChannelImportance.low => Priority.low,
+  NotificationChannelImportance.defaultImportance => Priority.defaultPriority,
+  NotificationChannelImportance.high => Priority.high,
+  NotificationChannelImportance.max => Priority.max,
+};
+
+/// Lock screens show the (already-neutral) wording when privacy is on;
+/// otherwise they stay private so a hide-sensitive lock screen redacts them.
+NotificationVisibility visibilityFor(bool hideSensitive) => hideSensitive
+    ? NotificationVisibility.public
+    : NotificationVisibility.private;
+
+/// Builds the Android payload for any [NotificationSurface]. Tests can inspect
+/// the surface itself; this is the one place channel/ticker/visibility land.
+AndroidNotificationDetails androidDetailsFor(
+  NotificationSurface surface, {
+  Color? color,
+  bool colorized = false,
+  bool enableLights = false,
+  Color? ledColor,
+  bool enableVibration = true,
+  bool playSound = true,
+  bool fullScreenIntent = false,
+  bool ongoing = false,
+  bool autoCancel = true,
+  bool onlyAlertOnce = false,
+  bool silent = false,
+  bool showWhen = true,
+  int? timeoutAfter,
+  AndroidNotificationCategory? category,
+}) => AndroidNotificationDetails(
+  surface.channel.id,
+  surface.channelName,
+  channelDescription: surface.channelDescription,
+  importance: importanceFor(surface.channel.importance),
+  priority: priorityFor(surface.channel.importance),
+  color: color,
+  colorized: colorized,
+  enableLights: enableLights,
+  ledColor: ledColor,
+  enableVibration: enableVibration,
+  playSound: playSound,
+  fullScreenIntent: fullScreenIntent,
+  ongoing: ongoing,
+  autoCancel: autoCancel,
+  onlyAlertOnce: onlyAlertOnce,
+  silent: silent,
+  showWhen: showWhen,
+  timeoutAfter: timeoutAfter,
+  visibility: visibilityFor(surface.hideSensitive),
+  category: category ?? AndroidNotificationCategory.reminder,
+  ticker: surface.ticker,
+  subText: surface.subText,
+  styleInformation: BigTextStyleInformation(
+    surface.body,
+    contentTitle: surface.title,
+  ),
+  actions: [
+    for (final action in surface.actions)
+      AndroidNotificationAction(
+        action.id,
+        action.label,
+        showsUserInterface: action.showsUserInterface,
+        cancelNotification: action.cancelNotification,
+      ),
+  ],
+);
 
 /// Schedules with exact alarms when Android allows them and falls back to
 /// inexact delivery when they are unavailable or revoked mid-schedule.

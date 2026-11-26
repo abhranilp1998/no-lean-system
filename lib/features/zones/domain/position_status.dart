@@ -48,7 +48,7 @@ class PositionStatusText {
 
 /// Neutral wording when "hide sensitive content" is on: no zone names, no
 /// coordinates, no distances.
-const neutralPositionTitle = 'NO LEAN // position active';
+const neutralPositionTitle = 'Status';
 const neutralPositionBody = 'Open the app for details.';
 
 /// Builds the position notification text. Pure, so it is unit-tested.
