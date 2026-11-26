@@ -27,6 +27,7 @@ import '../domain/event_derived_state.dart';
 import '../domain/recovery_event.dart';
 import '../domain/relapse_log_entry.dart';
 import '../domain/data_fixes_v12.dart';
+import '../domain/money_saved.dart';
 import '../domain/double_tap.dart' as double_tap;
 import '../domain/milestones.dart';
 import '../domain/use_check.dart';
@@ -457,6 +458,23 @@ class RecoveryController extends ChangeNotifier {
   /// only; stored doses keep the ml they were logged with.
   double bottleMl = defaultBottleMl;
 
+  /// Display currency for spend and money saved. Defaults to ₹.
+  AppCurrency currency = AppCurrency.inr;
+
+  /// Typical price of one bottle (the user's [bottleMl] size). Optional;
+  /// when set with [usualDailyMl], [dailySpend] is derived from them.
+  double? spendPerBottle;
+
+  /// Usual amount used per day, stored in ml. Optional.
+  double? usualDailyMl;
+
+  /// When true, recorded costs on slips that did not reset the lean timer
+  /// (benzo-only today) are subtracted from money saved.
+  bool subtractOtherCosts = false;
+
+  /// Optional named target the money-saved total is working toward.
+  SavingsGoal? savingsGoal;
+
   /// Insights dismissed "until the evidence changes": id -> evidenceKey.
   Map<String, String> dismissedInsights = {};
   List<String> reasons = List<String>.from(defaultReasons);
@@ -779,6 +797,17 @@ class RecoveryController extends ChangeNotifier {
     if (bottle is num && isValidBottleMl(bottle)) {
       bottleMl = bottle.toDouble();
     }
+    currency = AppCurrency.fromCode(map['currencyCode']);
+    final perBottle = map['spendPerBottle'];
+    spendPerBottle = perBottle is num && perBottle.isFinite && perBottle > 0
+        ? perBottle.toDouble()
+        : null;
+    final usual = map['usualDailyMl'];
+    usualDailyMl = usual is num && usual.isFinite && usual > 0
+        ? usual.toDouble()
+        : null;
+    subtractOtherCosts = map['subtractOtherCosts'] == true;
+    savingsGoal = SavingsGoal.tryParse(map['savingsGoal']);
     final insightPrefs = map['insightPreferences'];
     if (insightPrefs is Map && insightPrefs['dismissed'] is Map) {
       dismissedInsights = {
@@ -939,7 +968,20 @@ class RecoveryController extends ChangeNotifier {
     return elapsed.isNegative ? Duration.zero : elapsed;
   }
 
-  double get moneySaved => math.max(0, cleanDuration.inHours / 24) * dailySpend;
+  MoneySavedSnapshot get moneySavedSnapshot => computeMoneySaved(
+    dailySpend: dailySpend,
+    bottleMl: bottleMl,
+    cleanDuration: cleanDuration,
+    events: events,
+    lastDose: lastDose,
+    currency: currency,
+    spendPerBottle: spendPerBottle,
+    usualDailyMl: usualDailyMl,
+    subtractOtherCosts: subtractOtherCosts,
+    goal: savingsGoal,
+  );
+
+  double get moneySaved => moneySavedSnapshot.moneySaved;
   bool get isRiskWindow => riskWindow.contains(_now());
   bool get isPeakHourLockActive => peakHourLock && isRiskWindow;
 
@@ -1004,6 +1046,11 @@ class RecoveryController extends ChangeNotifier {
     'cooldownMinutes': cooldownMinutes,
     'dailySpend': dailySpend,
     'bottleMl': bottleMl,
+    'currencyCode': currency.code,
+    if (spendPerBottle != null) 'spendPerBottle': spendPerBottle,
+    if (usualDailyMl != null) 'usualDailyMl': usualDailyMl,
+    'subtractOtherCosts': subtractOtherCosts,
+    if (savingsGoal != null) 'savingsGoal': savingsGoal!.toJson(),
     'insightPreferences': {'dismissed': dismissedInsights},
     'reasons': reasons,
     'reminderMessages': reminderMessages,
@@ -1731,6 +1778,11 @@ class RecoveryController extends ChangeNotifier {
       'ifThenPlans': ifThenPlans.map((p) => p.toJson()).toList(),
     'dailySpend': dailySpend,
     'bottleMl': bottleMl,
+    'currencyCode': currency.code,
+    if (spendPerBottle != null) 'spendPerBottle': spendPerBottle,
+    if (usualDailyMl != null) 'usualDailyMl': usualDailyMl,
+    'subtractOtherCosts': subtractOtherCosts,
+    if (savingsGoal != null) 'savingsGoal': savingsGoal!.toJson(),
     'reasons': reasons,
     'reminderMessages': reminderMessages,
     'riskWindow': riskWindow.toJson(),
@@ -2613,6 +2665,54 @@ class RecoveryController extends ChangeNotifier {
 
   Future<void> updateDailySpend(double value) => _transaction(() async {
     dailySpend = math.max(0, value);
+    // A direct daily total replaces the per-bottle breakdown.
+    spendPerBottle = null;
+    usualDailyMl = null;
+  });
+
+  /// Currency, typical per-bottle spend, usual daily amount (ml), and the
+  /// option to subtract other-substance costs. [dailySpend] is derived when
+  /// the breakdown is present, otherwise used as a direct daily total.
+  Future<void> updateMoneySavedSettings({
+    AppCurrency? currency,
+    double? spendPerBottle,
+    double? usualDailyMl,
+    double? dailySpend,
+    bool? subtractOtherCosts,
+  }) => _transaction(() async {
+    if (currency != null) this.currency = currency;
+    if (subtractOtherCosts != null) {
+      this.subtractOtherCosts = subtractOtherCosts;
+    }
+    final per =
+        spendPerBottle != null && spendPerBottle.isFinite && spendPerBottle > 0
+        ? spendPerBottle
+        : null;
+    final usual =
+        usualDailyMl != null && usualDailyMl.isFinite && usualDailyMl > 0
+        ? usualDailyMl
+        : null;
+    this.spendPerBottle = per;
+    this.usualDailyMl = usual;
+    final derived = typicalDailySpend(
+      spendPerBottle: per,
+      usualDailyMl: usual,
+      bottleMl: bottleMl,
+    );
+    if (derived != null && derived > 0) {
+      this.dailySpend = derived;
+    } else if (dailySpend != null && dailySpend.isFinite && dailySpend >= 0) {
+      this.dailySpend = dailySpend;
+    } else {
+      this.dailySpend = 0;
+    }
+  });
+
+  Future<void> updateSavingsGoal(SavingsGoal? goal) => _transaction(() async {
+    if (goal != null && !goal.isValid) {
+      throw ArgumentError('Goal needs a short name and a target above zero.');
+    }
+    savingsGoal = goal;
   });
 
   /// Changes the bottle size for *new* dose entries. Past entries keep the
@@ -2624,6 +2724,14 @@ class RecoveryController extends ChangeNotifier {
     if (value == bottleMl) return;
     final previous = bottleMl;
     bottleMl = value;
+    final derived = typicalDailySpend(
+      spendPerBottle: spendPerBottle,
+      usualDailyMl: usualDailyMl,
+      bottleMl: bottleMl,
+    );
+    if (derived != null && derived > 0) {
+      dailySpend = derived;
+    }
     events.add(
       RecoveryEvent.create(
         type: RecoveryEventType.settingsChange,
@@ -3238,6 +3346,7 @@ class RecoveryController extends ChangeNotifier {
     privacy: widgetPrivacy,
     riskWindow: riskWindow,
     lastPledge: lastPledge,
+    moneyKept: widgetPrivacy ? null : moneySavedSnapshot.widgetKept,
   );
 }
 

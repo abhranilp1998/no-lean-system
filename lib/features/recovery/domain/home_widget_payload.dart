@@ -14,6 +14,7 @@ Map<String, Object> homeWidgetPayload({
   int? riskStartMinutes,
   int? riskEndMinutes,
   DateTime? lastPledge,
+  String? moneyKept,
 }) {
   if (privacy) {
     return const <String, Object>{
@@ -38,6 +39,8 @@ Map<String, Object> homeWidgetPayload({
     // The widget compares this with its own clock, so "TODAY LOCKED" ends at
     // midnight even if the app is not opened.
     'lastPledgeEpochMillis': ?lastPledge?.millisecondsSinceEpoch,
+    // Privacy-safe running total, e.g. "₹2,160 kept". Never names a substance.
+    'moneyKept': ?moneyKept,
   };
 }
 

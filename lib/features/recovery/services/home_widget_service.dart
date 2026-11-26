@@ -20,6 +20,7 @@ class HomeWidgetService {
     bool privacy = false,
     RiskWindow? riskWindow,
     DateTime? lastPledge,
+    String? moneyKept,
   }) async {
     try {
       await channel.invokeMethod<void>(
@@ -34,6 +35,7 @@ class HomeWidgetService {
           riskStartMinutes: riskWindow?.startMinutes,
           riskEndMinutes: riskWindow?.endMinutes,
           lastPledge: lastPledge,
+          moneyKept: privacy ? null : moneyKept,
         ),
       );
     } catch (_) {

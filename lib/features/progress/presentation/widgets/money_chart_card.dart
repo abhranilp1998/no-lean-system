@@ -17,12 +17,14 @@ class MoneyChartCard extends StatelessWidget {
     required this.dailySpend,
     required this.onSetSpend,
     this.costByType = const {},
+    this.currency = AppCurrency.inr,
     super.key,
   });
 
   final List<MoneyPoint> points;
   final double dailySpend;
   final VoidCallback onSetSpend;
+  final AppCurrency currency;
 
   /// Recorded ₹ per relapse type label (only types with a cost).
   final Map<String, double> costByType;
@@ -76,15 +78,15 @@ class MoneyChartCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _Total('KEPT', saved, toxic)),
-              Expanded(child: _Total('LOST', lost, red)),
-              Expanded(child: _Total('NET', saved - lost, cyan)),
+              Expanded(child: _Total('KEPT', saved, toxic, currency)),
+              Expanded(child: _Total('LOST', lost, red, currency)),
+              Expanded(child: _Total('NET', saved - lost, cyan, currency)),
             ],
           ),
           const SizedBox(height: 14),
           Semantics(
             label:
-                'Money chart. ${money(saved)} kept and ${money(lost)} lost '
+                'Money chart. ${currency.format(saved)} kept and ${currency.format(lost)} lost '
                 'since ${points.isEmpty ? 'today' : DateFormat('d MMM').format(points.first.day)}.',
             child: SizedBox(
               height: 150,
@@ -120,7 +122,7 @@ class MoneyChartCard extends StatelessWidget {
               children: [
                 for (final entry in costByType.entries)
                   Text(
-                    '${entry.key} ${money(entry.value)}',
+                    '${entry.key} ${currency.format(entry.value)}',
                     style: const TextStyle(
                       color: Colors.white70,
                       fontSize: 11,
@@ -134,9 +136,9 @@ class MoneyChartCard extends StatelessWidget {
           Text(
             key: const ValueKey('money-basis'),
             realLost > 0
-                ? 'LOST = ${money(realLost)} RECORDED'
-                      '${estimatedLost > 0 ? ' + ${money(estimatedLost)} ESTIMATED AT ${money(dailySpend)}/DAY FOR RELAPSE DAYS WITHOUT A COST' : ''}'
-                : 'ESTIMATE // ${money(dailySpend)} PER DAY, EVERY RELAPSE DAY '
+                ? 'LOST = ${currency.format(realLost)} RECORDED'
+                      '${estimatedLost > 0 ? ' + ${currency.format(estimatedLost)} ESTIMATED AT ${currency.format(dailySpend)}/DAY FOR RELAPSE DAYS WITHOUT A COST' : ''}'
+                : 'ESTIMATE // ${currency.format(dailySpend)} PER DAY, EVERY RELAPSE DAY '
                       'COUNTED AS LOST',
             style: microStyle.copyWith(color: muted, fontSize: 9),
           ),
@@ -155,11 +157,12 @@ class MoneyChartCard extends StatelessWidget {
 }
 
 class _Total extends StatelessWidget {
-  const _Total(this.label, this.value, this.color);
+  const _Total(this.label, this.value, this.color, this.currency);
 
   final String label;
   final double value;
   final Color color;
+  final AppCurrency currency;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -171,7 +174,7 @@ class _Total extends StatelessWidget {
         fit: BoxFit.scaleDown,
         alignment: Alignment.centerLeft,
         child: Text(
-          money(value),
+          currency.format(value),
           style: displayFont(
             fontSize: 17,
             fontWeight: FontWeight.w700,

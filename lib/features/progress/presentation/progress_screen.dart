@@ -26,6 +26,7 @@ import 'widgets/craving_timeline_card.dart';
 import 'widgets/insight_breakdown_card.dart';
 import 'widgets/milestone_tracker.dart';
 import 'widgets/money_chart_card.dart';
+import 'widgets/money_saved_card.dart';
 import 'widgets/progress_heat_map.dart';
 import 'widgets/recovery_summary_cards.dart';
 import 'widgets/swap_watch_card.dart';
@@ -154,6 +155,12 @@ class ProgressScreen extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 14),
+        MoneySavedCard(
+          snapshot: recovery.moneySavedSnapshot,
+          onSetSpend: () => showSpendDialog(context, ref),
+          onSetGoal: () => showSavingsGoalDialog(context, ref),
+        ),
+        const SizedBox(height: 14),
         MoneyChartCard(
           points: cumulativeMoneySeries(
             events: recovery.events,
@@ -161,6 +168,7 @@ class ProgressScreen extends ConsumerWidget {
             now: DateTime.now(),
           ),
           dailySpend: recovery.dailySpend,
+          currency: recovery.currency,
           onSetSpend: () => showSpendDialog(context, ref),
           costByType: costByType,
         ),

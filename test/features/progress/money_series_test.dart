@@ -131,7 +131,9 @@ void main() {
     final prompt = find.byKey(const ValueKey('dashboard-set-spend'));
     await tester.scrollUntilVisible(prompt, 200);
     await tester.tap(prompt);
-    await tester.pumpAndSettle();
-    expect(find.text('AVERAGE DAILY SPEND'), findsOneWidget);
+    // The home timer ticks; pumpAndSettle would hang.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('TYPICAL SPEND'), findsOneWidget);
   });
 }

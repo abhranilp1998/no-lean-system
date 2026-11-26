@@ -19,7 +19,7 @@ extension HeatMapModeInfo on HeatMapMode {
     HeatMapMode.count => 'Cravings + relapses logged per day',
     HeatMapMode.amount =>
       'ml per day (ml, L and bottles; tablets/drinks excluded)',
-    HeatMapMode.cost => 'Recorded ₹ per day',
+    HeatMapMode.cost => 'Recorded spend per day',
     HeatMapMode.stress => 'Highest stress logged per day (1-5)',
   };
 

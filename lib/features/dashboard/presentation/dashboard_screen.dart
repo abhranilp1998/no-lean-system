@@ -15,7 +15,6 @@ import '../../recovery/presentation/relapse_log_sheet.dart';
 import '../../tell/presentation/tell_me_anything_card.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/action_tile.dart';
 import '../../../core/widgets/brand_header.dart';
 import '../../../core/widgets/glass_card.dart';
@@ -40,6 +39,7 @@ import 'widgets/risk_window_banner.dart';
 import '../../zones/presentation/zone_use_check_card.dart';
 import '../domain/rough_day.dart';
 import 'rough_day_home.dart';
+import '../../progress/presentation/widgets/money_saved_card.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -212,19 +212,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 child: recovery.dailySpend > 0
                     ? StatCard(
                         label: 'MONEY SAVED',
-                        value: money(recovery.moneySaved),
-                        detail: 'At ${money(recovery.dailySpend)} / day',
+                        value: recovery.currency.format(recovery.moneySaved),
+                        detail: recovery.moneySavedSnapshot.homeDetail,
                         color: toxic,
                       )
-                    // ₹0 is "not set", not "saved nothing": ask for it.
+                    // 0 is "not set", not "saved nothing": ask for it.
                     : InkWell(
                         key: const ValueKey('dashboard-set-spend'),
                         borderRadius: BorderRadius.circular(18),
                         onTap: () => showSpendDialog(context, ref),
-                        child: const StatCard(
+                        child: StatCard(
                           label: 'MONEY SAVED',
-                          value: 'SET ₹',
-                          detail: 'Tap to set daily spend',
+                          value: 'SET ${recovery.currency.symbol}'.trim(),
+                          detail: 'How much did a usual day cost?',
                           color: toxic,
                         ),
                       ),
@@ -256,6 +256,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           const SizedBox(height: 14),
           const HighRiskDatesCard(),
           const SizedBox(height: 8),
+          MoneySavedCard(
+            snapshot: recovery.moneySavedSnapshot,
+            onSetSpend: () => showSpendDialog(context, ref),
+            onSetGoal: () => showSavingsGoalDialog(context, ref),
+          ),
+          const SizedBox(height: 22),
           Text(
             'ADAPTIVE INSIGHT',
             style: eyebrowStyle.copyWith(color: magenta),
