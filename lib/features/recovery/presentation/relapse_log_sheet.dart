@@ -16,11 +16,13 @@ import '../domain/craving_entry.dart';
 import '../domain/dose_safety.dart';
 import '../domain/dose_units.dart';
 import '../domain/relapse_log_entry.dart';
+import '../domain/lower_tolerance.dart';
 import '../domain/mixing_safety_net.dart';
 import '../domain/multi_day_log.dart';
 import '../domain/recovery_event.dart';
 import 'multi_day_picker.dart';
 import 'dose_safety_cards.dart';
+import 'lower_tolerance_card.dart';
 import 'peak_hour_gate_dialog.dart';
 import 'relapse_auth_dialog.dart';
 import '../../cravings/presentation/craving_dialog.dart';
@@ -44,6 +46,18 @@ Future<void> quickLogUsed(
     context,
     listen: false,
   ).read(recoveryProvider);
+  final beforeCount = recovery.events.length;
+  final tolerance = lowerToleranceWarning(
+    existingEvents: recovery.events,
+    entries: [
+      RelapseLogEntry(
+        occurredAt: DateTime.now(),
+        type: RelapseType.fullLean,
+        note: 'Logged with one tap.',
+        attemptedSos: false,
+      ),
+    ],
+  );
   ProtectedActionResult result;
   try {
     result = await recovery.quickLogUsed(source: source);
@@ -55,6 +69,12 @@ Future<void> quickLogUsed(
     await showRelapseLogSheet(context, source: source);
     return;
   }
+  if (tolerance != null &&
+      recovery.events.length > beforeCount &&
+      context.mounted) {
+    await showLowerToleranceCard(context, warning: tolerance);
+  }
+  if (!context.mounted) return;
   AppNotice.show(
     context,
     slipLoggedMessage(seed: DateTime.now().minute),
@@ -100,13 +120,6 @@ Future<void> showRelapseLogSheet(
     ),
   );
   if (result == null || !context.mounted) return;
-  AppNotice.show(
-    context,
-    result.multiDay
-        ? multiDayRecordedMessage(result.count, days: result.dayCount)
-        : slipsRecordedMessage(result.count),
-    type: AppNoticeType.success,
-  );
   if (result.openSos && context.mounted) {
     await Navigator.push(
       context,
@@ -119,6 +132,19 @@ Future<void> showRelapseLogSheet(
   // (B): any mixed save, from any entry point (dashboard, Tell, check-ins),
   // gets the safety net right away.
   if (result.mixed && context.mounted) await showMixingSafetyNetSheet(context);
+  // Full-screen tolerance card before the toast, so the toast is not
+  // sitting under it and the user sees their own numbers first.
+  if (result.tolerance != null && context.mounted) {
+    await showLowerToleranceCard(context, warning: result.tolerance!);
+  }
+  if (!context.mounted) return;
+  AppNotice.show(
+    context,
+    result.multiDay
+        ? multiDayRecordedMessage(result.count, days: result.dayCount)
+        : slipsRecordedMessage(result.count),
+    type: AppNoticeType.success,
+  );
 }
 
 /// Opens one saved relapse for correction: its facts and its date/time.
@@ -624,6 +650,14 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
     });
     AppFeedback.warning();
     try {
+      // Compute before the write so the streak still reflects the gap
+      // that this save is about to close.
+      final tolerance = widget.editing != null
+          ? null
+          : lowerToleranceWarning(
+            existingEvents: recovery.events,
+            entries: entries,
+          );
       Future<ProtectedActionResult> write({String? pin}) {
         final editing = widget.editing;
         if (editing != null) {
@@ -666,6 +700,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
             mixed: isMixedSave(entries.map((e) => e.type)),
             multiDay: days != null,
             dayCount: days == null ? 0 : slotDays(days).length,
+            tolerance: tolerance,
           ),
         );
       } else {
@@ -1407,6 +1442,7 @@ class _RelapseSheetResult {
     this.mixed = false,
     this.multiDay = false,
     this.dayCount = 0,
+    this.tolerance,
   });
 
   final int dayCount;
@@ -1414,6 +1450,7 @@ class _RelapseSheetResult {
   final bool openSos;
   final bool mixed;
   final bool multiDay;
+  final ToleranceWarning? tolerance;
 }
 
 /// The picked days, each with its list of doses. Tap a dose to change its
