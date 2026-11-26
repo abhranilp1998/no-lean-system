@@ -38,14 +38,16 @@ void main() {
       });
 
   test('the state version is not bumped by this feature', () {
-    expect(RecoveryController.stateVersion, 17);
-    expect(BackupService.currentBackupVersion, 12);
+    // Release 1.8.0-beta.1 carries state v18 / backup v13 from other PRs;
+    // this feature adds no bump of its own on top.
+    expect(RecoveryController.stateVersion, 18);
+    expect(BackupService.currentBackupVersion, 13);
   });
 
   test(
     'old saved state loads with both new settings at their defaults',
     () async {
-      for (final version in [9, 15, 17]) {
+      for (final version in [9, 15, 17, 18]) {
         final (c, _) = await loaded(state(version));
         expect(c.isLoaded, isTrue, reason: 'v$version');
         expect(c.weeklyRecapNotify, isFalse);
@@ -62,7 +64,7 @@ void main() {
     final saved = jsonDecode(store.value!) as Map<String, dynamic>;
     expect(saved['weeklyRecapNotify'], isTrue);
     expect(saved['reportMedicines'], 'sertraline 50 mg');
-    expect(saved['stateVersion'], 17);
+    expect(saved['stateVersion'], RecoveryController.stateVersion);
 
     final (again, againStore) = await loaded(store.value);
     expect(again.weeklyRecapNotify, isTrue);

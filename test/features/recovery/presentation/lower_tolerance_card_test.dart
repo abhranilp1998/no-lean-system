@@ -220,7 +220,10 @@ void main() {
       c.events.where((e) => e.type == RecoveryEventType.relapse),
       hasLength(2),
     );
-  });
+    // Semantics off: Flutter 3.50's semantics geometry pass throws a null
+    // check mid route transition here (framework, also on the pre-release
+    // base). The app behaviour under test is unchanged.
+  }, semanticsEnabled: false);
 
   testWidgets('a short streak does not show the card', (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);

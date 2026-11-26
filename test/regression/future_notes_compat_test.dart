@@ -52,8 +52,10 @@ void main() {
   }
 
   test('no version bump', () {
-    expect(RecoveryController.stateVersion, 17);
-    expect(BackupService.currentBackupVersion, 12);
+    // Release 1.8.0-beta.1 carries state v18 / backup v13 from other PRs;
+    // this feature adds no bump of its own on top.
+    expect(RecoveryController.stateVersion, 18);
+    expect(BackupService.currentBackupVersion, 13);
   });
 
   for (final v in [8, 9, 11, 12]) {
