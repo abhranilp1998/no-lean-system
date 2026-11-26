@@ -20,7 +20,7 @@ void main() {
       'privacy': false,
       'lastDoseEpochMillis': lastDose.millisecondsSinceEpoch,
       'cleanTime': '12d 04h',
-      'streak': '12 DAYS',
+      'streak': '12 DAYS CLEAN',
       'isRiskWindow': true,
       'hasPledgedToday': true,
     });

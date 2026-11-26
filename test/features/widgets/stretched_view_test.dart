@@ -237,6 +237,11 @@ void main() {
       ),
       findsNothing,
     );
+    await tester.scrollUntilVisible(
+      find.textContaining('older widget'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.textContaining('older widget'), findsOneWidget);
   });
 }

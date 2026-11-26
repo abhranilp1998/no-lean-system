@@ -2241,5 +2241,6 @@ class RecoveryController extends ChangeNotifier {
         dateKey(lastPledge!.toLocal()) == dateKey(DateTime.now()),
     privacy: widgetPrivacy,
     riskWindow: riskWindow,
+    lastPledge: lastPledge,
   );
 }

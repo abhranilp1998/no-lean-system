@@ -49,7 +49,10 @@ class GardenWidgetProvider : AppWidgetProvider() {
             val now = System.currentTimeMillis()
             val minute = WidgetPack.minutesOfDay(now)
             val evening = minute >= minOf(EVENING_FROM_MINUTES, WidgetPack.riskStart(context)) || minute < 5 * 60
-            val dir = prefs.getString(WidgetPack.KEY_GARDEN_DIR, null)
+            // Privacy mode: the garden is a picture of the streak, so show
+            // neutral copy instead, like every other widget does.
+            val privacy = prefs.getBoolean(NoLeanWidgetProvider.KEY_PRIVACY, false)
+            val dir = prefs.getString(WidgetPack.KEY_GARDEN_DIR, null).takeUnless { privacy }
             val bitmap = dir?.let {
                 WidgetPack.gardenFile(
                     it,
@@ -64,6 +67,7 @@ class GardenWidgetProvider : AppWidgetProvider() {
                 views.setImageViewBitmap(R.id.garden_image, bitmap)
                 views.setViewVisibility(R.id.garden_empty, View.GONE)
             } else {
+                if (privacy) views.setTextViewText(R.id.garden_empty, context.getString(R.string.widget_neutral))
                 views.setViewVisibility(R.id.garden_empty, View.VISIBLE)
             }
             views.setOnClickPendingIntent(R.id.garden_root, WidgetPack.openApp(context, null, 40))

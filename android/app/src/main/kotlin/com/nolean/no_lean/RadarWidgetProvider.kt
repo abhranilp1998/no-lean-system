@@ -27,13 +27,16 @@ class RadarWidgetProvider : AppWidgetProvider() {
 
         fun build(context: Context, bucket: WidgetBucket): RemoteViews {
             val prefs = WidgetPack.prefs(context)
+            // Privacy mode: no map and no place count, only neutral copy.
+            val privacy = prefs.getBoolean(NoLeanWidgetProvider.KEY_PRIVACY, false)
             val count = prefs.getInt(WidgetPack.KEY_RADAR_ZONES, 0)
-            val bitmap = prefs.getString(WidgetPack.KEY_RADAR_PATH, null)?.let { WidgetPack.decodeArt(it) }
+            val bitmap = prefs.getString(WidgetPack.KEY_RADAR_PATH, null)?.takeUnless { privacy }?.let { WidgetPack.decodeArt(it) }
             val views = RemoteViews(context.packageName, R.layout.radar_widget)
             if (bitmap != null) views.setImageViewBitmap(R.id.radar_image, bitmap)
             views.setTextViewText(
                 R.id.radar_caption,
-                if (count == 0) context.getString(R.string.radar_empty)
+                if (privacy) context.getString(R.string.widget_neutral)
+                else if (count == 0) context.getString(R.string.radar_empty)
                 else context.resources.getQuantityString(R.plurals.radar_places, count, count),
             )
             views.setViewVisibility(R.id.radar_image, if (bitmap != null) View.VISIBLE else View.INVISIBLE)
