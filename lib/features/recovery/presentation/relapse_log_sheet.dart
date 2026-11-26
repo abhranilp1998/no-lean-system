@@ -68,6 +68,7 @@ Future<void> showRelapseLogSheet(
   BuildContext context, {
   String source = 'app',
   DateTime? initialOccurredAt,
+  String? initialNote,
 }) async {
   final recovery = ProviderScope.containerOf(
     context,
@@ -92,8 +93,11 @@ Future<void> showRelapseLogSheet(
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.black,
-    builder: (_) =>
-        RelapseLogSheet(source: source, initialOccurredAt: initialOccurredAt),
+    builder: (_) => RelapseLogSheet(
+      source: source,
+      initialOccurredAt: initialOccurredAt,
+      initialNote: initialNote,
+    ),
   );
   if (result == null || !context.mounted) return;
   AppNotice.show(
@@ -141,8 +145,12 @@ class RelapseLogSheet extends ConsumerStatefulWidget {
     this.initialOccurredAt,
     this.editing,
     this.now,
+    this.initialNote,
     super.key,
   });
+
+  /// Prefills the first entry's note (e.g. after a danger-zone visit).
+  final String? initialNote;
 
   final String source;
 
@@ -183,6 +191,8 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
     if (at != null && !at.isAfter(DateTime.now())) {
       _entries.first.occurredAt = at;
     }
+    final note = widget.initialNote;
+    if (note != null) _entries.first.noteController.text = note;
   }
 
   void _setAgo(int index, int hours) => setState(() {
