@@ -58,7 +58,7 @@ void main() {
       final (controller, store, _) = await load(
         jsonEncode({'stateVersion': 13, 'events': <Object>[]}),
       );
-      expect(RecoveryController.stateVersion, 17);
+      expect(RecoveryController.stateVersion, 18);
       expect(controller.futureLetters, isEmpty);
       expect(controller.tonightLetter, isNull);
       await controller.addFutureLetter('You got through worse.');

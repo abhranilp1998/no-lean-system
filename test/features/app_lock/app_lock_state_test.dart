@@ -58,7 +58,7 @@ void main() {
       }),
     );
     expect(controller.loadStatus, RecoveryLoadStatus.ready);
-    expect(RecoveryController.stateVersion, 17);
+    expect(RecoveryController.stateVersion, 18);
     expect(controller.appLockPolicy, const AppLockPolicy());
     expect(controller.appLockPolicy.enabled, isFalse);
     final saved = jsonDecode(store.value!) as Map<String, dynamic>;
@@ -176,7 +176,7 @@ void main() {
       await controller.updateAppLockPolicy(policy);
       await controller.recordAppUnlock(unlockMetadata());
       final service = BackupService();
-      expect(BackupService.currentBackupVersion, 12);
+      expect(BackupService.currentBackupVersion, 13);
       final payload = service.buildBackupPayload(
         controller.events,
         preferences: controller.portablePreferences,

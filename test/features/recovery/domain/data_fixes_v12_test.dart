@@ -233,7 +233,7 @@ void main() {
   });
 
   for (final legacy in [10, 11]) {
-    test('backup v$legacy → v12 round-trip keeps hidden copies', () {
+    test('backup v$legacy → current format round-trip keeps hidden copies', () {
       final service = BackupService();
       final dup = {
         'relapseType': 'fullLean',
@@ -266,7 +266,7 @@ void main() {
           ],
         ),
       );
-      expect(jsonDecode(v12)['version'], 12);
+      expect(jsonDecode(v12)['version'], BackupService.currentBackupVersion);
       final again = service.validateBackupJson(v12);
       expect(again.events.map((e) => e.id), ['1', '3']);
       expect(again.hiddenDuplicates.map((e) => e.id), ['2']);
@@ -296,7 +296,7 @@ void main() {
     expect(c.hiddenDuplicates.single.id, '2');
     final saved = jsonDecode(store.value!) as Map<String, dynamic>;
     expect((saved['hiddenDuplicates'] as List).single['id'], '2');
-    // Reloading (now v17) neither re-hides nor resurfaces anything.
+    // Reloading (now at the current state version) neither re-hides nor resurfaces anything.
     final c2 = RecoveryController(relapseLock: FakeRelapseLock(), store: store);
     await c2.load();
     expect(c2.events.map((e) => e.id), ['1']);
@@ -308,7 +308,7 @@ void main() {
     expect(c2.events.map((e) => e.id), ['1']);
   });
 
-  test('state v16 is fixed on load and saved as v17', () async {
+  test('state v16 is fixed on load and saved as the current version', () async {
     SharedPreferences.setMockInitialValues({});
     final store = MemoryRecoveryStore(
       jsonEncode({
@@ -334,6 +334,6 @@ void main() {
     expect(r.metadata['relapseType'], 'fullLean');
     expect(r.metadata['amountMl'], 120.0);
     final saved = jsonDecode(store.value!) as Map<String, dynamic>;
-    expect(saved['stateVersion'], 17);
+    expect(saved['stateVersion'], 18);
   });
 }

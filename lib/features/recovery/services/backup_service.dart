@@ -103,7 +103,7 @@ class BackupService {
   /// message history, slip notes); older formats import without it.
   /// v12: (C) data fixes — dose amount/unit consistency, lean brands,
   /// double-tap dedupe. Older backups are fixed on read.
-  static const int currentBackupVersion = 12;
+  static const int currentBackupVersion = 13;
   static const int maxBackupBytes = 5 * 1024 * 1024;
   static const int maxEventCount = 50000;
 
@@ -631,6 +631,7 @@ class BackupService {
       'reduceMotion',
       'highContrast',
       'riskReminders',
+      'cravingPeakHeadsUp',
       'peakHourLock',
       'soundscape',
       'hapticFeedback',
@@ -698,6 +699,7 @@ class BackupService {
       'reduceMotion',
       'highContrast',
       'riskReminders',
+      'cravingPeakHeadsUp',
       'peakHourLock',
       'soundscape',
       'hapticFeedback',

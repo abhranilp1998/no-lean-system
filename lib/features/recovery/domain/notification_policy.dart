@@ -21,6 +21,8 @@ enum NotificationKind {
   /// Substance swap-watch heads-up. Non-critical: muted in quiet hours.
   /// Wording must stay privacy-safe (see [swapWatchNotificationTitle]).
   swapWatch,
+  /// 30-minute heads-up before a usual craving peak. Non-critical.
+  cravingPeak,
 }
 
 extension NotificationKindPolicy on NotificationKind {
@@ -29,7 +31,8 @@ extension NotificationKindPolicy on NotificationKind {
     NotificationKind.codeTimer ||
     NotificationKind.cravingCheck ||
     NotificationKind.logReminder ||
-    NotificationKind.swapWatch => false,
+    NotificationKind.swapWatch ||
+    NotificationKind.cravingPeak => false,
   };
 }
 
