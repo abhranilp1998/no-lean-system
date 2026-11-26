@@ -15,6 +15,7 @@ import '../../dashboard/domain/rough_day.dart';
 import '../domain/double_tap.dart';
 import '../domain/relapse_cooldown.dart';
 import '../domain/craving_entry.dart';
+import '../../cravings/domain/urge_ride.dart';
 import '../domain/dose_units.dart';
 import '../domain/quantity_upgrade.dart';
 import '../domain/legacy_recovery_migration.dart';
@@ -1732,6 +1733,51 @@ class RecoveryController extends ChangeNotifier {
       /* Optional. */
     }
   }
+
+  /// Finished 10-minute ride-it-out: stored as a craving + recheck with
+  /// optional metadata, so older backups and older apps keep working.
+  /// Does not schedule the 15-minute recheck or a "did you use?" prompt.
+  Future<void> recordUrgeRide({
+    required DateTime startedAt,
+    required UrgeRideOutcome outcome,
+    required UrgeRideActivity activity,
+    bool hapticPacing = false,
+    int intensityBefore = 5,
+    int plannedMinutes = 10,
+  }) => _transaction(() async {
+    final ended = _now();
+    final start = startedAt.isAfter(ended) ? ended : startedAt;
+    final ride = UrgeRide(
+      startedAt: start,
+      endedAt: ended,
+      outcome: outcome,
+      activity: activity,
+      hapticPacing: hapticPacing,
+      intensityBefore: intensityBefore,
+      plannedMinutes: plannedMinutes,
+      id: 'pending',
+    );
+    final craving = RecoveryEvent.create(
+      type: RecoveryEventType.craving,
+      timestamp: start,
+      metadata: ride.cravingMetadata(),
+    );
+    final check = RecoveryEvent.create(
+      type: RecoveryEventType.cravingCheck,
+      timestamp: ended,
+      metadata: ride.checkMetadata(craving.id),
+    );
+    if (events.any((e) => e.id == craving.id || e.id == check.id)) {
+      throw StateError('Event ID conflict.');
+    }
+    events.add(craving);
+    events.add(check);
+    _sortAndRecompute();
+  });
+
+  List<UrgeRide> get urgeRides => UrgeRide.fromEvents(events);
+
+  WhatWorkedStats get whatWorked => WhatWorkedStats(urgeRides);
 
   Future<ProtectedActionResult> recordRelapse({
     String? pin,

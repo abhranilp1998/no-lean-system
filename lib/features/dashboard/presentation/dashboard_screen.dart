@@ -25,6 +25,7 @@ import '../../../core/widgets/stat_card.dart';
 import '../../recovery/domain/event_derived_state.dart';
 import '../../../core/widgets/status_pill.dart';
 import '../../cravings/presentation/craving_dialog.dart';
+import '../../cravings/presentation/what_worked_card.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../../emergency/presentation/hold_to_text_sos.dart';
 import '../../recovery/application/recovery_provider.dart';
@@ -165,6 +166,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           ],
           const CravingRecheckCard(),
           const ZoneUseCheckCard(),
+          const WhatWorkedCard(),
           Row(
             children: [
               Expanded(

@@ -17,6 +17,7 @@ import '../../../recovery/presentation/relapse_log_sheet.dart';
 import '../../../recovery/domain/multi_day_log.dart';
 import '../../domain/history_projection.dart';
 import 'event_edit_dialog.dart';
+import 'urge_ride_label.dart';
 import 'history_record_facts.dart';
 import 'zone_resisted_label.dart';
 
@@ -28,7 +29,9 @@ class EventTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final (label, icon, color) =
-        zoneResistedDetails(event) ?? _getEventDetails(event);
+        zoneResistedDetails(event) ??
+        urgeRideDetails(event) ??
+        _getEventDetails(event);
 
     if (event.type == RecoveryEventType.relapse) {
       return _RelapseEventCard(
@@ -73,6 +76,12 @@ class EventTile extends ConsumerWidget {
                   const SizedBox(height: 8),
                   Text(
                     'Stayed clean after the visit.',
+                    style: TextStyle(color: muted, fontSize: 12),
+                  ),
+                ] else if (urgeRideDetails(event) != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'You stayed with it.',
                     style: TextStyle(color: muted, fontSize: 12),
                   ),
                 ] else if (event.metadata.isNotEmpty) ...[
