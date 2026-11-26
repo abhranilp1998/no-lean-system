@@ -60,6 +60,59 @@ class RelapseLogEntry {
   /// Optional real ₹ cost of this dose.
   final double? cost;
 
+  /// Same facts at another time. Used by multi-day logging, where one
+  /// shared description becomes one entry per picked day.
+  RelapseLogEntry copyWith({DateTime? occurredAt}) => RelapseLogEntry(
+    occurredAt: occurredAt ?? this.occurredAt,
+    type: type,
+    note: note,
+    attemptedSos: attemptedSos,
+    quantity: quantity,
+    contextTags: contextTags,
+    dose: dose,
+    doseParsedFromText: doseParsedFromText,
+    stress: stress,
+    cost: cost,
+  );
+
+  /// Same facts at another time, optionally with this dose's own type or
+  /// amount (multi-day logging). An own amount replaces the shared amount
+  /// and its free-text quantity, which described the shared amount.
+  RelapseLogEntry withDoseOverride({
+    required DateTime occurredAt,
+    RelapseType? type,
+    DoseAmount? dose,
+  }) => RelapseLogEntry(
+    occurredAt: occurredAt,
+    type: type ?? this.type,
+    note: note,
+    attemptedSos: attemptedSos,
+    quantity: dose == null ? quantity : null,
+    contextTags: contextTags,
+    dose: dose ?? this.dose,
+    doseParsedFromText: dose == null ? doseParsedFromText : false,
+    stress: stress,
+    cost: cost,
+  );
+
+  /// Metadata keys written by [toMetadata]. An edit clears these before
+  /// writing the new facts so a removed amount or tag does not linger.
+  static const metadataKeys = {
+    'relapseType',
+    'relapseTypeFrom',
+    'note',
+    'attemptedSos',
+    'quantity',
+    'contextTags',
+    'stress',
+    'cost',
+    'amount',
+    'unit',
+    'amountMl',
+    'bottleMl',
+    'amountSource',
+  };
+
   String get normalizedNote => note.trim();
 
   String? get normalizedQuantity {

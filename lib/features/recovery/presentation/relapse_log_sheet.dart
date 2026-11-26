@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/services/app_feedback.dart';
 import '../../../core/services/app_notice.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../application/recovery_controller.dart';
@@ -16,6 +17,9 @@ import '../domain/dose_safety.dart';
 import '../domain/dose_units.dart';
 import '../domain/relapse_log_entry.dart';
 import '../domain/mixing_safety_net.dart';
+import '../domain/multi_day_log.dart';
+import '../domain/recovery_event.dart';
+import 'multi_day_picker.dart';
 import 'dose_safety_cards.dart';
 import 'peak_hour_gate_dialog.dart';
 import 'relapse_auth_dialog.dart';
@@ -94,7 +98,9 @@ Future<void> showRelapseLogSheet(
   if (result == null || !context.mounted) return;
   AppNotice.show(
     context,
-    slipsRecordedMessage(result.count),
+    result.multiDay
+        ? multiDayRecordedMessage(result.count, days: result.dayCount)
+        : slipsRecordedMessage(result.count),
     type: AppNoticeType.success,
   );
   if (result.openSos && context.mounted) {
@@ -111,14 +117,41 @@ Future<void> showRelapseLogSheet(
   if (result.mixed && context.mounted) await showMixingSafetyNetSheet(context);
 }
 
+/// Opens one saved relapse for correction: its facts and its date/time.
+/// Only that entry changes; other days from the same save are untouched.
+Future<void> showRelapseEditSheet(
+  BuildContext context,
+  RecoveryEvent event,
+) async {
+  final result = await showModalBottomSheet<_RelapseSheetResult>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.black,
+    builder: (_) => RelapseLogSheet(editing: event),
+  );
+  if (result == null || !context.mounted) return;
+  AppNotice.show(context, entryUpdatedMessage, type: AppNoticeType.success);
+  if (result.mixed && context.mounted) await showMixingSafetyNetSheet(context);
+}
+
 class RelapseLogSheet extends ConsumerStatefulWidget {
   const RelapseLogSheet({
     this.source = 'app',
     this.initialOccurredAt,
+    this.editing,
+    this.now,
     super.key,
   });
 
   final String source;
+
+  /// A saved relapse to correct. When set, the sheet edits that one entry
+  /// instead of logging new ones.
+  final RecoveryEvent? editing;
+
+  /// Fixed clock for the multi-day picker in tests and screenshots.
+  final DateTime? now;
 
   /// Prefills the first entry's time (a backfill "about X h ago").
   final DateTime? initialOccurredAt;
@@ -131,6 +164,9 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   final _formKey = GlobalKey<FormState>();
   final _operationId = const Uuid().v4();
   final _entries = <_RelapseDraft>[_RelapseDraft()];
+
+  /// Picked days for a multi-day log; null for the normal one-by-one form.
+  List<MultiDaySlot>? _days;
   bool _saving = false;
   bool _openSosAfterSave = false;
   String? _error;
@@ -138,6 +174,11 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   @override
   void initState() {
     super.initState();
+    final editing = widget.editing;
+    if (editing != null) {
+      _entries.first.fillFrom(editing);
+      return;
+    }
     final at = widget.initialOccurredAt;
     if (at != null && !at.isAfter(DateTime.now())) {
       _entries.first.occurredAt = at;
@@ -155,6 +196,205 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       entry.dispose();
     }
     super.dispose();
+  }
+
+  bool get _editing => widget.editing != null;
+  DateTime _clock() => widget.now ?? DateTime.now();
+
+  /// Doses per day when every picked day has the same number, else null.
+  int? _uniformDoseCount(List<MultiDaySlot>? slots) {
+    if (slots == null || slots.isEmpty) return null;
+    final counts = {
+      for (final d in slotDays(slots)) dosesOnDay(slots, d).length,
+    };
+    return counts.length == 1 ? counts.first : null;
+  }
+
+  int _maxDoseCount(List<MultiDaySlot> slots) => slots.isEmpty
+      ? 1
+      : [
+          for (final d in slotDays(slots)) dosesOnDay(slots, d).length,
+        ].reduce((a, b) => a > b ? a : b);
+
+  Future<void> _openMultiDayPicker() async {
+    final current = _days;
+    final pick = await showMultiDayPicker(
+      context,
+      initialDays: current == null ? const [] : slotDays(current),
+      initialHour: current?.firstOrNull?.hour ?? multiDayDefaultHour,
+      initialMinute: current?.firstOrNull?.minute ?? multiDayDefaultMinute,
+      now: widget.now,
+    );
+    if (pick == null || !mounted) return;
+    final now = _clock();
+    final uniform = _uniformDoseCount(current) ?? 1;
+    setState(() {
+      // Days that stay picked keep every dose the user already set up; new
+      // days start with the same number of doses as the others.
+      final next = <MultiDaySlot>[];
+      for (final slot in pick.slots(now)) {
+        final kept = current == null
+            ? <MultiDaySlot>[]
+            : dosesOnDay(current, slot.day);
+        if (kept.isNotEmpty) {
+          next.addAll(kept.map((dose) => clampSlotToNow(dose, now)));
+        } else if (uniform <= 1) {
+          next.add(slot);
+        } else {
+          next.addAll(defaultDosesForDay(slot.day, uniform, now: now));
+        }
+      }
+      _days = sortedSlots(next);
+      for (final extra in _entries.skip(1)) {
+        extra.dispose();
+      }
+      _entries.removeRange(1, _entries.length);
+      final note = _entries.first.noteController;
+      if (note.text.trim().isEmpty) {
+        note.text = 'Logging this later for days I missed.';
+      }
+      _error = null;
+    });
+  }
+
+  void _leaveMultiDay() => setState(() {
+    _days = null;
+    _error = null;
+  });
+
+  /// Removes one dose. A day left with no doses disappears; with no days
+  /// left the form goes back to a single event.
+  void _removeDose(int index) => setState(() {
+    final days = List<MultiDaySlot>.of(_days!)..removeAt(index);
+    _days = days.isEmpty ? null : days;
+    _error = null;
+  });
+
+  void _addDose(DateTime day) {
+    final slot = nextDoseSlot(_days!, day, now: _clock());
+    setState(() {
+      if (slot == null) {
+        _error = _days!.length >= multiDayMaxDays
+            ? 'You can log at most $multiDayMaxDays entries at once.'
+            : 'No free time left on that day for another dose.';
+        return;
+      }
+      if (_days!.length >= multiDayMaxDays) {
+        _error = 'You can log at most $multiDayMaxDays entries at once.';
+        return;
+      }
+      _days = sortedSlots([..._days!, slot]);
+      _error = null;
+    });
+  }
+
+  /// Applies [count] doses to every picked day with evenly spread default
+  /// times. Per-dose overrides are kept by position.
+  void _setDosesPerDay(int count) {
+    final days = _days;
+    if (days == null) return;
+    final n = count.clamp(1, multiDayMaxDosesPerDay);
+    final dayList = slotDays(days);
+    if (dayList.length * n > multiDayMaxDays) return;
+    final now = _clock();
+    setState(() {
+      _days = sortedSlots([
+        for (final day in dayList)
+          ...defaultDosesForDay(day, n, now: now, carry: dosesOnDay(days, day)),
+      ]);
+      _error = null;
+    });
+  }
+
+  Future<void> _editDose(int index) async {
+    final slots = _days!;
+    final slot = slots[index];
+    final outcome = await showDialog<_DoseEditResult>(
+      context: context,
+      builder: (_) => _DoseDialog(slot: slot),
+    );
+    if (outcome == null || !mounted) return;
+    if (outcome.remove) {
+      _removeDose(index);
+      return;
+    }
+    final updated = slot
+        .withTime(outcome.hour, outcome.minute)
+        .withOverride(type: outcome.type);
+    String? problem;
+    DoseAmount? dose;
+    final amountText = outcome.amountText.trim();
+    if (amountText.isNotEmpty) {
+      final bottleMl = ref.read(recoveryProvider).bottleMl;
+      final amount = parseAmount(amountText);
+      if (amount == null) {
+        problem = 'Enter the amount as a number, or leave it blank.';
+      } else {
+        var unit = outcome.unit;
+        final check = doseSanityCheck(amount, unit, bottleMl: bottleMl);
+        if (check != null) {
+          var keepable = true;
+          try {
+            DoseAmount.entered(amount, unit, bottleMl: bottleMl);
+          } on ArgumentError {
+            keepable = false;
+          }
+          final choice = await _confirmDoseUnit(
+            check,
+            unit,
+            keepable: keepable,
+          );
+          if (!mounted || choice == null) return;
+          unit = choice;
+        }
+        try {
+          dose = DoseAmount.entered(amount, unit, bottleMl: bottleMl);
+        } on ArgumentError catch (error) {
+          problem = error.message?.toString();
+        }
+      }
+    }
+    if (!mounted) return;
+    final withDose = updated.withOverride(type: outcome.type, dose: dose);
+    setState(() {
+      if (problem != null) {
+        _error = problem;
+      } else if (withDose.occurredAt.isAfter(_clock())) {
+        _error = 'That time has not happened yet today. Pick an earlier time.';
+      } else if (timeTakenOnDay(
+        slots,
+        slot.day,
+        outcome.hour,
+        outcome.minute,
+        ignoreIndex: index,
+      )) {
+        _error =
+            'Another dose on ${DateFormat.MMMd().format(slot.day)} is already at ${DateFormat.jm().format(withDose.occurredAt)}. Pick a different time.';
+      } else {
+        _days = sortedSlots(List.of(slots)..[index] = withDose);
+        _error = null;
+      }
+    });
+  }
+
+  Future<bool> _confirmMultiDay(
+    List<RelapseLogEntry> entries,
+    RelapseLogEntry sharedEntry,
+  ) async {
+    final resets = entriesResetLeanTimer(entries);
+    final sample = sharedEntry;
+    return await showModalBottomSheet<bool>(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          backgroundColor: panel,
+          builder: (sheetContext) => _MultiDayConfirmSheet(
+            entries: entries,
+            sample: sample,
+            resetsLeanTimer: resets,
+          ),
+        ) ??
+        false;
   }
 
   Future<void> _pickDate(int index) async {
@@ -181,7 +421,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
 
   Future<void> _pickTime(int index) async {
     final current = _entries[index].occurredAt;
-    final time = await _showRelapseTimePicker(
+    final time = await showRelapseTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(current),
     );
@@ -199,7 +439,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
     }
   }
 
-  Future<bool> _confirmReset() async {
+  Future<bool> _confirmReset({bool resetsLeanTimer = true}) async {
     return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -220,10 +460,12 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                 letterSpacing: 1.2,
               ),
             ),
-            content: const Text(
-              'This will reset your clean counter. Your earlier progress and history will remain intact.',
+            content: Text(
+              resetsLeanTimer
+                  ? 'This will reset your clean counter. Your earlier progress and history will remain intact.'
+                  : 'Benzo-only use is saved for your safety log. It does not reset your lean clean time.',
               textAlign: TextAlign.center,
-              style: TextStyle(height: 1.45),
+              style: const TextStyle(height: 1.45),
             ),
             actionsAlignment: MainAxisAlignment.spaceBetween,
             actions: [
@@ -238,8 +480,8 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                   backgroundColor: red,
                   foregroundColor: Colors.black,
                 ),
-                icon: const Icon(Icons.lock_reset),
-                label: const Text('CONFIRM RESET'),
+                icon: Icon(resetsLeanTimer ? Icons.lock_reset : Icons.save),
+                label: Text(resetsLeanTimer ? 'CONFIRM RESET' : 'SAVE IT'),
               ),
             ],
           ),
@@ -293,7 +535,10 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       setState(() => _error = 'Complete every required relapse field.');
       return;
     }
-    if (_entries.any((entry) => entry.occurredAt.isAfter(DateTime.now()))) {
+    final days = _days;
+    if (days != null
+        ? days.any((slot) => slot.occurredAt.isAfter(DateTime.now()))
+        : _entries.any((entry) => entry.occurredAt.isAfter(DateTime.now()))) {
       setState(
         () => _error =
             'An event cannot be in the future. Check each date and time.',
@@ -321,7 +566,47 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       if (!mounted || choice == null) return;
       if (choice != entry.unit) setState(() => entry.unit = choice);
     }
-    if (!await _confirmReset() || !mounted) return;
+    final recovery = ref.read(recoveryProvider);
+    if (days != null) {
+      if (days.length > multiDayMaxDays) {
+        setState(
+          () =>
+              _error = 'You can log at most $multiDayMaxDays entries at once.',
+        );
+        return;
+      }
+      final dup = firstDuplicateSlot(days);
+      if (dup != null) {
+        setState(
+          () => _error =
+              'Two doses on ${DateFormat.MMMd().format(dup.day)} are both at ${DateFormat.jm().format(dup.occurredAt)}. Change one of them.',
+        );
+        return;
+      }
+    }
+    final List<RelapseLogEntry> entries;
+    late final RelapseLogEntry shared;
+    try {
+      final drafts = _entries
+          .map((entry) => entry.toDomain(bottleMl: recovery.bottleMl))
+          .toList();
+      shared = drafts.first;
+      entries = days != null
+          ? expandMultiDayEntries(drafts.first, sortedSlots(days))
+          : drafts;
+      for (final entry in entries) {
+        entry.validate();
+      }
+    } on ArgumentError catch (error) {
+      setState(() => _error = error.message?.toString());
+      return;
+    }
+    final confirmed = _editing
+        ? true
+        : days != null
+        ? await _confirmMultiDay(entries, shared)
+        : await _confirmReset(resetsLeanTimer: entriesResetLeanTimer(entries));
+    if (!confirmed || !mounted) return;
 
     setState(() {
       _saving = true;
@@ -329,38 +614,48 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
     });
     AppFeedback.warning();
     try {
-      final recovery = ref.read(recoveryProvider);
-      final entries = _entries
-          .map((entry) => entry.toDomain(bottleMl: recovery.bottleMl))
-          .toList();
-      var result = await recovery.recordRelapse(
-        entries: entries,
-        operationId: _operationId,
-        source: widget.source,
-      );
+      Future<ProtectedActionResult> write({String? pin}) {
+        final editing = widget.editing;
+        if (editing != null) {
+          return recovery.editRelapseEntry(
+            id: editing.id,
+            entry: entries.single,
+            pin: pin,
+            tryBiometrics: pin == null,
+          );
+        }
+        return recovery.recordRelapse(
+          entries: entries,
+          operationId: _operationId,
+          source: widget.source,
+          extraMetadata: days != null
+              ? const {multiDayMetadataKey: true}
+              : const {},
+          pin: pin,
+          tryBiometrics: pin == null,
+        );
+      }
+
+      var result = await write();
       if (!mounted) return;
       if (result == ProtectedActionResult.authenticationRequired) {
         final pin = await showRelapsePinDialog(
           context,
-          actionLabel: 'SAVE RELAPSE',
+          actionLabel: _editing ? 'AUTHORIZE EDIT' : 'SAVE RELAPSE',
         );
         if (!mounted || pin == null) return;
-        result = await recovery.recordRelapse(
-          entries: entries,
-          operationId: _operationId,
-          source: widget.source,
-          pin: pin,
-          tryBiometrics: false,
-        );
+        result = await write(pin: pin);
       }
       if (!mounted) return;
       if (result == ProtectedActionResult.completed) {
         Navigator.pop(
           context,
           _RelapseSheetResult(
-            count: _entries.length,
+            count: entries.length,
             openSos: _openSosAfterSave,
             mixed: isMixedSave(entries.map((e) => e.type)),
+            multiDay: days != null,
+            dayCount: days == null ? 0 : slotDays(days).length,
           ),
         );
       } else {
@@ -403,8 +698,14 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
+    final days = _days;
     final warnings = loggingSafetyWarnings(
-      draft: [for (final e in _entries) (type: e.type, at: e.occurredAt)],
+      draft: days != null
+          ? [
+              for (final d in days)
+                (type: d.type ?? _entries.first.type, at: d.occurredAt),
+            ]
+          : [for (final e in _entries) (type: e.type, at: e.occurredAt)],
       events: recovery.events,
       cleanStreakDays: recovery.streak,
       now: DateTime.now(),
@@ -447,7 +748,11 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                'LOG RELAPSE',
+                                _editing
+                                    ? 'EDIT ENTRY'
+                                    : days != null
+                                    ? 'LOG SEVERAL DAYS'
+                                    : 'LOG RELAPSE',
                                 style: displayFont(
                                   fontSize: 24,
                                   fontWeight: FontWeight.w800,
@@ -459,16 +764,53 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        const Text(
-                          'Record what happened without hiding it. This resets clean time; it does not erase the work already done.',
-                          style: TextStyle(height: 1.45),
+                        Text(
+                          _editing
+                              ? 'Correct this one entry. Other days saved alongside it stay as they are.'
+                              : days != null
+                              ? 'Describe these days once. Every dose is saved as its own entry, so you can fix any single one later from History.'
+                              : 'Record what happened without hiding it. This resets clean time; it does not erase the work already done.',
+                          style: const TextStyle(height: 1.45),
                         ),
                         const SizedBox(height: 6),
                         const Text(
                           'Every entry needs a type, context, and whether SOS was attempted. Dates and times use this device.',
                           style: TextStyle(color: muted, fontSize: 12),
                         ),
+                        if (!_editing && days == null) ...[
+                          const SizedBox(height: 10),
+                          OutlinedButton.icon(
+                            key: const ValueKey('open-multi-day-picker'),
+                            onPressed: _saving ? null : _openMultiDayPicker,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: cyan,
+                              side: BorderSide(
+                                color: cyan.withValues(alpha: .6),
+                              ),
+                            ),
+                            icon: const Icon(Icons.date_range),
+                            label: const Text('MISSED A FEW DAYS? LOG SEVERAL'),
+                          ),
+                        ],
                         const SizedBox(height: 16),
+                        if (days != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _MultiDayCard(
+                              days: days,
+                              saving: _saving,
+                              dosesPerDay:
+                                  _uniformDoseCount(days) ??
+                                  _maxDoseCount(days),
+                              mixedCounts: _uniformDoseCount(days) == null,
+                              onChangeDays: _openMultiDayPicker,
+                              onEditDose: _editDose,
+                              onRemoveDose: _removeDose,
+                              onAddDose: _addDose,
+                              onDosesPerDay: _setDosesPerDay,
+                              onLeave: _leaveMultiDay,
+                            ),
+                          ),
                         for (var index = 0; index < _entries.length; index++)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
@@ -477,6 +819,12 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                               entry: _entries[index],
                               bottleMl: recovery.bottleMl,
                               saving: _saving,
+                              title: _editing
+                                  ? 'ENTRY'
+                                  : days != null
+                                  ? 'SAME FOR ALL ${slotDays(days).length} DAYS'
+                                  : null,
+                              showWhen: days == null,
                               canRemove: _entries.length > 1,
                               onDate: () => _pickDate(index),
                               onTime: () => _pickTime(index),
@@ -494,29 +842,31 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                           const OverdoseSignsCard(),
                           const SizedBox(height: 8),
                         ],
-                        TextButton.icon(
-                          onPressed: _saving || _entries.length >= 50
-                              ? null
-                              : _addEntry,
-                          icon: const Icon(Icons.add),
-                          label: const Text('ADD ANOTHER EVENT'),
-                        ),
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: red,
-                          value: _openSosAfterSave,
-                          onChanged: _saving
-                              ? null
-                              : (value) => setState(
-                                  () => _openSosAfterSave = value ?? false,
-                                ),
-                          title: const Text('OPEN SOS AFTER SAVE'),
-                          subtitle: const Text(
-                            'Move directly into the 60-second override.',
-                            style: TextStyle(color: muted, fontSize: 11),
+                        if (!_editing && days == null)
+                          TextButton.icon(
+                            onPressed: _saving || _entries.length >= 50
+                                ? null
+                                : _addEntry,
+                            icon: const Icon(Icons.add),
+                            label: const Text('ADD ANOTHER EVENT'),
                           ),
-                          controlAffinity: ListTileControlAffinity.leading,
-                        ),
+                        if (!_editing)
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            activeColor: red,
+                            value: _openSosAfterSave,
+                            onChanged: _saving
+                                ? null
+                                : (value) => setState(
+                                    () => _openSosAfterSave = value ?? false,
+                                  ),
+                            title: const Text('OPEN SOS AFTER SAVE'),
+                            subtitle: const Text(
+                              'Move directly into the 60-second override.',
+                              style: TextStyle(color: muted, fontSize: 11),
+                            ),
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
                       ],
                     ),
                   ),
@@ -542,6 +892,10 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                   label: Text(
                     _saving
                         ? 'SAVING...'
+                        : _editing
+                        ? 'SAVE CHANGES'
+                        : days != null
+                        ? 'LOG ${days.length} ${days.length == 1 ? 'ENTRY' : 'ENTRIES'}'
                         : 'SAVE ${_entries.length} ${_entries.length == 1 ? 'EVENT' : 'EVENTS'}',
                   ),
                 ),
@@ -558,9 +912,12 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   }
 }
 
-Future<TimeOfDay?> _showRelapseTimePicker({
+/// Hour/minute picker used for relapse times (24 h dropdowns, which stay
+/// readable at large text sizes).
+Future<TimeOfDay?> showRelapseTimePicker({
   required BuildContext context,
   required TimeOfDay initialTime,
+  String title = 'SET RELAPSE TIME',
 }) {
   var hour = initialTime.hour;
   var minute = initialTime.minute;
@@ -570,7 +927,7 @@ Future<TimeOfDay?> _showRelapseTimePicker({
       builder: (context, setDialogState) => AlertDialog(
         key: const ValueKey('relapse-time-picker'),
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        title: const Text('SET RELAPSE TIME'),
+        title: Text(title),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -636,6 +993,8 @@ class _RelapseEntryCard extends StatelessWidget {
     required this.bottleMl,
     required this.saving,
     required this.canRemove,
+    this.title,
+    this.showWhen = true,
     required this.onDate,
     required this.onTime,
     required this.onAgo,
@@ -648,6 +1007,13 @@ class _RelapseEntryCard extends StatelessWidget {
   final double bottleMl;
   final bool saving;
   final bool canRemove;
+
+  /// Card heading; defaults to "RELAPSE n".
+  final String? title;
+
+  /// False in multi-day mode, where each day's date and time live in the
+  /// day list instead.
+  final bool showWhen;
   final VoidCallback onDate;
   final VoidCallback onTime;
   final ValueChanged<int> onAgo;
@@ -665,47 +1031,50 @@ class _RelapseEntryCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'RELAPSE ${index + 1}',
+                  title ?? 'RELAPSE ${index + 1}',
                   style: eyebrowStyle.copyWith(color: red),
                 ),
               ),
-              IconButton(
-                tooltip: 'Remove relapse ${index + 1}',
-                onPressed: saving || !canRemove ? null : onRemove,
-                icon: const Icon(Icons.close),
-              ),
-            ],
-          ),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: [
-              OutlinedButton.icon(
-                key: ValueKey('relapse-date-$index'),
-                onPressed: saving ? null : onDate,
-                icon: const Icon(Icons.calendar_month),
-                label: Text(DateFormat.yMMMd().format(entry.occurredAt)),
-              ),
-              OutlinedButton.icon(
-                key: ValueKey('relapse-time-$index'),
-                onPressed: saving ? null : onTime,
-                icon: const Icon(Icons.schedule),
-                label: Text(DateFormat.jm().format(entry.occurredAt)),
-              ),
-            ],
-          ),
-          Wrap(
-            spacing: 6,
-            children: [
-              Text('ABOUT', style: microStyle),
-              for (final hours in relapseAgoChoices)
-                ActionChip(
-                  key: ValueKey('relapse-ago-$index-$hours'),
-                  label: Text('${hours}H AGO'),
-                  onPressed: saving ? null : () => onAgo(hours),
+              if (canRemove)
+                IconButton(
+                  tooltip: 'Remove relapse ${index + 1}',
+                  onPressed: saving ? null : onRemove,
+                  icon: const Icon(Icons.close),
                 ),
             ],
           ),
+          if (showWhen) ...[
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                OutlinedButton.icon(
+                  key: ValueKey('relapse-date-$index'),
+                  onPressed: saving ? null : onDate,
+                  icon: const Icon(Icons.calendar_month),
+                  label: Text(DateFormat.yMMMd().format(entry.occurredAt)),
+                ),
+                OutlinedButton.icon(
+                  key: ValueKey('relapse-time-$index'),
+                  onPressed: saving ? null : onTime,
+                  icon: const Icon(Icons.schedule),
+                  label: Text(DateFormat.jm().format(entry.occurredAt)),
+                ),
+              ],
+            ),
+            Wrap(
+              spacing: 6,
+              children: [
+                Text('ABOUT', style: microStyle),
+                for (final hours in relapseAgoChoices)
+                  ActionChip(
+                    key: ValueKey('relapse-ago-$index-$hours'),
+                    label: Text('${hours}H AGO'),
+                    onPressed: saving ? null : () => onAgo(hours),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           DropdownButtonFormField<RelapseType>(
             key: ValueKey('relapse-type-$index'),
@@ -875,6 +1244,39 @@ class _RelapseDraft {
   final amountController = TextEditingController();
   final costController = TextEditingController();
 
+  /// Prefills this draft from a saved relapse for editing.
+  void fillFrom(RecoveryEvent event) {
+    final m = event.metadata;
+    occurredAt = event.timestamp;
+    // Edit the type the user picked, not the brand-corrected one.
+    type =
+        RelapseTypeLabel.fromName(m['relapseTypeFrom']) ??
+        RelapseTypeLabel.fromName(m['relapseType']) ??
+        RelapseType.fullLean;
+    attemptedSos = m['attemptedSos'] == true;
+    final s = m['stress'];
+    stress = s is num ? s.round() : null;
+    contextTags
+      ..clear()
+      ..addAll(switch (m['contextTags']) {
+        final List values => values.whereType<String>(),
+        _ => const <String>[],
+      });
+    noteController.text = (m['note'] as String?) ?? '';
+    quantityController.text = (m['quantity'] as String?) ?? '';
+    final dose = DoseAmount.fromMetadata(m);
+    if (dose != null && m['amountSource'] != 'parsed') {
+      unit = dose.unit;
+      amountController.text = formatAmount(dose.amount);
+    }
+    final cost = m['cost'];
+    if (cost is num) {
+      costController.text = cost == cost.roundToDouble()
+          ? cost.toInt().toString()
+          : cost.toString();
+    }
+  }
+
   /// The amount field wins; otherwise an exact free-text quantity is used.
   RelapseLogEntry toDomain({required double bottleMl}) {
     final amount = parseAmount(amountController.text);
@@ -993,9 +1395,501 @@ class _RelapseSheetResult {
     required this.count,
     required this.openSos,
     this.mixed = false,
+    this.multiDay = false,
+    this.dayCount = 0,
   });
 
+  final int dayCount;
   final int count;
   final bool openSos;
   final bool mixed;
+  final bool multiDay;
+}
+
+/// The picked days, each with its list of doses. Tap a dose to change its
+/// time, type or amount; "+ DOSE" adds another one on that day.
+class _MultiDayCard extends StatelessWidget {
+  const _MultiDayCard({
+    required this.days,
+    required this.saving,
+    required this.dosesPerDay,
+    required this.mixedCounts,
+    required this.onChangeDays,
+    required this.onEditDose,
+    required this.onRemoveDose,
+    required this.onAddDose,
+    required this.onDosesPerDay,
+    required this.onLeave,
+  });
+
+  final List<MultiDaySlot> days;
+  final bool saving;
+  final int dosesPerDay;
+  final bool mixedCounts;
+  final VoidCallback onChangeDays;
+  final ValueChanged<int> onEditDose;
+  final ValueChanged<int> onRemoveDose;
+  final ValueChanged<DateTime> onAddDose;
+  final ValueChanged<int> onDosesPerDay;
+  final VoidCallback onLeave;
+
+  @override
+  Widget build(BuildContext context) {
+    final dayList = slotDays(days);
+    final canMore =
+        dosesPerDay < multiDayMaxDosesPerDay &&
+        dayList.length * (dosesPerDay + 1) <= multiDayMaxDays;
+    return GlassCard(
+      key: const ValueKey('multi-day-card'),
+      accent: cyan,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${dayList.length} ${dayList.length == 1 ? 'DAY' : 'DAYS'} PICKED',
+            style: eyebrowStyle.copyWith(color: cyan),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            multiDayEntrySummary(days),
+            key: const ValueKey('multi-day-summary'),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Tap a dose to change its time, type or amount. Add as many doses as that day had. Each one is saved separately.',
+            style: TextStyle(color: muted, fontSize: 11, height: 1.35),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'DOSES PER DAY (ALL DAYS)',
+                  style: TextStyle(color: muted, fontSize: 11),
+                ),
+              ),
+              IconButton(
+                key: const ValueKey('multi-day-doses-minus'),
+                tooltip: 'Fewer doses per day',
+                onPressed: saving || dosesPerDay <= 1
+                    ? null
+                    : () => onDosesPerDay(dosesPerDay - 1),
+                icon: const Icon(Icons.remove_circle_outline),
+              ),
+              Text(
+                mixedCounts ? 'MIXED' : '$dosesPerDay',
+                key: const ValueKey('multi-day-doses-count'),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+              IconButton(
+                key: const ValueKey('multi-day-doses-plus'),
+                tooltip: 'More doses per day',
+                onPressed: saving || !canMore
+                    ? null
+                    : () => onDosesPerDay(dosesPerDay + 1),
+                icon: const Icon(Icons.add_circle_outline),
+              ),
+            ],
+          ),
+          const Divider(height: 14),
+          for (final day in dayList) ...[
+            _dayRow(day),
+            const SizedBox(height: 8),
+          ],
+          Wrap(
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                key: const ValueKey('multi-day-change'),
+                onPressed: saving ? null : onChangeDays,
+                icon: const Icon(Icons.date_range),
+                label: const Text('CHANGE DAYS'),
+              ),
+              TextButton(
+                key: const ValueKey('multi-day-leave'),
+                onPressed: saving ? null : onLeave,
+                child: const Text('LOG ONE EVENT INSTEAD'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dayRow(DateTime day) {
+    final key = DateFormat('yyyy-MM-dd').format(day);
+    final indexes = [
+      for (var i = 0; i < days.length; i++)
+        if (days[i].day == day) i,
+    ];
+    return Column(
+      key: ValueKey('multi-day-row-$key'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          DateFormat('EEE d MMM').format(day).toUpperCase(),
+          style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 12,
+            letterSpacing: .6,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (var n = 0; n < indexes.length; n++)
+              InputChip(
+                key: ValueKey(
+                  n == 0 ? 'multi-day-slot-$key' : 'multi-day-slot-$key-$n',
+                ),
+                label: Text(
+                  doseChipLabel(days[indexes[n]]),
+                  style: const TextStyle(fontSize: 11),
+                ),
+                onPressed: saving ? null : () => onEditDose(indexes[n]),
+                onDeleted: saving ? null : () => onRemoveDose(indexes[n]),
+                deleteButtonTooltipMessage: indexes.length == 1
+                    ? 'Remove this day'
+                    : 'Remove this dose',
+              ),
+            ActionChip(
+              key: ValueKey('multi-day-add-dose-$key'),
+              avatar: const Icon(Icons.add, size: 16),
+              label: const Text('DOSE', style: TextStyle(fontSize: 11)),
+              onPressed: saving ? null : () => onAddDose(day),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// "9:00 PM", or "9:00 PM · 250 ml · BENZO" when the dose has its own
+/// amount or type.
+String doseChipLabel(MultiDaySlot slot) => [
+  DateFormat.jm().format(slot.occurredAt),
+  if (slot.dose != null) slot.dose!.display,
+  if (slot.type != null) slot.type!.label,
+].join(' · ');
+
+class _DoseEditResult {
+  const _DoseEditResult({
+    this.remove = false,
+    this.hour = 0,
+    this.minute = 0,
+    this.type,
+    this.amountText = '',
+    this.unit = DoseUnit.bottle,
+  });
+
+  final bool remove;
+  final int hour;
+  final int minute;
+  final RelapseType? type;
+  final String amountText;
+  final DoseUnit unit;
+}
+
+/// Edits one dose: its time, and optionally its own type and amount. Blank
+/// means "same as the shared entry".
+class _DoseDialog extends StatefulWidget {
+  const _DoseDialog({required this.slot});
+
+  final MultiDaySlot slot;
+
+  @override
+  State<_DoseDialog> createState() => _DoseDialogState();
+}
+
+class _DoseDialogState extends State<_DoseDialog> {
+  late int _hour = widget.slot.hour;
+  late int _minute = widget.slot.minute;
+  late RelapseType? _type = widget.slot.type;
+  late DoseUnit _unit = widget.slot.dose?.unit ?? DoseUnit.bottle;
+  late final TextEditingController _amount = TextEditingController(
+    text: widget.slot.dose == null
+        ? ''
+        : formatAmount(widget.slot.dose!.amount),
+  );
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickTime() async {
+    final time = await showRelapseTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: _hour, minute: _minute),
+      title:
+          'TIME ON ${DateFormat.MMMd().format(widget.slot.day).toUpperCase()}',
+    );
+    if (time != null && mounted) {
+      setState(() {
+        _hour = time.hour;
+        _minute = time.minute;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final time = DateFormat.jm().format(DateTime(2000, 1, 1, _hour, _minute));
+    return AlertDialog(
+      key: const ValueKey('dose-dialog'),
+      backgroundColor: panelRaised,
+      title: Text(
+        'DOSE ON ${DateFormat.MMMd().format(widget.slot.day).toUpperCase()}',
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            OutlinedButton.icon(
+              key: const ValueKey('dose-time'),
+              onPressed: _pickTime,
+              icon: const Icon(Icons.schedule),
+              label: Text(time),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Only change these if this dose was different from the shared details.',
+              style: TextStyle(color: muted, fontSize: 11, height: 1.35),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<RelapseType?>(
+              key: const ValueKey('dose-type'),
+              initialValue: _type,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'TYPE'),
+              dropdownColor: panelRaised,
+              items: [
+                const DropdownMenuItem<RelapseType?>(
+                  value: null,
+                  child: Text('SAME AS SHARED'),
+                ),
+                for (final type in RelapseType.values)
+                  DropdownMenuItem<RelapseType?>(
+                    value: type,
+                    child: Text(type.label),
+                  ),
+              ],
+              onChanged: (value) => setState(() => _type = value),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const ValueKey('dose-amount'),
+                    controller: _amount,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'AMOUNT',
+                      hintText: 'Same as shared',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                DropdownButton<DoseUnit>(
+                  key: const ValueKey('dose-unit'),
+                  value: _unit,
+                  dropdownColor: panelRaised,
+                  items: [
+                    for (final unit in DoseUnit.values)
+                      DropdownMenuItem(value: unit, child: Text(unit.label)),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _unit = value);
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('dose-remove'),
+          onPressed: () =>
+              Navigator.pop(context, const _DoseEditResult(remove: true)),
+          child: const Text('REMOVE DOSE'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('CANCEL'),
+        ),
+        FilledButton(
+          key: const ValueKey('dose-done'),
+          onPressed: () => Navigator.pop(
+            context,
+            _DoseEditResult(
+              hour: _hour,
+              minute: _minute,
+              type: _type,
+              amountText: _amount.text,
+              unit: _unit,
+            ),
+          ),
+          child: const Text('DONE'),
+        ),
+      ],
+    );
+  }
+}
+
+/// "Log N entries" summary shown before a multi-day save, grouped by day.
+class _MultiDayConfirmSheet extends StatelessWidget {
+  const _MultiDayConfirmSheet({
+    required this.entries,
+    required this.sample,
+    required this.resetsLeanTimer,
+  });
+
+  final List<RelapseLogEntry> entries;
+  final RelapseLogEntry sample;
+  final bool resetsLeanTimer;
+
+  /// " · 250 ml · BENZO" for a dose that differs from the shared entry.
+  String _overrideNote(RelapseLogEntry e) {
+    final parts = [
+      if (e.dose != null && e.dose?.display != sample.dose?.display)
+        e.dose!.display,
+      if (e.effectiveType != sample.effectiveType) e.effectiveType.label,
+    ];
+    return parts.isEmpty ? '' : ' · ${parts.join(' · ')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final n = entries.length;
+    final label = 'LOG $n ${n == 1 ? 'ENTRY' : 'ENTRIES'}';
+    final byDay = <DateTime, List<RelapseLogEntry>>{};
+    for (final e in entries) {
+      byDay.putIfAbsent(dayOnly(e.occurredAt), () => []).add(e);
+    }
+    final dayKeys = byDay.keys.toList()..sort();
+    final summary = multiDayEntrySummaryCounts(n, dayKeys.length);
+    final facts = <String>[
+      sample.effectiveType.label,
+      if (sample.dose != null) sample.dose!.display,
+      if (sample.cost != null) money(sample.cost!),
+      if (sample.stress != null) 'Stress ${sample.stress}/5',
+      ...sample.normalizedContextTags,
+    ];
+    return Padding(
+      key: const ValueKey('multi-day-confirm'),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'CHECK BEFORE SAVING',
+            style: displayFont(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: cyan,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$summary, each saved on its own:',
+            style: const TextStyle(height: 1.4),
+          ),
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 260),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final day in dayKeys)
+                  Padding(
+                    key: ValueKey(
+                      'multi-day-confirm-day-${DateFormat('yyyy-MM-dd').format(day)}',
+                    ),
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${DateFormat('EEE d MMM yyyy').format(day)} · ${byDay[day]!.length} ${byDay[day]!.length == 1 ? 'dose' : 'doses'}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        for (final e in byDay[day]!)
+                          Text(
+                            '• ${DateFormat.jm().format(e.occurredAt)}${_overrideNote(e)}',
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Shared: ${facts.join(' · ')}',
+            style: const TextStyle(color: muted, fontSize: 12, height: 1.4),
+          ),
+          if (sample.normalizedNote.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '"${sample.normalizedNote}"',
+                style: const TextStyle(color: muted, fontSize: 12, height: 1.4),
+              ),
+            ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: (resetsLeanTimer ? red : toxic).withValues(alpha: .1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: (resetsLeanTimer ? red : toxic).withValues(alpha: .5),
+              ),
+            ),
+            child: Text(
+              resetsLeanTimer
+                  ? 'Your clean time will count from the latest of these days. Everything you built before stays in your history.'
+                  : 'Benzo-only use is saved for your safety log. It does not reset your lean clean time.',
+              key: const ValueKey('multi-day-timer-note'),
+              style: const TextStyle(height: 1.4, fontSize: 12.5),
+            ),
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            key: const ValueKey('confirm-multi-day'),
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: cyan,
+              foregroundColor: Colors.black,
+              minimumSize: const Size.fromHeight(50),
+            ),
+            icon: const Icon(Icons.playlist_add_check),
+            label: Text(label),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('GO BACK'),
+          ),
+        ],
+      ),
+    );
+  }
 }
