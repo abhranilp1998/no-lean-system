@@ -114,6 +114,18 @@ class _WidgetsScreenState extends ConsumerState<WidgetsScreen>
             value: recovery.widgetPrivacy,
             onChanged: (v) => recovery.setWidgetPrivacy(v),
           ),
+          SwitchListTile(
+            key: const ValueKey('widgets-notification-privacy'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Private notifications'),
+            subtitle: Text(
+              recovery.notificationPrefs.hideSensitive
+                  ? 'Every alert says "Reminder" // lock screen too'
+                  : 'Notifications show full text, including on the lock screen if the phone allows it',
+            ),
+            value: recovery.notificationPrefs.hideSensitive,
+            onChanged: (v) => recovery.setHideSensitiveNotifications(v),
+          ),
           const SizedBox(height: 8),
           Text('YOUR WIDGETS', style: label),
           const SizedBox(height: 8),

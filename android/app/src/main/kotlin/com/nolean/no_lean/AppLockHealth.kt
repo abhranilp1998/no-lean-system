@@ -77,11 +77,12 @@ object AppLockHealth {
 
     fun showAlert(context: Context, issue: String, hideSensitive: Boolean) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val copy = PrivateNotifications.health(hideSensitive, issue)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Shield status", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                NotificationChannel(CHANNEL, copy.channelName, NotificationManager.IMPORTANCE_DEFAULT).apply {
                     setShowBadge(true)
-                    lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+                    lockscreenVisibility = copy.visibility
                 },
             )
         }
@@ -90,15 +91,6 @@ object AppLockHealth {
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val text = if (hideSensitive) {
-            "Tap to check"
-        } else {
-            when (issue) {
-                "usage_access" -> "Usage access was turned off. Nothing is locked. Tap to fix."
-                "overlay" -> "\"Display over other apps\" is off. Locked apps only get a notification. Tap to fix."
-                else -> "The lock stopped running. Nothing is locked. Tap to restart."
-            }
-        }
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(context, CHANNEL)
         } else {
@@ -107,13 +99,14 @@ object AppLockHealth {
         }
         val notification = builder
             .setSmallIcon(R.mipmap.no_lean_launcher)
-            .setContentTitle(if (hideSensitive) "NO LEAN" else "Shield OFF")
-            .setContentText(text)
-            .setStyle(Notification.BigTextStyle().bigText(text))
+            .setContentTitle(copy.title)
+            .setContentText(copy.body)
+            .setStyle(Notification.BigTextStyle().bigText(copy.body))
+            .setTicker(copy.ticker)
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setVisibility(copy.visibility)
             .build()
         try {
             manager.notify(ALERT_ID, notification)
