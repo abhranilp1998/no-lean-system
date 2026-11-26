@@ -301,7 +301,20 @@ void main() {
         'widget_action_relapse',
         'widget_action_code',
       ]) {
-        expect(find.text(string(name)), findsWidgets, reason: name);
+        // The large preview can sit below the fold once other cards are added.
+        final label = find.text(string(name), skipOffstage: false);
+        if (label.evaluate().isEmpty) {
+          await tester.scrollUntilVisible(
+            find.text(string(name)),
+            300,
+            scrollable: find.byType(Scrollable).first,
+          );
+        }
+        expect(
+          find.text(string(name), skipOffstage: false),
+          findsWidgets,
+          reason: name,
+        );
       }
       expect(find.text('LOG RELAPSES'), findsNothing);
     });

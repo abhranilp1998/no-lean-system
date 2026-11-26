@@ -213,7 +213,7 @@ void main() {
       c.events,
       preferences: c.portablePreferences,
     );
-    expect(payload['version'], 12);
+    expect(payload['version'], 13);
     final preview = service.validateBackupJson(jsonEncode(payload));
     final restored = {for (final e in preview.events) e.id: e};
     for (final e in c.events.where(
@@ -407,7 +407,7 @@ void main() {
         c.events,
         preferences: c.portablePreferences,
       );
-      expect(payload['version'], 12);
+      expect(payload['version'], 13);
       final preview = service.validateBackupJson(jsonEncode(payload));
       final fresh = RecoveryController(
         store: MemoryRecoveryStore(),

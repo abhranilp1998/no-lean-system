@@ -384,13 +384,13 @@ void main() {
     }
 
     test('backup stays at v12; zone-resisted check-ins round-trip', () async {
-      expect(BackupService.currentBackupVersion, 12);
+      expect(BackupService.currentBackupVersion, 13);
       final service = BackupService();
       final payload = service.buildBackupPayload([
         RecoveryEvent.fromJson(pledge),
         RecoveryEvent.fromJson(resisted),
       ], preferences: c.portablePreferences);
-      expect(payload['version'], 12);
+      expect(payload['version'], 13);
       final preview = service.validateBackupJson(jsonEncode(payload));
       await c.mergeImportedEvents(preview.events);
       expect(c.zonesResisted, 1);

@@ -31,8 +31,8 @@ void main() {
   }
 
   test('toggle defaults on and older state without the key stays on', () async {
-    expect(RecoveryController.stateVersion, 17);
-    expect(BackupService.currentBackupVersion, 12);
+    expect(RecoveryController.stateVersion, 18);
+    expect(BackupService.currentBackupVersion, 13);
     final (fresh, _, scheduled) = await load();
     expect(fresh.highRiskDateReminders, isTrue);
     expect(fresh.paydayDay, isNull);
@@ -62,7 +62,7 @@ void main() {
     expect(reloaded.highRiskDateReminders, isTrue);
     final saved = jsonDecode(store.value!) as Map<String, dynamic>;
     // Saving after load may write defaults, but version stays 17.
-    expect(saved['stateVersion'], 17);
+    expect(saved['stateVersion'], 18);
   });
 
   test('custom dates, payday and plans persist across reload', () async {

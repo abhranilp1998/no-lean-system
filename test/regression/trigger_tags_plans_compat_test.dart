@@ -324,8 +324,8 @@ void main() {
   );
 
   test('no event type, state or backup version change', () {
-    expect(RecoveryController.stateVersion, 17);
-    expect(BackupService.currentBackupVersion, 12);
+    expect(RecoveryController.stateVersion, 18);
+    expect(BackupService.currentBackupVersion, 13);
     expect(
       RecoveryEventType.values.map((t) => t.name),
       isNot(anyOf(contains('triggerTag'), contains('ifThenPlan'))),

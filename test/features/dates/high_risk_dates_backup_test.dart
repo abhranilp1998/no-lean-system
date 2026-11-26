@@ -18,8 +18,8 @@ void main() {
   };
 
   test('backup and state versions stay at 12 and 17', () {
-    expect(BackupService.currentBackupVersion, 12);
-    expect(RecoveryController.stateVersion, 17);
+    expect(BackupService.currentBackupVersion, 13);
+    expect(RecoveryController.stateVersion, 18);
   });
 
   test(
@@ -156,7 +156,7 @@ void main() {
     expect(controller.customHighRiskDates, isEmpty);
     expect(controller.paydayDay, isNull);
     final saved = jsonDecode(store.value!) as Map<String, dynamic>;
-    expect(saved['stateVersion'], 17);
+    expect(saved['stateVersion'], 18);
   });
 
   test('exported backup stays on version 12 and keeps optional keys', () async {
@@ -178,7 +178,7 @@ void main() {
       controller.events,
       preferences: controller.portablePreferences,
     );
-    expect(payload['version'], 12);
+    expect(payload['version'], 13);
     expect(payload['preferences']['paydayDay'], 15);
     expect(payload['preferences']['customHighRiskDates'], isNotEmpty);
     final preview = BackupService().validateBackupJson(jsonEncode(payload));

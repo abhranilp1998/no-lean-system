@@ -128,8 +128,8 @@ void main() {
     test(
       'backup stays at v12; a ride round-trips as optional metadata',
       () async {
-        expect(BackupService.currentBackupVersion, 12);
-        expect(RecoveryController.stateVersion, 17);
+        expect(BackupService.currentBackupVersion, 13);
+        expect(RecoveryController.stateVersion, 18);
         await c.recordUrgeRide(
           startedAt: now.subtract(const Duration(minutes: 10)),
           outcome: UrgeRideOutcome.yes,
@@ -140,7 +140,7 @@ void main() {
           c.events,
           preferences: c.portablePreferences,
         );
-        expect(payload['version'], 12);
+        expect(payload['version'], 13);
         final preview = service.validateBackupJson(jsonEncode(payload));
         await setUpController();
         await c.mergeImportedEvents(preview.events);

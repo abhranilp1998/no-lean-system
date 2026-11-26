@@ -141,7 +141,18 @@ void main() {
         }
         final original = {for (final e in preview.events) e.id: e.toJson()};
         for (final id in original.keys) {
-          expect(jsonEncode(out[id]), jsonEncode(original[id]), reason: id);
+          // Integration build: #25 derives streakLost on import for a legacy
+          // relapse that lacked it. Everything else must match exactly.
+          final exported = Map<String, dynamic>.from(out[id]!);
+          final meta = Map<String, dynamic>.from(exported['metadata'] as Map);
+          final origMeta = (original[id]!['metadata'] as Map);
+          for (final k in meta.keys.toList()) {
+            if (!origMeta.containsKey(k) && k.startsWith('streakLost')) {
+              meta.remove(k);
+            }
+          }
+          exported['metadata'] = meta;
+          expect(jsonEncode(exported), jsonEncode(original[id]), reason: id);
         }
       },
     );
@@ -218,8 +229,8 @@ void main() {
 
   test('state and backup versions are unchanged by this feature', () {
     // No version bump: older builds keep reading what this build writes.
-    expect(RecoveryController.stateVersion, 17);
-    expect(BackupService.currentBackupVersion, 12);
+    expect(RecoveryController.stateVersion, 18);
+    expect(BackupService.currentBackupVersion, 13);
     expect(
       RecoveryEventType.values.map((t) => t.name),
       isNot(contains('slipReview')),

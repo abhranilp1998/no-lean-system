@@ -17,7 +17,7 @@ void main() {
       final surfaces = everyFlutterNotificationSurface(hidden);
       // Risk window (open + pre), zone, position, code timer, two use-checks,
       // two follow-ups, craving recheck.
-      expect(surfaces, hasLength(10));
+      expect(surfaces, hasLength(14));
       expect(
         surfaces.map((s) => s.channel.id).toSet(),
         NotificationChannels.all.map((c) => c.id).toSet(),

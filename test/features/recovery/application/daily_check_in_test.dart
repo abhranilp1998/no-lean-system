@@ -47,13 +47,13 @@ void main() {
   }
 
   test('no version bump: v17 without the keys loads off at 20:00', () async {
-    expect(RecoveryController.stateVersion, 17);
-    expect(BackupService.currentBackupVersion, 12);
+    expect(RecoveryController.stateVersion, 18);
+    expect(BackupService.currentBackupVersion, 13);
     final (c, store, _) = await loaded();
     expect(c.dailyCheckIn, isFalse);
     expect(c.dailyCheckInMinutes, defaultCheckInMinutes);
     final saved = jsonDecode(store.value!) as Map;
-    expect(saved['stateVersion'], 17);
+    expect(saved['stateVersion'], 18);
   });
 
   test('toggle and time persist and survive a reload', () async {
@@ -63,7 +63,7 @@ void main() {
     final saved = jsonDecode(store.value!) as Map;
     expect(saved['dailyCheckIn'], isTrue);
     expect(saved['dailyCheckInMinutes'], 21 * 60 + 15);
-    expect(saved['stateVersion'], 17);
+    expect(saved['stateVersion'], 18);
     final again = RecoveryController(
       store: store,
       relapseLock: FakeRelapseLock(),

@@ -178,15 +178,15 @@ void main() {
     test(
       'backup stays at v12; a rough-day in local state is optional',
       () async {
-        expect(BackupService.currentBackupVersion, 12);
-        expect(RecoveryController.stateVersion, 17);
+        expect(BackupService.currentBackupVersion, 13);
+        expect(RecoveryController.stateVersion, 18);
         await c.enterRoughDay(source: RoughDaySource.slip);
         final service = BackupService();
         final payload = service.buildBackupPayload(
           c.events,
           preferences: c.portablePreferences,
         );
-        expect(payload['version'], 12);
+        expect(payload['version'], 13);
         expect(jsonEncode(payload), isNot(contains('roughDayUntil')));
         final preview = service.validateBackupJson(jsonEncode(payload));
         await setUpController();
