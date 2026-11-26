@@ -56,6 +56,8 @@ void main() {
     final before = c.events.map((e) => e.toJson()).toList();
     final action = find.byKey(const ValueKey('settings-history'));
     await tester.scrollUntilVisible(action, 250);
+    await tester.ensureVisible(action);
+    await tester.pump();
     await tester.tap(action);
     await tester.pumpAndSettle();
     expect(find.text('History'), findsOneWidget);

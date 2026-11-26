@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../recap/domain/weekly_recap_schedule.dart';
 import '../domain/use_check.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -653,6 +654,60 @@ class NotificationService {
   Future<void> cancelCravingCheck() async {
     try {
       await _plugin.cancel(cravingCheckId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
+  static const weeklyRecapId = 780;
+
+  /// Optional weekly recap, repeating on [slot]'s weekday and time. Text is
+  /// number-free and substance-free; private notifications make it the
+  /// standard neutral reminder. Returns whether it was scheduled.
+  Future<bool> scheduleWeeklyRecap(WeeklyRecapSlot slot) async {
+    final at = nextWeeklyOccurrence(DateTime.now(), slot);
+    if (!prefs.allows(NotificationKind.weeklyRecap, at)) {
+      await cancelWeeklyRecap();
+      return false;
+    }
+    final text = prefs.textFor(
+      weeklyRecapNotificationTitle,
+      weeklyRecapNotificationBody,
+    );
+    try {
+      await _initialize(requestPermission: true);
+      await scheduleWithExactFallback(
+        exactAllowed: await exactAlarmsAllowed(),
+        schedule: (mode) => _plugin.zonedSchedule(
+          weeklyRecapId,
+          text.title,
+          text.body,
+          tz.TZDateTime.from(at, tz.local),
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              'weekly_recap_v1',
+              'NO LEAN weekly recap',
+              channelDescription: 'A weekly look back, once a week',
+              importance: Importance.defaultImportance,
+              priority: Priority.defaultPriority,
+              visibility: lockScreenVisibility,
+              category: AndroidNotificationCategory.reminder,
+              ticker: neutralNotificationText.title,
+            ),
+          ),
+          androidScheduleMode: mode,
+          matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        ),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> cancelWeeklyRecap() async {
+    try {
+      await _plugin.cancel(weeklyRecapId);
     } catch (_) {
       // Optional on tests and unsupported platforms.
     }
