@@ -11,6 +11,8 @@ import '../../../recovery/domain/dose_units.dart';
 import '../../../recovery/domain/recovery_event.dart';
 import '../../../recovery/domain/relapse_log_entry.dart';
 import '../../../recovery/presentation/relapse_auth_dialog.dart';
+import '../../../recovery/presentation/relapse_log_sheet.dart';
+import '../../../recovery/domain/multi_day_log.dart';
 import '../../domain/history_projection.dart';
 import 'event_edit_dialog.dart';
 import 'history_record_facts.dart';
@@ -215,6 +217,8 @@ class _RelapseEventCard extends StatelessWidget {
         if (contextTags.isNotEmpty)
           'Context signals: ${contextTags.join(', ')}.',
         if (note?.isNotEmpty == true) 'Note: $note',
+        if (event.metadata[multiDayMetadataKey] == true)
+          'Logged later as part of several days.',
       ].join(' '),
       child: Container(
         decoration: BoxDecoration(
@@ -328,6 +332,16 @@ class _RelapseEventCard extends StatelessWidget {
                               _RelapseFact(
                                 icon: Icons.speed,
                                 label: 'STRESS $stress/5',
+                              ),
+                            if (event.metadata[multiDayMetadataKey] == true)
+                              const _RelapseFact(
+                                icon: Icons.date_range,
+                                label: 'LOGGED LATER',
+                              ),
+                            if (event.metadata['editedAt'] != null)
+                              const _RelapseFact(
+                                icon: Icons.edit_outlined,
+                                label: 'EDITED',
                               ),
                             if (streakLost != null)
                               _RelapseFact(
@@ -445,6 +459,7 @@ class _ActionsMenu extends ConsumerWidget {
   final RecoveryEvent event;
 
   static bool isEditable(RecoveryEvent event) =>
+      event.type == RecoveryEventType.relapse ||
       event.type == RecoveryEventType.craving ||
       event.type == RecoveryEventType.sosComplete;
 
@@ -471,7 +486,7 @@ class _ActionsMenu extends ConsumerWidget {
               children: [
                 Icon(Icons.edit, color: cyan, size: 18),
                 SizedBox(width: 8),
-                Text('Edit Metadata', style: TextStyle(color: Colors.white)),
+                Text('Edit', style: TextStyle(color: Colors.white)),
               ],
             ),
           ),
@@ -544,6 +559,8 @@ class _ActionsMenu extends ConsumerWidget {
                 );
               }
             }
+          } else if (val == 'edit' && event.type == RecoveryEventType.relapse) {
+            await showRelapseEditSheet(context, event);
           } else if (val == 'edit') {
             await showDialog(
               context: context,

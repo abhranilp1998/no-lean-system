@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/services/app_feedback.dart';
 import '../../../core/services/app_notice.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../emergency/presentation/emergency_screen.dart';
 import '../application/recovery_controller.dart';
@@ -16,6 +17,9 @@ import '../domain/dose_safety.dart';
 import '../domain/dose_units.dart';
 import '../domain/relapse_log_entry.dart';
 import '../domain/mixing_safety_net.dart';
+import '../domain/multi_day_log.dart';
+import '../domain/recovery_event.dart';
+import 'multi_day_picker.dart';
 import 'dose_safety_cards.dart';
 import 'peak_hour_gate_dialog.dart';
 import 'relapse_auth_dialog.dart';
@@ -94,7 +98,9 @@ Future<void> showRelapseLogSheet(
   if (result == null || !context.mounted) return;
   AppNotice.show(
     context,
-    slipsRecordedMessage(result.count),
+    result.multiDay
+        ? multiDayRecordedMessage(result.count)
+        : slipsRecordedMessage(result.count),
     type: AppNoticeType.success,
   );
   if (result.openSos && context.mounted) {
@@ -111,14 +117,41 @@ Future<void> showRelapseLogSheet(
   if (result.mixed && context.mounted) await showMixingSafetyNetSheet(context);
 }
 
+/// Opens one saved relapse for correction: its facts and its date/time.
+/// Only that entry changes; other days from the same save are untouched.
+Future<void> showRelapseEditSheet(
+  BuildContext context,
+  RecoveryEvent event,
+) async {
+  final result = await showModalBottomSheet<_RelapseSheetResult>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    backgroundColor: Colors.black,
+    builder: (_) => RelapseLogSheet(editing: event),
+  );
+  if (result == null || !context.mounted) return;
+  AppNotice.show(context, entryUpdatedMessage, type: AppNoticeType.success);
+  if (result.mixed && context.mounted) await showMixingSafetyNetSheet(context);
+}
+
 class RelapseLogSheet extends ConsumerStatefulWidget {
   const RelapseLogSheet({
     this.source = 'app',
     this.initialOccurredAt,
+    this.editing,
+    this.now,
     super.key,
   });
 
   final String source;
+
+  /// A saved relapse to correct. When set, the sheet edits that one entry
+  /// instead of logging new ones.
+  final RecoveryEvent? editing;
+
+  /// Fixed clock for the multi-day picker in tests and screenshots.
+  final DateTime? now;
 
   /// Prefills the first entry's time (a backfill "about X h ago").
   final DateTime? initialOccurredAt;
@@ -131,6 +164,9 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   final _formKey = GlobalKey<FormState>();
   final _operationId = const Uuid().v4();
   final _entries = <_RelapseDraft>[_RelapseDraft()];
+
+  /// Picked days for a multi-day log; null for the normal one-by-one form.
+  List<MultiDaySlot>? _days;
   bool _saving = false;
   bool _openSosAfterSave = false;
   String? _error;
@@ -138,6 +174,11 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   @override
   void initState() {
     super.initState();
+    final editing = widget.editing;
+    if (editing != null) {
+      _entries.first.fillFrom(editing);
+      return;
+    }
     final at = widget.initialOccurredAt;
     if (at != null && !at.isAfter(DateTime.now())) {
       _entries.first.occurredAt = at;
@@ -155,6 +196,90 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       entry.dispose();
     }
     super.dispose();
+  }
+
+  bool get _editing => widget.editing != null;
+  DateTime _clock() => widget.now ?? DateTime.now();
+
+  Future<void> _openMultiDayPicker() async {
+    final current = _days;
+    final pick = await showMultiDayPicker(
+      context,
+      initialDays: current?.map((slot) => slot.day) ?? const [],
+      initialHour: current?.firstOrNull?.hour ?? multiDayDefaultHour,
+      initialMinute: current?.firstOrNull?.minute ?? multiDayDefaultMinute,
+      now: widget.now,
+    );
+    if (pick == null || !mounted) return;
+    final previous = {
+      for (final slot in current ?? <MultiDaySlot>[]) slot.day: slot,
+    };
+    final now = _clock();
+    setState(() {
+      // Keep any per-day time the user already changed.
+      _days = [
+        for (final slot in pick.slots(now))
+          previous[slot.day] != null
+              ? clampSlotToNow(previous[slot.day]!, now)
+              : slot,
+      ];
+      for (final extra in _entries.skip(1)) {
+        extra.dispose();
+      }
+      _entries.removeRange(1, _entries.length);
+      final note = _entries.first.noteController;
+      if (note.text.trim().isEmpty) {
+        note.text = 'Logging this later for days I missed.';
+      }
+      _error = null;
+    });
+  }
+
+  void _leaveMultiDay() => setState(() {
+    _days = null;
+    _error = null;
+  });
+
+  void _removeDay(int index) => setState(() {
+    final days = List<MultiDaySlot>.of(_days!)..removeAt(index);
+    _days = days.isEmpty ? null : days;
+    _error = null;
+  });
+
+  Future<void> _pickDayTime(int index) async {
+    final slot = _days![index];
+    final time = await showRelapseTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: slot.hour, minute: slot.minute),
+      title: 'TIME ON ${DateFormat.MMMd().format(slot.day).toUpperCase()}',
+    );
+    if (time == null || !mounted) return;
+    final updated = slot.withTime(time.hour, time.minute);
+    setState(() {
+      if (updated.occurredAt.isAfter(_clock())) {
+        _error = 'That time has not happened yet today. Pick an earlier time.';
+        return;
+      }
+      _days = List.of(_days!)..[index] = updated;
+      _error = null;
+    });
+  }
+
+  Future<bool> _confirmMultiDay(List<RelapseLogEntry> entries) async {
+    final resets = entriesResetLeanTimer(entries);
+    final sample = entries.first;
+    return await showModalBottomSheet<bool>(
+          context: context,
+          isScrollControlled: true,
+          useSafeArea: true,
+          backgroundColor: panel,
+          builder: (sheetContext) => _MultiDayConfirmSheet(
+            entries: entries,
+            sample: sample,
+            resetsLeanTimer: resets,
+          ),
+        ) ??
+        false;
   }
 
   Future<void> _pickDate(int index) async {
@@ -181,7 +306,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
 
   Future<void> _pickTime(int index) async {
     final current = _entries[index].occurredAt;
-    final time = await _showRelapseTimePicker(
+    final time = await showRelapseTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(current),
     );
@@ -199,7 +324,7 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
     }
   }
 
-  Future<bool> _confirmReset() async {
+  Future<bool> _confirmReset({bool resetsLeanTimer = true}) async {
     return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
@@ -220,10 +345,12 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                 letterSpacing: 1.2,
               ),
             ),
-            content: const Text(
-              'This will reset your clean counter. Your earlier progress and history will remain intact.',
+            content: Text(
+              resetsLeanTimer
+                  ? 'This will reset your clean counter. Your earlier progress and history will remain intact.'
+                  : 'Benzo-only use is saved for your safety log. It does not reset your lean clean time.',
               textAlign: TextAlign.center,
-              style: TextStyle(height: 1.45),
+              style: const TextStyle(height: 1.45),
             ),
             actionsAlignment: MainAxisAlignment.spaceBetween,
             actions: [
@@ -238,8 +365,8 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                   backgroundColor: red,
                   foregroundColor: Colors.black,
                 ),
-                icon: const Icon(Icons.lock_reset),
-                label: const Text('CONFIRM RESET'),
+                icon: Icon(resetsLeanTimer ? Icons.lock_reset : Icons.save),
+                label: Text(resetsLeanTimer ? 'CONFIRM RESET' : 'SAVE IT'),
               ),
             ],
           ),
@@ -293,7 +420,10 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       setState(() => _error = 'Complete every required relapse field.');
       return;
     }
-    if (_entries.any((entry) => entry.occurredAt.isAfter(DateTime.now()))) {
+    final days = _days;
+    if (days != null
+        ? days.any((slot) => slot.occurredAt.isAfter(DateTime.now()))
+        : _entries.any((entry) => entry.occurredAt.isAfter(DateTime.now()))) {
       setState(
         () => _error =
             'An event cannot be in the future. Check each date and time.',
@@ -321,7 +451,28 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
       if (!mounted || choice == null) return;
       if (choice != entry.unit) setState(() => entry.unit = choice);
     }
-    if (!await _confirmReset() || !mounted) return;
+    final recovery = ref.read(recoveryProvider);
+    final List<RelapseLogEntry> entries;
+    try {
+      final drafts = _entries
+          .map((entry) => entry.toDomain(bottleMl: recovery.bottleMl))
+          .toList();
+      entries = days != null
+          ? expandMultiDayEntries(drafts.first, days)
+          : drafts;
+      for (final entry in entries) {
+        entry.validate();
+      }
+    } on ArgumentError catch (error) {
+      setState(() => _error = error.message?.toString());
+      return;
+    }
+    final confirmed = _editing
+        ? true
+        : days != null
+        ? await _confirmMultiDay(entries)
+        : await _confirmReset(resetsLeanTimer: entriesResetLeanTimer(entries));
+    if (!confirmed || !mounted) return;
 
     setState(() {
       _saving = true;
@@ -329,38 +480,47 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
     });
     AppFeedback.warning();
     try {
-      final recovery = ref.read(recoveryProvider);
-      final entries = _entries
-          .map((entry) => entry.toDomain(bottleMl: recovery.bottleMl))
-          .toList();
-      var result = await recovery.recordRelapse(
-        entries: entries,
-        operationId: _operationId,
-        source: widget.source,
-      );
+      Future<ProtectedActionResult> write({String? pin}) {
+        final editing = widget.editing;
+        if (editing != null) {
+          return recovery.editRelapseEntry(
+            id: editing.id,
+            entry: entries.single,
+            pin: pin,
+            tryBiometrics: pin == null,
+          );
+        }
+        return recovery.recordRelapse(
+          entries: entries,
+          operationId: _operationId,
+          source: widget.source,
+          extraMetadata: days != null
+              ? const {multiDayMetadataKey: true}
+              : const {},
+          pin: pin,
+          tryBiometrics: pin == null,
+        );
+      }
+
+      var result = await write();
       if (!mounted) return;
       if (result == ProtectedActionResult.authenticationRequired) {
         final pin = await showRelapsePinDialog(
           context,
-          actionLabel: 'SAVE RELAPSE',
+          actionLabel: _editing ? 'AUTHORIZE EDIT' : 'SAVE RELAPSE',
         );
         if (!mounted || pin == null) return;
-        result = await recovery.recordRelapse(
-          entries: entries,
-          operationId: _operationId,
-          source: widget.source,
-          pin: pin,
-          tryBiometrics: false,
-        );
+        result = await write(pin: pin);
       }
       if (!mounted) return;
       if (result == ProtectedActionResult.completed) {
         Navigator.pop(
           context,
           _RelapseSheetResult(
-            count: _entries.length,
+            count: entries.length,
             openSos: _openSosAfterSave,
             mixed: isMixedSave(entries.map((e) => e.type)),
+            multiDay: days != null,
           ),
         );
       } else {
@@ -403,8 +563,14 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
+    final days = _days;
     final warnings = loggingSafetyWarnings(
-      draft: [for (final e in _entries) (type: e.type, at: e.occurredAt)],
+      draft: days != null
+          ? [
+              for (final d in days)
+                (type: _entries.first.type, at: d.occurredAt),
+            ]
+          : [for (final e in _entries) (type: e.type, at: e.occurredAt)],
       events: recovery.events,
       cleanStreakDays: recovery.streak,
       now: DateTime.now(),
@@ -447,7 +613,11 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                'LOG RELAPSE',
+                                _editing
+                                    ? 'EDIT ENTRY'
+                                    : days != null
+                                    ? 'LOG SEVERAL DAYS'
+                                    : 'LOG RELAPSE',
                                 style: displayFont(
                                   fontSize: 24,
                                   fontWeight: FontWeight.w800,
@@ -459,16 +629,47 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                           ],
                         ),
                         const SizedBox(height: 10),
-                        const Text(
-                          'Record what happened without hiding it. This resets clean time; it does not erase the work already done.',
-                          style: TextStyle(height: 1.45),
+                        Text(
+                          _editing
+                              ? 'Correct this one entry. Other days saved alongside it stay as they are.'
+                              : days != null
+                              ? 'Describe these days once. Each day is saved as its own entry, so you can fix any single day later from History.'
+                              : 'Record what happened without hiding it. This resets clean time; it does not erase the work already done.',
+                          style: const TextStyle(height: 1.45),
                         ),
                         const SizedBox(height: 6),
                         const Text(
                           'Every entry needs a type, context, and whether SOS was attempted. Dates and times use this device.',
                           style: TextStyle(color: muted, fontSize: 12),
                         ),
+                        if (!_editing && days == null) ...[
+                          const SizedBox(height: 10),
+                          OutlinedButton.icon(
+                            key: const ValueKey('open-multi-day-picker'),
+                            onPressed: _saving ? null : _openMultiDayPicker,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: cyan,
+                              side: BorderSide(
+                                color: cyan.withValues(alpha: .6),
+                              ),
+                            ),
+                            icon: const Icon(Icons.date_range),
+                            label: const Text('MISSED A FEW DAYS? LOG SEVERAL'),
+                          ),
+                        ],
                         const SizedBox(height: 16),
+                        if (days != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _MultiDayCard(
+                              days: days,
+                              saving: _saving,
+                              onChangeDays: _openMultiDayPicker,
+                              onTime: _pickDayTime,
+                              onRemove: _removeDay,
+                              onLeave: _leaveMultiDay,
+                            ),
+                          ),
                         for (var index = 0; index < _entries.length; index++)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 12),
@@ -477,6 +678,12 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                               entry: _entries[index],
                               bottleMl: recovery.bottleMl,
                               saving: _saving,
+                              title: _editing
+                                  ? 'ENTRY'
+                                  : days != null
+                                  ? 'SAME FOR ALL ${days.length} DAYS'
+                                  : null,
+                              showWhen: days == null,
                               canRemove: _entries.length > 1,
                               onDate: () => _pickDate(index),
                               onTime: () => _pickTime(index),
@@ -494,29 +701,31 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                           const OverdoseSignsCard(),
                           const SizedBox(height: 8),
                         ],
-                        TextButton.icon(
-                          onPressed: _saving || _entries.length >= 50
-                              ? null
-                              : _addEntry,
-                          icon: const Icon(Icons.add),
-                          label: const Text('ADD ANOTHER EVENT'),
-                        ),
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: red,
-                          value: _openSosAfterSave,
-                          onChanged: _saving
-                              ? null
-                              : (value) => setState(
-                                  () => _openSosAfterSave = value ?? false,
-                                ),
-                          title: const Text('OPEN SOS AFTER SAVE'),
-                          subtitle: const Text(
-                            'Move directly into the 60-second override.',
-                            style: TextStyle(color: muted, fontSize: 11),
+                        if (!_editing && days == null)
+                          TextButton.icon(
+                            onPressed: _saving || _entries.length >= 50
+                                ? null
+                                : _addEntry,
+                            icon: const Icon(Icons.add),
+                            label: const Text('ADD ANOTHER EVENT'),
                           ),
-                          controlAffinity: ListTileControlAffinity.leading,
-                        ),
+                        if (!_editing)
+                          CheckboxListTile(
+                            contentPadding: EdgeInsets.zero,
+                            activeColor: red,
+                            value: _openSosAfterSave,
+                            onChanged: _saving
+                                ? null
+                                : (value) => setState(
+                                    () => _openSosAfterSave = value ?? false,
+                                  ),
+                            title: const Text('OPEN SOS AFTER SAVE'),
+                            subtitle: const Text(
+                              'Move directly into the 60-second override.',
+                              style: TextStyle(color: muted, fontSize: 11),
+                            ),
+                            controlAffinity: ListTileControlAffinity.leading,
+                          ),
                       ],
                     ),
                   ),
@@ -542,6 +751,10 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
                   label: Text(
                     _saving
                         ? 'SAVING...'
+                        : _editing
+                        ? 'SAVE CHANGES'
+                        : days != null
+                        ? 'LOG ${days.length} ${days.length == 1 ? 'DAY' : 'DAYS'}'
                         : 'SAVE ${_entries.length} ${_entries.length == 1 ? 'EVENT' : 'EVENTS'}',
                   ),
                 ),
@@ -558,9 +771,12 @@ class _RelapseLogSheetState extends ConsumerState<RelapseLogSheet> {
   }
 }
 
-Future<TimeOfDay?> _showRelapseTimePicker({
+/// Hour/minute picker used for relapse times (24 h dropdowns, which stay
+/// readable at large text sizes).
+Future<TimeOfDay?> showRelapseTimePicker({
   required BuildContext context,
   required TimeOfDay initialTime,
+  String title = 'SET RELAPSE TIME',
 }) {
   var hour = initialTime.hour;
   var minute = initialTime.minute;
@@ -570,7 +786,7 @@ Future<TimeOfDay?> _showRelapseTimePicker({
       builder: (context, setDialogState) => AlertDialog(
         key: const ValueKey('relapse-time-picker'),
         insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-        title: const Text('SET RELAPSE TIME'),
+        title: Text(title),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -636,6 +852,8 @@ class _RelapseEntryCard extends StatelessWidget {
     required this.bottleMl,
     required this.saving,
     required this.canRemove,
+    this.title,
+    this.showWhen = true,
     required this.onDate,
     required this.onTime,
     required this.onAgo,
@@ -648,6 +866,13 @@ class _RelapseEntryCard extends StatelessWidget {
   final double bottleMl;
   final bool saving;
   final bool canRemove;
+
+  /// Card heading; defaults to "RELAPSE n".
+  final String? title;
+
+  /// False in multi-day mode, where each day's date and time live in the
+  /// day list instead.
+  final bool showWhen;
   final VoidCallback onDate;
   final VoidCallback onTime;
   final ValueChanged<int> onAgo;
@@ -665,47 +890,50 @@ class _RelapseEntryCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'RELAPSE ${index + 1}',
+                  title ?? 'RELAPSE ${index + 1}',
                   style: eyebrowStyle.copyWith(color: red),
                 ),
               ),
-              IconButton(
-                tooltip: 'Remove relapse ${index + 1}',
-                onPressed: saving || !canRemove ? null : onRemove,
-                icon: const Icon(Icons.close),
-              ),
-            ],
-          ),
-          Wrap(
-            spacing: 12,
-            runSpacing: 4,
-            children: [
-              OutlinedButton.icon(
-                key: ValueKey('relapse-date-$index'),
-                onPressed: saving ? null : onDate,
-                icon: const Icon(Icons.calendar_month),
-                label: Text(DateFormat.yMMMd().format(entry.occurredAt)),
-              ),
-              OutlinedButton.icon(
-                key: ValueKey('relapse-time-$index'),
-                onPressed: saving ? null : onTime,
-                icon: const Icon(Icons.schedule),
-                label: Text(DateFormat.jm().format(entry.occurredAt)),
-              ),
-            ],
-          ),
-          Wrap(
-            spacing: 6,
-            children: [
-              Text('ABOUT', style: microStyle),
-              for (final hours in relapseAgoChoices)
-                ActionChip(
-                  key: ValueKey('relapse-ago-$index-$hours'),
-                  label: Text('${hours}H AGO'),
-                  onPressed: saving ? null : () => onAgo(hours),
+              if (canRemove)
+                IconButton(
+                  tooltip: 'Remove relapse ${index + 1}',
+                  onPressed: saving ? null : onRemove,
+                  icon: const Icon(Icons.close),
                 ),
             ],
           ),
+          if (showWhen) ...[
+            Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              children: [
+                OutlinedButton.icon(
+                  key: ValueKey('relapse-date-$index'),
+                  onPressed: saving ? null : onDate,
+                  icon: const Icon(Icons.calendar_month),
+                  label: Text(DateFormat.yMMMd().format(entry.occurredAt)),
+                ),
+                OutlinedButton.icon(
+                  key: ValueKey('relapse-time-$index'),
+                  onPressed: saving ? null : onTime,
+                  icon: const Icon(Icons.schedule),
+                  label: Text(DateFormat.jm().format(entry.occurredAt)),
+                ),
+              ],
+            ),
+            Wrap(
+              spacing: 6,
+              children: [
+                Text('ABOUT', style: microStyle),
+                for (final hours in relapseAgoChoices)
+                  ActionChip(
+                    key: ValueKey('relapse-ago-$index-$hours'),
+                    label: Text('${hours}H AGO'),
+                    onPressed: saving ? null : () => onAgo(hours),
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 12),
           DropdownButtonFormField<RelapseType>(
             key: ValueKey('relapse-type-$index'),
@@ -875,6 +1103,39 @@ class _RelapseDraft {
   final amountController = TextEditingController();
   final costController = TextEditingController();
 
+  /// Prefills this draft from a saved relapse for editing.
+  void fillFrom(RecoveryEvent event) {
+    final m = event.metadata;
+    occurredAt = event.timestamp;
+    // Edit the type the user picked, not the brand-corrected one.
+    type =
+        RelapseTypeLabel.fromName(m['relapseTypeFrom']) ??
+        RelapseTypeLabel.fromName(m['relapseType']) ??
+        RelapseType.fullLean;
+    attemptedSos = m['attemptedSos'] == true;
+    final s = m['stress'];
+    stress = s is num ? s.round() : null;
+    contextTags
+      ..clear()
+      ..addAll(switch (m['contextTags']) {
+        final List values => values.whereType<String>(),
+        _ => const <String>[],
+      });
+    noteController.text = (m['note'] as String?) ?? '';
+    quantityController.text = (m['quantity'] as String?) ?? '';
+    final dose = DoseAmount.fromMetadata(m);
+    if (dose != null && m['amountSource'] != 'parsed') {
+      unit = dose.unit;
+      amountController.text = formatAmount(dose.amount);
+    }
+    final cost = m['cost'];
+    if (cost is num) {
+      costController.text = cost == cost.roundToDouble()
+          ? cost.toInt().toString()
+          : cost.toString();
+    }
+  }
+
   /// The amount field wins; otherwise an exact free-text quantity is used.
   RelapseLogEntry toDomain({required double bottleMl}) {
     final amount = parseAmount(amountController.text);
@@ -993,9 +1254,203 @@ class _RelapseSheetResult {
     required this.count,
     required this.openSos,
     this.mixed = false,
+    this.multiDay = false,
   });
 
   final int count;
   final bool openSos;
   final bool mixed;
+  final bool multiDay;
+}
+
+/// The picked days, each with its own time. Tap a day to change its time.
+class _MultiDayCard extends StatelessWidget {
+  const _MultiDayCard({
+    required this.days,
+    required this.saving,
+    required this.onChangeDays,
+    required this.onTime,
+    required this.onRemove,
+    required this.onLeave,
+  });
+
+  final List<MultiDaySlot> days;
+  final bool saving;
+  final VoidCallback onChangeDays;
+  final ValueChanged<int> onTime;
+  final ValueChanged<int> onRemove;
+  final VoidCallback onLeave;
+
+  @override
+  Widget build(BuildContext context) {
+    return GlassCard(
+      key: const ValueKey('multi-day-card'),
+      accent: cyan,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${days.length} ${days.length == 1 ? 'DAY' : 'DAYS'} PICKED',
+            style: eyebrowStyle.copyWith(color: cyan),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Tap a day to set its own time. Each one is saved separately.',
+            style: TextStyle(color: muted, fontSize: 11, height: 1.35),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var i = 0; i < days.length; i++)
+                InputChip(
+                  key: ValueKey(
+                    'multi-day-slot-${DateFormat('yyyy-MM-dd').format(days[i].day)}',
+                  ),
+                  label: Text(
+                    '${DateFormat('EEE d MMM').format(days[i].day)} · ${DateFormat.jm().format(days[i].occurredAt)}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  onPressed: saving ? null : () => onTime(i),
+                  onDeleted: saving ? null : () => onRemove(i),
+                  deleteButtonTooltipMessage: 'Remove this day',
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            children: [
+              TextButton.icon(
+                key: const ValueKey('multi-day-change'),
+                onPressed: saving ? null : onChangeDays,
+                icon: const Icon(Icons.date_range),
+                label: const Text('CHANGE DAYS'),
+              ),
+              TextButton(
+                key: const ValueKey('multi-day-leave'),
+                onPressed: saving ? null : onLeave,
+                child: const Text('LOG ONE EVENT INSTEAD'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Log N days" summary shown before a multi-day save.
+class _MultiDayConfirmSheet extends StatelessWidget {
+  const _MultiDayConfirmSheet({
+    required this.entries,
+    required this.sample,
+    required this.resetsLeanTimer,
+  });
+
+  final List<RelapseLogEntry> entries;
+  final RelapseLogEntry sample;
+  final bool resetsLeanTimer;
+
+  @override
+  Widget build(BuildContext context) {
+    final n = entries.length;
+    final label = 'LOG $n ${n == 1 ? 'DAY' : 'DAYS'}';
+    final facts = <String>[
+      sample.effectiveType.label,
+      if (sample.dose != null) sample.dose!.display,
+      if (sample.cost != null) money(sample.cost!),
+      if (sample.stress != null) 'Stress ${sample.stress}/5',
+      ...sample.normalizedContextTags,
+    ];
+    return Padding(
+      key: const ValueKey('multi-day-confirm'),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'CHECK BEFORE SAVING',
+            style: displayFont(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: cyan,
+              letterSpacing: 1.1,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '$n separate ${n == 1 ? 'entry' : 'entries'}, one per day:',
+            style: const TextStyle(height: 1.4),
+          ),
+          const SizedBox(height: 8),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 180),
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final e in entries)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '• ${DateFormat('EEE d MMM yyyy').format(e.occurredAt)} at ${DateFormat.jm().format(e.occurredAt)}',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Same for each: ${facts.join(' · ')}',
+            style: const TextStyle(color: muted, fontSize: 12, height: 1.4),
+          ),
+          if (sample.normalizedNote.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '"${sample.normalizedNote}"',
+                style: const TextStyle(color: muted, fontSize: 12, height: 1.4),
+              ),
+            ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: (resetsLeanTimer ? red : toxic).withValues(alpha: .1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: (resetsLeanTimer ? red : toxic).withValues(alpha: .5),
+              ),
+            ),
+            child: Text(
+              resetsLeanTimer
+                  ? 'Your clean time will count from the latest of these days. Everything you built before stays in your history.'
+                  : 'Benzo-only use is saved for your safety log. It does not reset your lean clean time.',
+              key: const ValueKey('multi-day-timer-note'),
+              style: const TextStyle(height: 1.4, fontSize: 12.5),
+            ),
+          ),
+          const SizedBox(height: 14),
+          FilledButton.icon(
+            key: const ValueKey('confirm-multi-day'),
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: cyan,
+              foregroundColor: Colors.black,
+              minimumSize: const Size.fromHeight(50),
+            ),
+            icon: const Icon(Icons.playlist_add_check),
+            label: Text(label),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('GO BACK'),
+          ),
+        ],
+      ),
+    );
+  }
 }
