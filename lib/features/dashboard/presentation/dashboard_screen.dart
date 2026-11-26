@@ -1,10 +1,10 @@
 import '../../plans/presentation/plan_card.dart';
 import '../../app_lock/presentation/app_lock_banner.dart';
 import '../../companion/presentation/companion_hub_screen.dart';
-import '../../companion/presentation/struggling_screen.dart';
 import '../../settings/presentation/settings_dialogs.dart';
 import '../../code_instead/presentation/code_instead_screen.dart';
 import '../../../core/layout/tab_layout.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -34,6 +34,8 @@ import 'widgets/animated_counter.dart';
 import 'widgets/dashboard_notice_center.dart';
 import 'widgets/risk_window_banner.dart';
 import '../../zones/presentation/zone_use_check_card.dart';
+import '../domain/rough_day.dart';
+import 'rough_day_home.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -62,6 +64,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final recovery = ref.watch(recoveryProvider);
+    if (recovery.isRoughDay) {
+      return const RoughDayHome(key: ValueKey('rough-day-home'));
+    }
     return RefreshIndicator(
       color: cyan,
       backgroundColor: panel,
@@ -247,11 +252,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           Text('FAST INTERRUPTS', style: eyebrowStyle.copyWith(color: muted)),
           const SizedBox(height: 10),
           ActionTile(
+            key: const ValueKey('dashboard-im-struggling'),
             icon: Icons.favorite,
-            title: "I'M STRUGGLING",
-            subtitle: 'Right-now help, ideas and your people',
+            title: roughDayImStrugglingTitle,
+            subtitle: roughDayImStrugglingSubtitle,
             color: magenta,
-            onTap: () => StrugglingScreen.open(context),
+            onTap: () =>
+                recovery.enterRoughDay(source: RoughDaySource.struggling),
           ),
           const SizedBox(height: 10),
           Row(

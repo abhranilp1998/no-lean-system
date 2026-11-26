@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../features/recovery/domain/use_check.dart';
 import '../features/zones/domain/zone_use_check.dart';
 import '../features/zones/presentation/zone_use_check_card.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/services/app_feedback.dart';
@@ -496,7 +497,19 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       } else {
         AppNotice.show(context, 'NO CRAVING WAITING FOR A RECHECK.');
       }
+    } else if (actionId == NotificationService.logLaterOpenAction) {
+      unawaited(_openLogLaterReminder());
     }
+  }
+
+  Future<void> _openLogLaterReminder() async {
+    if (!mounted) return;
+    if (_resolveLock() != null) {
+      _deferredRelapse = true;
+      AppNotice.show(context, 'Unlock to write it down. Take your time.');
+      return;
+    }
+    await showRelapseLogSheet(context, source: 'rough_day_reminder');
   }
 
   /// (A) YES opens the past-relapse logger prefilled with the trigger time;

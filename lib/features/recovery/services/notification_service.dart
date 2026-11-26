@@ -5,12 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/use_check.dart';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../../core/theme/app_theme.dart';
 import '../domain/notification_copy.dart';
 import '../domain/notification_policy.dart';
+import '../../dashboard/domain/rough_day.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
 
@@ -402,6 +404,9 @@ class NotificationService {
   ]) {
     if (actionId != null && actionId.isNotEmpty) return actionId;
     if (payload == zoneAlertPayload) return 'action_zone_open';
+    if (payload == logLaterPayload || notificationId == logLaterId) {
+      return logLaterOpenAction;
+    }
     return notificationId == useCheckId ? useCheckOpenAction : null;
   }
 
@@ -498,6 +503,69 @@ class NotificationService {
   Future<void> cancelCravingCheck() async {
     try {
       await _plugin.cancel(cravingCheckId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
+  static const logLaterId = 750;
+  static const logLaterPayload = 'log_later';
+  static const logLaterOpenAction = 'action_log_later';
+
+  /// Non-critical nudge to open the relapse logger. Deferred by the caller
+  /// when [at] would land in quiet hours. Returns whether it was scheduled.
+  Future<bool> scheduleLogLaterReminder({required DateTime at}) async {
+    if (!prefs.allows(NotificationKind.logReminder, at)) {
+      await cancelLogLaterReminder();
+      return false;
+    }
+    final text = prefs.textFor(
+      logLaterNotificationTitle,
+      logLaterNotificationBody,
+    );
+    try {
+      await _initialize(requestPermission: true);
+      await scheduleWithExactFallback(
+        exactAllowed: await exactAlarmsAllowed(),
+        schedule: (mode) => _plugin.zonedSchedule(
+          logLaterId,
+          text.title,
+          text.body,
+          tz.TZDateTime.from(at, tz.local),
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              'log_later_v1',
+              'NO LEAN log later',
+              channelDescription:
+                  'A gentle nudge to write something down when you are ready',
+              importance: Importance.defaultImportance,
+              priority: Priority.defaultPriority,
+              visibility: lockScreenVisibility,
+              category: AndroidNotificationCategory.reminder,
+              ticker: neutralNotificationText.title,
+              actions: [
+                AndroidNotificationAction(
+                  logLaterOpenAction,
+                  prefs.label('WRITE IT DOWN', 'OPEN'),
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+              ],
+            ),
+          ),
+          androidScheduleMode: mode,
+          payload: logLaterPayload,
+        ),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> cancelLogLaterReminder() async {
+    try {
+      await _plugin.cancel(logLaterId);
     } catch (_) {
       // Optional on tests and unsupported platforms.
     }
