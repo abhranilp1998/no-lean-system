@@ -597,6 +597,12 @@ class BackupService {
     if (bottleMl != null && (bottleMl is! num || !isValidBottleMl(bottleMl))) {
       throw const FormatException('bottleMl must be 10-2000 ml.');
     }
+    final reportMedicines = input['reportMedicines'];
+    if (reportMedicines != null &&
+        (reportMedicines is! String ||
+            reportMedicines.length > maxReportMedicinesLength)) {
+      throw const FormatException('reportMedicines must be short text.');
+    }
     final riskWindow = input['riskWindow'];
     if (riskWindow != null) {
       if (riskWindow is! Map ||
@@ -682,6 +688,9 @@ class BackupService {
     final preferences = <String, dynamic>{};
     if (dailySpend != null) preferences['dailySpend'] = dailySpend;
     if (bottleMl != null) preferences['bottleMl'] = bottleMl;
+    if (reportMedicines != null) {
+      preferences['reportMedicines'] = reportMedicines;
+    }
     if (reasons != null) preferences['reasons'] = reasons;
     if (reminders != null) preferences['reminderMessages'] = reminders;
     if (riskWindow != null) {

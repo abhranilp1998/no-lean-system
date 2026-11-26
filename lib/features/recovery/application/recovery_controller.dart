@@ -25,6 +25,7 @@ import '../domain/double_tap.dart' as double_tap;
 import '../domain/milestones.dart';
 import '../domain/use_check.dart';
 import '../domain/notification_policy.dart';
+import '../../recap/domain/weekly_recap_schedule.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
 import '../domain/sos_session.dart';
@@ -40,6 +41,9 @@ import '../../zones/domain/danger_zone.dart';
 import '../../zones/domain/zone_entry.dart';
 import '../../zones/services/geofence_gateway.dart';
 import '../../zones/services/zone_entry_inbox.dart';
+
+/// Longest "medicines for my doctor" note kept in state and backups.
+const maxReportMedicinesLength = 600;
 
 const defaultReasons = <String>[
   'I am done financing a habit that steals my evenings.',
@@ -197,6 +201,13 @@ class RecoveryController extends ChangeNotifier {
   /// Size of one "bottle" for dose logging (ml). Applies to new entries
   /// only; stored doses keep the ml they were logged with.
   double bottleMl = defaultBottleMl;
+
+  /// Optional weekly recap notification (Sunday evening). Off by default.
+  bool weeklyRecapNotify = false;
+
+  /// Medicines the user wants their doctor to see on the report. Free text,
+  /// stored only on this device and in their own backups.
+  String reportMedicines = '';
 
   /// Insights dismissed "until the evidence changes": id -> evidenceKey.
   Map<String, String> dismissedInsights = {};
@@ -425,6 +436,7 @@ class RecoveryController extends ChangeNotifier {
       _notify();
       unawaited(syncWidget());
       unawaited(_syncRiskNotifications());
+      unawaited(_syncWeeklyRecap());
       unawaited(_syncGeofences());
     } catch (_) {
       isLoaded = false;
@@ -492,6 +504,15 @@ class RecoveryController extends ChangeNotifier {
     final bottle = map['bottleMl'];
     if (bottle is num && isValidBottleMl(bottle)) {
       bottleMl = bottle.toDouble();
+    }
+    // Missing keys (old states and old backups) leave the current value.
+    final recapNotify = map['weeklyRecapNotify'];
+    if (recapNotify is bool) weeklyRecapNotify = recapNotify;
+    final meds = map['reportMedicines'];
+    if (meds is String) {
+      reportMedicines = meds.length > maxReportMedicinesLength
+          ? meds.substring(0, maxReportMedicinesLength)
+          : meds;
     }
     final insightPrefs = map['insightPreferences'];
     if (insightPrefs is Map && insightPrefs['dismissed'] is Map) {
@@ -680,6 +701,8 @@ class RecoveryController extends ChangeNotifier {
     'cooldownMinutes': cooldownMinutes,
     'dailySpend': dailySpend,
     'bottleMl': bottleMl,
+    'weeklyRecapNotify': weeklyRecapNotify,
+    'reportMedicines': reportMedicines,
     'insightPreferences': {'dismissed': dismissedInsights},
     'reasons': reasons,
     'reminderMessages': reminderMessages,
@@ -760,6 +783,14 @@ class RecoveryController extends ChangeNotifier {
             (before['events'] as List).length !=
                 (next['events'] as List).length) {
           unawaited(_syncRiskNotifications());
+        }
+        if (before['weeklyRecapNotify'] != next['weeklyRecapNotify'] ||
+            before['hideSensitiveNotifications'] !=
+                next['hideSensitiveNotifications'] ||
+            before['quietHoursEnabled'] != next['quietHoursEnabled'] ||
+            jsonEncode(before['quietHours']) !=
+                jsonEncode(next['quietHours'])) {
+          unawaited(_syncWeeklyRecap());
         }
         if (jsonEncode(before['zones']) != jsonEncode(next['zones']) ||
             before['backgroundGeofencing'] != next['backgroundGeofencing']) {
@@ -1085,6 +1116,7 @@ class RecoveryController extends ChangeNotifier {
           ..remove('quietHoursEnabled')
           ..remove('quietHours')
           ..remove('hideSensitiveNotifications')
+          ..remove('weeklyRecapNotify')
           ..remove('backgroundGeofencing')
           ..remove('insightPreferences')
           ..remove('pin'),
@@ -1115,6 +1147,7 @@ class RecoveryController extends ChangeNotifier {
   Map<String, dynamic> get portablePreferences => {
     'dailySpend': dailySpend,
     'bottleMl': bottleMl,
+    if (reportMedicines.isNotEmpty) 'reportMedicines': reportMedicines,
     'reasons': reasons,
     'reminderMessages': reminderMessages,
     'riskWindow': riskWindow.toJson(),
@@ -1901,6 +1934,17 @@ class RecoveryController extends ChangeNotifier {
     reminderMessages = value.where((item) => item.trim().isNotEmpty).toList();
   });
 
+  Future<void> updateWeeklyRecapNotify(bool value) => _transaction(() async {
+    weeklyRecapNotify = value;
+  });
+
+  Future<void> updateReportMedicines(String value) => _transaction(() async {
+    final trimmed = value.trim();
+    reportMedicines = trimmed.length > maxReportMedicinesLength
+        ? trimmed.substring(0, maxReportMedicinesLength)
+        : trimmed;
+  });
+
   Future<void> updateDailySpend(double value) => _transaction(() async {
     dailySpend = math.max(0, value);
   });
@@ -2092,6 +2136,21 @@ class RecoveryController extends ChangeNotifier {
 
   /// Reschedules alerts, e.g. after the user grants exact alarms.
   Future<void> resyncRiskNotifications() => _syncRiskNotifications();
+
+  /// Schedules or cancels the optional weekly recap notification.
+  Future<void> _syncWeeklyRecap() async {
+    try {
+      if (weeklyRecapNotify) {
+        await NotificationService.instance.scheduleWeeklyRecap(
+          weeklyRecapSlot(notificationPrefs),
+        );
+      } else {
+        await NotificationService.instance.cancelWeeklyRecap();
+      }
+    } catch (_) {
+      /* Notifications never block local history. */
+    }
+  }
 
   Future<void> _syncRiskNotifications() async {
     try {

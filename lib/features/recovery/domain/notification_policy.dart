@@ -15,12 +15,17 @@ enum NotificationKind {
 
   /// 15-minute craving recheck. Non-critical: muted in quiet hours.
   cravingCheck,
+
+  /// Optional weekly recap. Non-critical: never delivered in quiet hours.
+  weeklyRecap,
 }
 
 extension NotificationKindPolicy on NotificationKind {
   bool get isCritical => switch (this) {
     NotificationKind.riskWindow || NotificationKind.dangerZone => true,
-    NotificationKind.codeTimer || NotificationKind.cravingCheck => false,
+    NotificationKind.codeTimer ||
+    NotificationKind.cravingCheck ||
+    NotificationKind.weeklyRecap => false,
   };
 }
 

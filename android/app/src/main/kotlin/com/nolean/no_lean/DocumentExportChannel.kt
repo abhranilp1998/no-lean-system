@@ -39,7 +39,7 @@ internal class DocumentExportChannel(
             val mimeType = call.argument<String>("mimeType")
             if (bytes == null || bytes.isEmpty() || fileName.isNullOrBlank() ||
                 fileName.contains('/') || fileName.contains('\\') ||
-                mimeType !in listOf("application/json", "text/csv")) {
+                mimeType !in listOf("application/json", "text/csv", "application/pdf")) {
                 result.error("EXPORT_ARGUMENT", "Invalid export request.", null)
                 return@setMethodCallHandler
             }
