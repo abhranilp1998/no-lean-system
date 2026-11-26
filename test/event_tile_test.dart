@@ -38,7 +38,7 @@ void main() {
     expect(find.text('half a cup'), findsOneWidget);
     expect(find.text('After Work'), findsOneWidget);
     expect(find.text('Office Stress'), findsOneWidget);
-    expect(find.text('8 DAYS INTERRUPTED'), findsOneWidget);
+    expect(find.text('8-DAY STREAK INTERRUPTED'), findsOneWidget);
     expect(find.textContaining('BATCHID'), findsNothing);
     expect(find.textContaining('RELAPSETYPE'), findsNothing);
   });
@@ -62,6 +62,6 @@ void main() {
 
     expect(find.text('RELAPSE'), findsOneWidget);
     expect(find.text('LEGACY RELAPSE RECORD'), findsOneWidget);
-    expect(find.text('3 DAYS INTERRUPTED'), findsOneWidget);
+    expect(find.text('3-DAY STREAK INTERRUPTED'), findsOneWidget);
   });
 }
