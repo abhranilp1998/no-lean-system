@@ -8,8 +8,10 @@ import '../../../../core/widgets/glass_card.dart';
 import '../../../recovery/application/recovery_controller.dart';
 import '../../../recovery/application/recovery_provider.dart';
 import '../../../recovery/domain/dose_units.dart';
+import '../../../recovery/domain/milestones.dart';
 import '../../../recovery/domain/recovery_event.dart';
 import '../../../recovery/domain/relapse_log_entry.dart';
+import '../../../recovery/domain/streak_wording.dart';
 import '../../../recovery/presentation/relapse_auth_dialog.dart';
 import '../../domain/history_projection.dart';
 import 'event_edit_dialog.dart';
@@ -131,6 +133,11 @@ class EventTile extends ConsumerWidget {
       case RecoveryEventType.cleanCheckIn:
         return ('SAFE CHECK-IN', Icons.how_to_reg, toxic);
       case RecoveryEventType.milestone:
+        // A backdated relapse showed this one was never reached. Kept for
+        // the record, but it no longer counts.
+        if (!milestoneCounts(event)) {
+          return ('MILESTONE // CORRECTED', Icons.history, muted);
+        }
         return ('MILESTONE', Icons.emoji_events, Colors.amber);
       case RecoveryEventType.settingsChange:
         return ('SETTING CHANGED', Icons.tune, Colors.white54);
@@ -196,7 +203,7 @@ class _RelapseEventCard extends StatelessWidget {
         (dose == null || event.metadata['amountSource'] != 'parsed');
     final cost = event.metadata['cost'];
     final stress = event.metadata['stress'];
-    final streakLost = event.metadata['streakLost'];
+    final streakLabel = interruptedStreakLabel(event);
     final contextTags = switch (event.metadata['contextTags']) {
       final List values => values.whereType<String>().toList(),
       _ => const <String>[],
@@ -329,10 +336,10 @@ class _RelapseEventCard extends StatelessWidget {
                                 icon: Icons.speed,
                                 label: 'STRESS $stress/5',
                               ),
-                            if (streakLost != null)
+                            if (streakLabel != null)
                               _RelapseFact(
                                 icon: Icons.timer_off_outlined,
-                                label: '$streakLost DAYS INTERRUPTED',
+                                label: streakLabel,
                               ),
                           ],
                         ),
@@ -406,6 +413,10 @@ class _MetadataView extends StatelessWidget {
               'zoneId',
               'plannedSeconds',
               'cravingId',
+              milestoneCorrectedKey,
+              milestoneCorrectedReasonKey,
+              milestoneCorrectedByKey,
+              streakLostRecordedKey,
             }.contains(e.key),
           )
           .map((e) {

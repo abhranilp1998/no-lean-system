@@ -98,12 +98,15 @@ int computeCurrentStreak(List<RecoveryEvent> events) {
 }
 
 /// Finds the longest consecutive run of clean days across all time.
+/// Milestones marked corrected (a backdated relapse showed they were never
+/// reached, see `reconcileMilestones`) do not count.
 int computeLongestStreak(List<RecoveryEvent> events) {
   final cleanMap = computeCleanDaysMap(events);
   final historicalBest = events
       .where(
         (event) =>
-            event.type == RecoveryEventType.milestone ||
+            (event.type == RecoveryEventType.milestone &&
+                event.metadata['corrected'] != true) ||
             (event.type == RecoveryEventType.relapse &&
                 resetsLeanCleanTimer(event)),
       )
