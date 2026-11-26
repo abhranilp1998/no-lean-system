@@ -26,6 +26,7 @@ import '../../recovery/domain/event_derived_state.dart';
 import '../../../core/widgets/status_pill.dart';
 import '../../cravings/presentation/craving_dialog.dart';
 import '../../emergency/presentation/emergency_screen.dart';
+import '../../emergency/presentation/hold_to_text_sos.dart';
 import '../../recovery/application/recovery_provider.dart';
 import 'dashboard_dialogs.dart';
 import '../../withdrawal/presentation/withdrawal_guide_screen.dart';
@@ -275,11 +276,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 child: ActionTile(
                   icon: Icons.sos,
                   title: 'SOS MODE',
-                  subtitle: '60 sec override',
+                  subtitle: 'Tap to open · hold to text',
                   color: red,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const EmergencyScreen()),
                   ),
+                  onHoldStart: SosHoldBinding(context, ref).start,
+                  onHold: SosHoldBinding(context, ref).open,
                 ),
               ),
               const SizedBox(width: 10),

@@ -9,6 +9,7 @@ class FakeLocationService implements LocationService {
     this.onRequestForeground,
     this.onRequestBackground,
     this.fix,
+    this.lastKnown,
     this.accessResult,
     this.currentFixResult,
   });
@@ -17,6 +18,7 @@ class FakeLocationService implements LocationService {
   LocationAccess? onRequestForeground;
   LocationAccess? onRequestBackground;
   LocationFix? fix;
+  LocationFix? lastKnown;
   Future<LocationAccess> Function()? accessResult;
   Future<LocationFix?> Function()? currentFixResult;
   final controller = StreamController<LocationFix>.broadcast();
@@ -50,4 +52,22 @@ class FakeLocationService implements LocationService {
   @override
   Future<LocationAccess> requestForeground() async =>
       current = onRequestForeground ?? current;
+
+  int lastKnownRequests = 0;
+  int quickFixRequests = 0;
+
+  @override
+  Future<LocationFix?> lastKnownFix() async {
+    lastKnownRequests++;
+    return lastKnown ?? fix;
+  }
+
+  @override
+  Future<LocationFix?> quickFix({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    quickFixRequests++;
+    if (currentFixResult != null) return currentFixResult!();
+    return fix ?? lastKnown;
+  }
 }

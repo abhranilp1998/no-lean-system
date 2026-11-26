@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/app_feedback.dart';
 import '../theme/app_theme.dart';
 import '../theme/no_lean_visuals.dart';
+import 'hold_to_act.dart';
 
 class GlowButton extends StatelessWidget {
   const GlowButton({
@@ -10,6 +11,9 @@ class GlowButton extends StatelessWidget {
     required this.onTap,
     required this.color,
     this.icon,
+    this.onHold,
+    this.onHoldStart,
+    this.holdDuration,
     super.key,
   });
 
@@ -18,10 +22,16 @@ class GlowButton extends StatelessWidget {
   final Color color;
   final IconData? icon;
 
+  /// When set, a ~2 s hold runs this instead of [onTap]; a shorter press
+  /// still runs [onTap]. Used by SOS buttons for hold-to-text.
+  final VoidCallback? onHold;
+  final VoidCallback? onHoldStart;
+  final Duration? holdDuration;
+
   @override
   Widget build(BuildContext context) {
     final visuals = NoLeanVisuals.of(context);
-    return DecoratedBox(
+    final button = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
@@ -32,10 +42,12 @@ class GlowButton extends StatelessWidget {
         ],
       ),
       child: ElevatedButton.icon(
-        onPressed: () {
-          AppFeedback.tap(strength: AppFeedbackStrength.strong);
-          onTap();
-        },
+        onPressed: onHold == null
+            ? () {
+                AppFeedback.tap(strength: AppFeedbackStrength.strong);
+                onTap();
+              }
+            : () {},
         icon: Icon(icon ?? Icons.arrow_forward, size: 18),
         label: Text(
           label,
@@ -63,6 +75,18 @@ class GlowButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+    if (onHold == null) return button;
+    return HoldToAct(
+      onTap: () {
+        AppFeedback.tap(strength: AppFeedbackStrength.strong);
+        onTap();
+      },
+      onHold: onHold!,
+      onHoldStart: onHoldStart,
+      duration: holdDuration ?? const Duration(milliseconds: 2000),
+      color: color,
+      child: button,
     );
   }
 }

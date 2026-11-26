@@ -10,6 +10,8 @@ import '../application/recovery_provider.dart';
 import '../domain/app_lock_session.dart';
 import 'relapse_auth_dialog.dart';
 
+import '../../emergency/presentation/hold_to_text_sos.dart';
+
 /// Full-shell PIN/biometric wall. SOS and craving logging stay one tap away
 /// without unlocking, per the product rule that emergency actions are never
 /// hidden behind authentication.
@@ -145,6 +147,8 @@ class _AppLockScreenState extends ConsumerState<AppLockScreen> {
             icon: Icons.emergency_outlined,
             color: red,
             onTap: widget.onOpenSos,
+            onHoldStart: SosHoldBinding(context, ref).start,
+            onHold: SosHoldBinding(context, ref).open,
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(

@@ -29,6 +29,15 @@ abstract interface class LocationService {
 
   Future<LocationFix?> currentFix();
 
+  /// Cached last pin, or null. Does not wait on GPS. Safe to call offline.
+  Future<LocationFix?> lastKnownFix();
+
+  /// A current pin if it arrives within [timeout], otherwise the last known
+  /// one. Used by hold-to-text SOS so a slow GPS fix never blocks the SMS.
+  Future<LocationFix?> quickFix({
+    Duration timeout = const Duration(seconds: 3),
+  });
+
   /// Battery-friendly stream: balanced accuracy, 50 m distance filter.
   Stream<LocationFix> fixes();
 
@@ -91,6 +100,34 @@ class GeolocatorLocationService implements LocationService {
   );
 
   @override
+  Future<LocationFix?> lastKnownFix() async {
+    try {
+      final last = await Geolocator.getLastKnownPosition();
+      return last == null ? null : _fix(last);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Future<LocationFix?> quickFix({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    final last = await lastKnownFix();
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: timeout,
+        ),
+      );
+      return _fix(position);
+    } catch (_) {
+      return last;
+    }
+  }
+
+  @override
   Future<LocationFix?> currentFix() async {
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -101,12 +138,7 @@ class GeolocatorLocationService implements LocationService {
       );
       return _fix(position);
     } catch (_) {
-      try {
-        final last = await Geolocator.getLastKnownPosition();
-        return last == null ? null : _fix(last);
-      } catch (_) {
-        return null;
-      }
+      return lastKnownFix();
     }
   }
 
