@@ -1054,6 +1054,26 @@ class RecoveryController extends ChangeNotifier {
     return plan;
   }
 
+  /// Merges the plans from an imported backup (its `preferences` block) by
+  /// id. They are the user's own writing, so they come over whether or not
+  /// the other preferences are restored. Bad items are skipped, never an
+  /// error. Returns how many were added.
+  Future<int> mergeImportedPlans(Map<String, dynamic>? preferences) async {
+    final incoming = IfThenPlan.decodeList(preferences?['ifThenPlans']);
+    if (incoming.isEmpty) return 0;
+    var added = 0;
+    await _transaction(() async {
+      final ids = ifThenPlans.map((p) => p.id).toSet();
+      final fresh = incoming.where((p) => ids.add(p.id)).toList();
+      final room = IfThenPlan.maxPlans - ifThenPlans.length;
+      final taken = fresh.take(room < 0 ? 0 : room).toList();
+      added = taken.length;
+      ifThenPlans = [...ifThenPlans, ...taken];
+    });
+    unawaited(_syncRiskNotifications());
+    return added;
+  }
+
   Future<void> updateIfThenPlan(IfThenPlan plan) async {
     await _transaction(() async {
       ifThenPlans = [for (final p in ifThenPlans) p.id == plan.id ? plan : p];
@@ -1203,19 +1223,6 @@ class RecoveryController extends ChangeNotifier {
       throw StateError('This backup would exceed 100 notes.');
     }
     futureLetters = [...futureLetters, ...newLetters];
-    // Plans ride in the backup's preferences block. They are the user's own
-    // writing, so they merge by id like notes, whether or not the other
-    // preferences are restored.
-    if (preferences != null) {
-      final planIds = ifThenPlans.map((p) => p.id).toSet();
-      final newPlans = IfThenPlan.decodeList(
-        preferences['ifThenPlans'],
-      ).where((p) => planIds.add(p.id));
-      ifThenPlans = [
-        ...ifThenPlans,
-        ...newPlans,
-      ].take(IfThenPlan.maxPlans).toList();
-    }
     if (importedCompanion != null) {
       companion = companion.mergeImported(importedCompanion);
     }
@@ -1238,7 +1245,6 @@ class RecoveryController extends ChangeNotifier {
           ..remove('hideSensitiveNotifications')
           ..remove('backgroundGeofencing')
           ..remove('insightPreferences')
-          ..remove('ifThenPlans')
           ..remove('pin'),
       );
       if (riskWindow.startMinutes != previousWindow.startMinutes ||
@@ -1265,6 +1271,8 @@ class RecoveryController extends ChangeNotifier {
   });
 
   Map<String, dynamic> get portablePreferences => {
+    if (ifThenPlans.isNotEmpty)
+      'ifThenPlans': ifThenPlans.map((p) => p.toJson()).toList(),
     'dailySpend': dailySpend,
     'bottleMl': bottleMl,
     'reasons': reasons,
@@ -1283,8 +1291,6 @@ class RecoveryController extends ChangeNotifier {
     'intensity': intensity.name,
     'dashboardNoticeStyle': dashboardNoticeStyle.name,
     'stretchedWidgetView': stretchedWidgetView.name,
-    if (ifThenPlans.isNotEmpty)
-      'ifThenPlans': ifThenPlans.map((p) => p.toJson()).toList(),
   };
 
   Future<void> pledge() async {

@@ -207,13 +207,11 @@ void main() {
       restored.events,
       preferences: restored.preferences,
     );
+    expect(await fresh.mergeImportedPlans(restored.preferences), 1);
     expect(fresh.ifThenPlans.map((p) => p.id), [c.ifThenPlans.single.id]);
 
     // Importing the same backup again does not duplicate the plan.
-    await fresh.mergeImportedEvents(
-      restored.events,
-      preferences: restored.preferences,
-    );
+    expect(await fresh.mergeImportedPlans(restored.preferences), 0);
     expect(fresh.ifThenPlans, hasLength(1));
   });
 
@@ -235,6 +233,7 @@ void main() {
       preview.events,
       preferences: preview.preferences,
     );
+    await c.mergeImportedPlans(preview.preferences);
     expect(c.ifThenPlans.map((p) => p.id), ['good']);
     expect(c.events.length, greaterThanOrEqualTo(3));
   });
