@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../domain/daily_check_in.dart';
 import '../domain/use_check.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -13,6 +14,7 @@ import '../../zones/domain/zone_entry_recency.dart';
 import '../domain/notification_policy.dart';
 import '../domain/risk_alert_plan.dart';
 import '../domain/risk_window.dart';
+import 'daily_check_in_background.dart';
 
 /// Monochrome status-bar icon (`res/drawable/ic_stat_no_lean.xml`). Android
 /// draws small icons from alpha only, and the name is resolved at runtime, so
@@ -65,6 +67,8 @@ class NotificationService {
           );
           if (action != null) _actionStreamController.add(action);
         },
+        // Okay / Used on the daily check-in run here without opening the app.
+        onDidReceiveBackgroundNotificationResponse: dailyCheckInBackground,
       );
       _initialized = true;
     }
@@ -368,6 +372,94 @@ class NotificationService {
   Future<void> cancelPositionStatus() async {
     try {
       await _plugin.cancel(positionStatusId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
+  /// Daily one-tap check-in at [minutes] after midnight. Non-critical: when
+  /// that clock time is inside quiet hours nothing is scheduled (it is not
+  /// shifted). [usedOpensApp] is set while the relapse lock is on, so Used
+  /// opens the app and the lock can ask instead of logging in the background.
+  /// Returns whether it was scheduled.
+  Future<bool> scheduleDailyCheckIn({
+    required int minutes,
+    required bool usedOpensApp,
+  }) async {
+    await cancelDailyCheckIn();
+    if (checkInInQuietHours(prefs, minutes)) return false;
+    try {
+      await _initialize(requestPermission: true);
+      final copy = dailyCheckInCopy(hideSensitive: prefs.hideSensitive);
+      final channel = dailyCheckInChannel;
+      final now = tz.TZDateTime.now(tz.local);
+      var when = tz.TZDateTime(
+        tz.local,
+        now.year,
+        now.month,
+        now.day,
+        minutes ~/ 60,
+        minutes % 60,
+      );
+      if (!when.isAfter(now)) when = when.add(const Duration(days: 1));
+      await scheduleWithExactFallback(
+        exactAllowed: await exactAlarmsAllowed(),
+        schedule: (mode) => _plugin.zonedSchedule(
+          dailyCheckInId,
+          copy.title,
+          copy.body,
+          when,
+          NotificationDetails(
+            android: AndroidNotificationDetails(
+              channel.id,
+              prefs.hideSensitive ? channel.privateName : channel.publicName,
+              channelDescription: prefs.hideSensitive
+                  ? channel.privateDescription
+                  : channel.publicDescription,
+              importance: Importance.high,
+              priority: Priority.high,
+              visibility: lockScreenVisibility,
+              category: AndroidNotificationCategory.reminder,
+              ticker: copy.title,
+              styleInformation: BigTextStyleInformation(
+                copy.body,
+                contentTitle: copy.title,
+              ),
+              actions: [
+                AndroidNotificationAction(
+                  checkInOkayAction,
+                  copy.okayLabel,
+                  showsUserInterface: false,
+                  cancelNotification: true,
+                ),
+                AndroidNotificationAction(
+                  checkInStrugglingAction,
+                  copy.strugglingLabel,
+                  showsUserInterface: true,
+                  cancelNotification: true,
+                ),
+                AndroidNotificationAction(
+                  usedOpensApp ? checkInUsedOpenAction : checkInUsedAction,
+                  copy.usedLabel,
+                  showsUserInterface: usedOpensApp,
+                  cancelNotification: true,
+                ),
+              ],
+            ),
+          ),
+          androidScheduleMode: mode,
+          matchDateTimeComponents: DateTimeComponents.time,
+        ),
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> cancelDailyCheckIn() async {
+    try {
+      await _plugin.cancel(dailyCheckInId);
     } catch (_) {
       // Optional on tests and unsupported platforms.
     }

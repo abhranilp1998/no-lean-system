@@ -27,6 +27,10 @@ import '../features/recovery/presentation/app_lock_screen.dart';
 import '../features/recovery/presentation/relapse_log_sheet.dart';
 import '../core/services/app_notice.dart';
 import '../features/recovery/services/notification_service.dart';
+import '../features/recovery/application/recovery_controller.dart'
+    show ProtectedActionResult;
+import '../features/recovery/domain/daily_check_in.dart';
+import '../features/recovery/presentation/check_in_slip_details.dart';
 import '../features/recovery/services/widget_action_service.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/timeline/presentation/timeline_screen.dart';
@@ -64,6 +68,12 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
   /// (A) "Yes" while locked: the prefilled time survives the unlock.
   DateTime? _deferredUseCheckAt;
   bool _deferredLetter = false;
+
+  /// Daily check-in "Used" tapped while the app was locked: logged after the
+  /// unlock with the original tap time.
+  DateTime? _deferredCheckInUsedAt;
+  final _askedSlipDetails = <String>{};
+  bool _slipPromptOpen = false;
   Timer? _lockTicker;
   late final ZoneMonitor _zoneMonitor = ZoneMonitor(
     location: ref.read(locationServiceProvider),
@@ -98,6 +108,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
         ref.read(recoveryProvider).markOpened().whenComplete(() {
           unawaited(_syncMilestones());
           unawaited(_importZoneInbox());
+          unawaited(_importCheckIns());
         }),
       );
       unawaited(WidgetActionService.instance.initialize());
@@ -229,6 +240,7 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       unawaited(ref.read(recoveryProvider).markOpened());
       unawaited(WidgetActionService.instance.initialize());
       unawaited(_importZoneInbox());
+      unawaited(_importCheckIns());
       unawaited(_syncMilestones());
     }
   }
@@ -241,6 +253,72 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       riskWindowWallArmed: recovery.riskWindowWallArmed,
       inRiskWindow: recovery.isRiskWindow,
     );
+  }
+
+  /// Daily check-in "Struggling" lands here. It opens the SOS screen, the
+  /// existing urge tool. Hook point for the rough-day home (PR #34) and the
+  /// urge timer: swap the body for their entry point and keep the one call.
+  void _openUrgeTools() => _handleWidgetAction('sos');
+
+  /// Daily check-in "Used" while the relapse lock is on (or an unwritable
+  /// background answer): same one-tap slip, at the tap time, flagged for
+  /// details. Falls back to the full logger if authentication is needed.
+  Future<void> _logCheckInUsed(DateTime tapAt) async {
+    if (!mounted) return;
+    if (_resolveLock() != null) {
+      _deferredCheckInUsedAt = tapAt;
+      AppNotice.show(context, 'Unlock to log it. Thank you for being honest.');
+      return;
+    }
+    ProtectedActionResult result;
+    try {
+      result = await ref.read(recoveryProvider).recordCheckInUsed(at: tapAt);
+    } catch (_) {
+      result = ProtectedActionResult.denied;
+    }
+    if (!mounted) return;
+    if (result != ProtectedActionResult.completed) {
+      await showRelapseLogSheet(
+        context,
+        source: 'checkin_notification',
+        initialOccurredAt: tapAt,
+      );
+      return;
+    }
+    await _promptSlipDetails();
+  }
+
+  /// Imports answers left by the background handler, then asks about any
+  /// placeholder slip that still needs details.
+  Future<void> _importCheckIns() async {
+    if (!mounted) return;
+    try {
+      final result = await ref.read(recoveryProvider).importCheckInInbox();
+      if (!mounted) return;
+      for (final at in result.askToLog) {
+        await _logCheckInUsed(at);
+      }
+    } catch (_) {
+      /* Answers stay in the inbox until the next resume. */
+    }
+    await _promptSlipDetails();
+  }
+
+  Future<void> _promptSlipDetails() async {
+    if (!mounted || _slipPromptOpen || _resolveLock() != null) return;
+    final recovery = ref.read(recoveryProvider);
+    if (!recovery.isLoaded) return;
+    final slip = recovery.slipsNeedingDetails
+        .where((e) => !_askedSlipDetails.contains(e.id))
+        .firstOrNull;
+    if (slip == null) return;
+    _askedSlipDetails.add(slip.id);
+    _slipPromptOpen = true;
+    try {
+      await showSlipDetailsPrompt(context, slip);
+    } finally {
+      _slipPromptOpen = false;
+    }
   }
 
   Future<void> _importZoneInbox() async {
@@ -285,6 +363,11 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
     _lockSession.onUnlocked();
     setState(() {});
     _maybeCelebrate();
+    final checkInUsedAt = _deferredCheckInUsedAt;
+    if (checkInUsedAt != null) {
+      _deferredCheckInUsedAt = null;
+      unawaited(_logCheckInUsed(checkInUsedAt));
+    }
     final useCheckAt = _deferredUseCheckAt;
     if (useCheckAt != null) {
       _deferredUseCheckAt = null;
@@ -440,6 +523,14 @@ class _ShellState extends ConsumerState<Shell> with WidgetsBindingObserver {
       unawaited(_answerUseCheck(actionId));
     } else if (actionId == NotificationService.useCheckOpenAction) {
       unawaited(_openUseCheckPrompt());
+    } else if (actionId == checkInStrugglingAction) {
+      _openUrgeTools();
+    } else if (actionId == checkInUsedOpenAction) {
+      unawaited(_logCheckInUsed(DateTime.now()));
+    } else if (actionId == checkInOkayAction || actionId == checkInUsedAction) {
+      // Normally handled in the background; this only catches a stray
+      // foreground delivery.
+      unawaited(_importCheckIns());
     } else if (actionId == 'action_safe') {
       unawaited(_checkIn());
     } else if (actionId == 'action_recheck') {
