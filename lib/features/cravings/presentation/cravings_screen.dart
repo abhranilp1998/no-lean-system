@@ -1,3 +1,6 @@
+import '../../plans/presentation/if_then_plans_screen.dart';
+import '../../recovery/domain/trigger_pattern.dart';
+import 'trigger_pattern_card.dart';
 import '../../letters/presentation/future_letters_screen.dart';
 import '../../../core/layout/tab_layout.dart';
 import 'package:flutter/material.dart';
@@ -57,6 +60,25 @@ class CravingsScreen extends ConsumerWidget {
           label: const Text('NOTES FROM FUTURE YOU'),
           onPressed: () => FutureLettersScreen.open(context),
         ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          key: const Key('open-if-then-plans'),
+          icon: const Icon(Icons.edit_note),
+          label: Text(
+            recovery.ifThenPlans.isEmpty
+                ? 'WRITE AN IF-THEN PLAN'
+                : 'MY IF-THEN PLANS (${recovery.ifThenPlans.length})',
+          ),
+          onPressed: () => IfThenPlansScreen.open(
+            context,
+            suggestedIf: computeTriggerPattern(
+              recovery.events,
+              now: recovery.currentTime,
+            )?.ifSuggestion,
+          ),
+        ),
+        const SizedBox(height: 14),
+        TriggerPatternCard(events: recovery.events, now: recovery.currentTime),
         const SizedBox(height: 22),
         SectionHeader(
           title: 'RECENT SIGNALS',

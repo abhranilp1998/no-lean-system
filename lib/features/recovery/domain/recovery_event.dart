@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 import 'dose_units.dart';
 import 'relapse_log_entry.dart';
 import 'slip_review.dart';
+import 'trigger_tags.dart';
 
 enum RecoveryEventType {
   daySummary, // Legacy date-only fact; occurrence count/time were not recorded.
@@ -172,6 +173,7 @@ class RecoveryEvent {
         result['trigger'] = trigger.trim();
         result['note'] = (note as String?)?.trim() ?? '';
         _validateStress(result);
+        normalizeTriggerTagMetadata(result);
       case RecoveryEventType.cravingCheck:
         final cravingId = result['cravingId'];
         final intensity = result['intensity'];

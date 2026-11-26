@@ -684,6 +684,11 @@ class BackupService {
     if (bottleMl != null) preferences['bottleMl'] = bottleMl;
     if (reasons != null) preferences['reasons'] = reasons;
     if (reminders != null) preferences['reminderMessages'] = reminders;
+    // The user's own if-then plans. Passed through as written; each item is
+    // read tolerantly when imported, so a bad one never rejects a backup.
+    if (input['ifThenPlans'] is List) {
+      preferences['ifThenPlans'] = input['ifThenPlans'];
+    }
     if (riskWindow != null) {
       preferences['riskWindow'] = Map<String, dynamic>.from(riskWindow as Map);
     }
