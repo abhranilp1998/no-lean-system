@@ -704,6 +704,23 @@ class BackupService {
     ]) {
       if (input.containsKey(key)) preferences[key] = input[key];
     }
+    // Optional daily check-in keys (no format bump): absent means off, 20:00.
+    final dailyCheckIn = input['dailyCheckIn'];
+    if (dailyCheckIn != null && dailyCheckIn is! bool) {
+      throw const FormatException('dailyCheckIn must be true or false.');
+    }
+    final checkInMinutes = input['dailyCheckInMinutes'];
+    if (checkInMinutes != null &&
+        (checkInMinutes is! int ||
+            checkInMinutes < 0 ||
+            checkInMinutes > 1439)) {
+      throw const FormatException(
+        'dailyCheckInMinutes must be a minute of the day.',
+      );
+    }
+    for (final key in ['dailyCheckIn', 'dailyCheckInMinutes']) {
+      if (input.containsKey(key)) preferences[key] = input[key];
+    }
     return preferences;
   }
 
