@@ -12,6 +12,7 @@ import '../../../core/services/feedback_preferences.dart';
 import '../../dashboard/domain/dashboard_notice_style.dart';
 import '../application/recovery_controller.dart';
 import '../domain/dose_units.dart';
+import '../domain/money_saved.dart';
 import '../domain/effect_intensity.dart';
 import '../domain/events_csv.dart';
 import '../domain/legacy_recovery_migration.dart';
@@ -597,6 +598,41 @@ class BackupService {
     if (bottleMl != null && (bottleMl is! num || !isValidBottleMl(bottleMl))) {
       throw const FormatException('bottleMl must be 10-2000 ml.');
     }
+    final currencyCode = input['currencyCode'];
+    if (currencyCode != null && currencyCode is! String) {
+      throw const FormatException('currencyCode must be text.');
+    }
+    // Unknown currency codes are kept and fall back to INR on load, so a
+    // future app version can honour a newly added code.
+    for (final key in ['spendPerBottle', 'usualDailyMl']) {
+      final value = input[key];
+      if (value != null && (value is! num || !value.isFinite || value < 0)) {
+        throw FormatException('$key must be a non-negative number.');
+      }
+    }
+    final spendPerBottle = input['spendPerBottle'];
+    if (spendPerBottle is num && spendPerBottle > maxRelapseCost) {
+      throw const FormatException('spendPerBottle is too large.');
+    }
+    final usualDailyMl = input['usualDailyMl'];
+    if (usualDailyMl is num && usualDailyMl > maxDoseMl) {
+      throw const FormatException('usualDailyMl is too large.');
+    }
+    final subtractOtherCosts = input['subtractOtherCosts'];
+    if (subtractOtherCosts != null && subtractOtherCosts is! bool) {
+      throw const FormatException('subtractOtherCosts must be true or false.');
+    }
+    if (input['savingsGoal'] != null) {
+      if (input['savingsGoal'] is! Map) {
+        throw const FormatException('savingsGoal must be a JSON object.');
+      }
+      final goal = SavingsGoal.tryParse(input['savingsGoal']);
+      if (goal == null) {
+        throw const FormatException(
+          'savingsGoal needs a short name and a target above zero.',
+        );
+      }
+    }
     final riskWindow = input['riskWindow'];
     if (riskWindow != null) {
       if (riskWindow is! Map ||
@@ -682,6 +718,24 @@ class BackupService {
     final preferences = <String, dynamic>{};
     if (dailySpend != null) preferences['dailySpend'] = dailySpend;
     if (bottleMl != null) preferences['bottleMl'] = bottleMl;
+    for (final key in [
+      'currencyCode',
+      'spendPerBottle',
+      'usualDailyMl',
+      'subtractOtherCosts',
+      'savingsGoal',
+    ]) {
+      if (input.containsKey(key)) {
+        if (key == 'currencyCode' && input[key] is String) {
+          preferences[key] = (input[key] as String).trim().toUpperCase();
+        } else if (key == 'savingsGoal') {
+          final parsed = SavingsGoal.tryParse(input[key]);
+          if (parsed != null) preferences[key] = parsed.toJson();
+        } else {
+          preferences[key] = input[key];
+        }
+      }
+    }
     if (reasons != null) preferences['reasons'] = reasons;
     if (reminders != null) preferences['reminderMessages'] = reminders;
     if (riskWindow != null) {

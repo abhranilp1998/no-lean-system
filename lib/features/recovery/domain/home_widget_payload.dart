@@ -13,6 +13,7 @@ Map<String, Object> homeWidgetPayload({
   required bool privacy,
   int? riskStartMinutes,
   int? riskEndMinutes,
+  String? moneyKept,
 }) {
   if (privacy) {
     return const <String, Object>{
@@ -34,5 +35,7 @@ Map<String, Object> homeWidgetPayload({
     // The night-timeline widget redraws hourly from these without the app.
     'riskStartMinutes': ?riskStartMinutes,
     'riskEndMinutes': ?riskEndMinutes,
+    // Privacy-safe running total, e.g. "₹2,160 kept". Never names a substance.
+    'moneyKept': ?moneyKept,
   };
 }

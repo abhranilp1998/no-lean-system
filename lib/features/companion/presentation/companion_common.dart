@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../recovery/application/recovery_controller.dart';
 import '../../recovery/domain/recovery_event.dart';
@@ -66,7 +65,9 @@ CompanionContext contextFor(
   recentSlip: recentSlip(r, now),
   name: name,
   bestDays: r.longestStreak,
-  saved: r.dailySpend > 0 && r.moneySaved >= 1 ? money(r.moneySaved) : '',
+  saved: r.dailySpend > 0 && r.moneySaved >= 1
+      ? r.currency.format(r.moneySaved)
+      : '',
   contact: contact,
   easeInHours: since == null ? easeInHours(r, now) : null,
 );

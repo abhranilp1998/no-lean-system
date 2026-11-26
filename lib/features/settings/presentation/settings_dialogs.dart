@@ -15,6 +15,7 @@ import '../../recovery/services/notification_service.dart';
 import '../../recovery/domain/risk_window.dart';
 import '../../recovery/presentation/relapse_auth_dialog.dart';
 import '../../recovery/domain/dose_units.dart';
+export 'money_saved_dialogs.dart' show showSpendDialog, showSavingsGoalDialog;
 
 Future<void> showDashboardNoticeStyleDialog(
   BuildContext context,
@@ -107,29 +108,6 @@ Future<void> showReminderDialog(BuildContext context, WidgetRef ref) async {
       AppNotice.show(
         context,
         'RISK-WINDOW MESSAGES UPDATED.',
-        type: AppNoticeType.success,
-      );
-    }
-  }
-}
-
-Future<void> showSpendDialog(BuildContext context, WidgetRef ref) async {
-  final updatedSpend = await showDialog<double>(
-    context: context,
-    builder: (dialogContext) =>
-        _SpendDialog(initialSpend: ref.read(recoveryProvider).dailySpend),
-  );
-  if (updatedSpend != null && context.mounted) {
-    if (!await saveAction(
-      context,
-      () => ref.read(recoveryProvider).updateDailySpend(updatedSpend),
-    )) {
-      return;
-    }
-    if (context.mounted) {
-      AppNotice.show(
-        context,
-        'DAILY SPEND BASELINE UPDATED.',
         type: AppNoticeType.success,
       );
     }
@@ -387,66 +365,6 @@ class _StringListDialogState extends State<_StringListDialog> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _SpendDialog extends StatefulWidget {
-  const _SpendDialog({required this.initialSpend});
-  final double initialSpend;
-
-  @override
-  State<_SpendDialog> createState() => _SpendDialogState();
-}
-
-class _SpendDialogState extends State<_SpendDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(
-      text: widget.initialSpend > 0
-          ? widget.initialSpend.round().toString()
-          : '',
-    );
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppDialog(
-      title: 'AVERAGE DAILY SPEND',
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: _controller,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(
-              prefixText: '₹  ',
-              labelText: 'Amount per day',
-            ),
-          ),
-          const SizedBox(height: 14),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              onPressed: () => Navigator.pop(
-                context,
-                double.tryParse(_controller.text) ?? 0,
-              ),
-              child: const Text('SAVE'),
-            ),
-          ),
-        ],
       ),
     );
   }

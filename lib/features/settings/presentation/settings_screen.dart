@@ -1,16 +1,17 @@
 import '../../../core/layout/tab_layout.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../recovery/domain/mixing_safety_net.dart';
 
 import '../../widgets/presentation/widgets_screen.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/services/feedback_preferences.dart';
 import '../../../core/services/save_action.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/brand_header.dart';
 import '../../../core/widgets/glass_card.dart';
 import '../../app_lock/application/app_lock_providers.dart';
@@ -76,10 +77,23 @@ class SettingsScreen extends ConsumerWidget {
             ),
             SettingAction(
               icon: Icons.payments_outlined,
-              title: 'Average daily spend',
-              subtitle: '${money(recovery.dailySpend)} per day',
+              title: 'Typical spend & money saved',
+              subtitle: recovery.dailySpend > 0
+                  ? '${recovery.currency.format(recovery.dailySpend)} a usual day'
+                        '${recovery.savingsGoal != null ? ' // ${recovery.savingsGoal!.name}' : ''}'
+                  : 'Set a usual day to count money kept',
               color: toxic,
               onTap: () => showSpendDialog(context, ref),
+            ),
+            SettingAction(
+              icon: Icons.savings_outlined,
+              title: 'Savings goal',
+              subtitle: recovery.savingsGoal == null
+                  ? 'Optional jar — name, target, photo'
+                  : '${recovery.savingsGoal!.name} // '
+                        '${recovery.currency.format(recovery.savingsGoal!.target)}',
+              color: cyan,
+              onTap: () => showSavingsGoalDialog(context, ref),
             ),
             SettingAction(
               key: const ValueKey('settings-bottle-size'),
