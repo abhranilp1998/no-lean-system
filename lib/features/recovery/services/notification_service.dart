@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../domain/use_check.dart';
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -43,9 +44,8 @@ class NotificationService {
   Future<void> _initialize({required bool requestPermission}) async {
     if (!_initialized) {
       try {
-        final zone = await const MethodChannel(
-          'no_lean/timezone',
-        ).invokeMethod<String>('get');
+        final zone = await const MethodChannel('no_lean/timezone')
+            .invokeMethod<String>('get');
         if (zone != null) {
           tz.setLocalLocation(tz.getLocation(zone));
         }
@@ -157,8 +157,7 @@ class NotificationService {
     android: AndroidNotificationDetails(
       'risk_window_v2',
       'NO LEAN risk window',
-      channelDescription:
-          'High-visibility recovery interrupts during your configured risk window',
+      channelDescription: 'High-visibility recovery interrupts during your configured risk window',
       importance: Importance.max,
       priority: Priority.high,
       color: red,
@@ -589,6 +588,7 @@ class NotificationService {
   }
 
   static const cravingCheckId = 710;
+  static const swapWatchId = 750;
 
   /// Delay before the craving recheck prompt.
   static const cravingCheckDelay = Duration(minutes: 15);
@@ -653,6 +653,39 @@ class NotificationService {
   Future<void> cancelCravingCheck() async {
     try {
       await _plugin.cancel(cravingCheckId);
+    } catch (_) {
+      // Optional on tests and unsupported platforms.
+    }
+  }
+
+  /// In-app swap-watch heads-up. Non-critical (quiet hours mute it). The
+  /// caller must already have run [NotificationPrefs.textFor] so hide-
+  /// sensitive wording stays neutral.
+  Future<void> showSwapWatch(NotificationText text) async {
+    if (!prefs.allows(NotificationKind.swapWatch, DateTime.now())) return;
+    try {
+      await _initialize(requestPermission: true);
+      await _plugin.show(
+        swapWatchId,
+        text.title,
+        text.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'swap_watch_v1',
+            'NO LEAN check-ins',
+            channelDescription: 'A quiet heads-up when something in the last two weeks is worth a look',
+            importance: Importance.defaultImportance,
+            priority: Priority.defaultPriority,
+            visibility: lockScreenVisibility,
+            category: AndroidNotificationCategory.reminder,
+            ticker: neutralNotificationText.title,
+            styleInformation: BigTextStyleInformation(
+              text.body,
+              contentTitle: text.title,
+            ),
+          ),
+        ),
+      );
     } catch (_) {
       // Optional on tests and unsupported platforms.
     }
